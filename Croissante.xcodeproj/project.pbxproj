@@ -1,0 +1,599 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000011 /* CroissanteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000010 /* CroissanteApp.swift */; };
+		A10000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* Assets.xcassets */; };
+		B10000000000000000000011 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000111 /* Colors.swift */; };
+		B10000000000000000000012 /* DailyRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000112 /* DailyRecord.swift */; };
+		B10000000000000000000013 /* LearningRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000113 /* LearningRecord.swift */; };
+		B10000000000000000000014 /* SimpleWord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000114 /* SimpleWord.swift */; };
+		B10000000000000000000015 /* AppIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000115 /* AppIconManager.swift */; };
+		B10000000000000000000016 /* FeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000116 /* FeedbackService.swift */; };
+		B10000000000000000000017 /* ICloudSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000117 /* ICloudSyncService.swift */; };
+		B10000000000000000000018 /* ImagePickerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000118 /* ImagePickerService.swift */; };
+		B10000000000000000000019 /* SRSManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000119 /* SRSManager.swift */; };
+		B1000000000000000000001A /* SpotlightService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011A /* SpotlightService.swift */; };
+		B1000000000000000000001B /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011B /* AppState.swift */; };
+		B1000000000000000000001C /* AmbientLightBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011C /* AmbientLightBackground.swift */; };
+		B1000000000000000000001D /* CheckInHeatmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011D /* CheckInHeatmapView.swift */; };
+		B1000000000000000000001E /* PolysemousWordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011E /* PolysemousWordView.swift */; };
+		B1000000000000000000001F /* SearchSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011F /* SearchSheetView.swift */; };
+		B10000000000000000000021 /* WordCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000121 /* WordCardView.swift */; };
+		B10000000000000000000022 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000122 /* ContentView.swift */; };
+		B10000000000000000000031 /* words_test_500.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000123 /* words_test_500.json */; };
+		B10000000000000000000032 /* conjugation.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000124 /* conjugation.json */; };
+		B10000000000000000000033 /* croissante_dev_icon.png in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000125 /* croissante_dev_icon.png */; };
+		B10000000000000000000034 /* AudioCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000126 /* AudioCacheManager.swift */; };
+		B10000000000000000000035 /* ElevenLabsTTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000127 /* ElevenLabsTTSService.swift */; };
+		B10000000000000000000036 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000128 /* NetworkMonitor.swift */; };
+		B10000000000000000000037 /* WidgetDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000129 /* WidgetDataService.swift */; };
+		W10000000000000000000001 /* CroissanteWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000011 /* CroissanteWidgetBundle.swift */; };
+		W10000000000000000000002 /* DailyWordWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000012 /* DailyWordWidget.swift */; };
+		W10000000000000000000003 /* CroissanteWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = W10000000000000000000005 /* CroissanteWidgetExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		W10000000000000000000080 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = W10000000000000000000006;
+			remoteInfo = CroissanteWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		W10000000000000000000090 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				W10000000000000000000003 /* CroissanteWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000005 /* Croissante.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Croissante.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000010 /* CroissanteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CroissanteApp.swift; sourceTree = "<group>"; };
+		A10000000000000000000013 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B10000000000000000000111 /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
+		B10000000000000000000112 /* DailyRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyRecord.swift; sourceTree = "<group>"; };
+		B10000000000000000000113 /* LearningRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningRecord.swift; sourceTree = "<group>"; };
+		B10000000000000000000114 /* SimpleWord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleWord.swift; sourceTree = "<group>"; };
+		B10000000000000000000115 /* AppIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconManager.swift; sourceTree = "<group>"; };
+		B10000000000000000000116 /* FeedbackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackService.swift; sourceTree = "<group>"; };
+		B10000000000000000000117 /* ICloudSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSyncService.swift; sourceTree = "<group>"; };
+		B10000000000000000000118 /* ImagePickerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePickerService.swift; sourceTree = "<group>"; };
+		B10000000000000000000119 /* SRSManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRSManager.swift; sourceTree = "<group>"; };
+		B1000000000000000000011A /* SpotlightService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightService.swift; sourceTree = "<group>"; };
+		B1000000000000000000011B /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		B1000000000000000000011C /* AmbientLightBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientLightBackground.swift; sourceTree = "<group>"; };
+		B1000000000000000000011D /* CheckInHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInHeatmapView.swift; sourceTree = "<group>"; };
+		B1000000000000000000011E /* PolysemousWordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolysemousWordView.swift; sourceTree = "<group>"; };
+		B1000000000000000000011F /* SearchSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSheetView.swift; sourceTree = "<group>"; };
+		B10000000000000000000121 /* WordCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordCardView.swift; sourceTree = "<group>"; };
+		B10000000000000000000122 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B10000000000000000000123 /* words_test_500.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = words_test_500.json; sourceTree = "<group>"; };
+		B10000000000000000000124 /* conjugation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = conjugation.json; sourceTree = "<group>"; };
+		B10000000000000000000125 /* croissante_dev_icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = croissante_dev_icon.png; sourceTree = "<group>"; };
+		B10000000000000000000126 /* AudioCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheManager.swift; sourceTree = "<group>"; };
+		B10000000000000000000127 /* ElevenLabsTTSService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevenLabsTTSService.swift; sourceTree = "<group>"; };
+		B10000000000000000000128 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		B10000000000000000000129 /* WidgetDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataService.swift; sourceTree = "<group>"; };
+		CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteDebug.entitlements; sourceTree = "<group>"; };
+		CB1004D62F6E0757009C269E /* CroissanteWidgetExtensionDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteWidgetExtensionDebug.entitlements; sourceTree = "<group>"; };
+		W10000000000000000000005 /* CroissanteWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CroissanteWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		W10000000000000000000011 /* CroissanteWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CroissanteWidgetBundle.swift; sourceTree = "<group>"; };
+		W10000000000000000000012 /* DailyWordWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyWordWidget.swift; sourceTree = "<group>"; };
+		W10000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		W10000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				CB1004D62F6E0757009C269E /* CroissanteWidgetExtensionDebug.entitlements */,
+				A10000000000000000000003 /* CroissanteApp */,
+				B10000000000000000000201 /* Croissante */,
+				W10000000000000000000300 /* CroissanteWidget */,
+				A10000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000003 /* CroissanteApp */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000010 /* CroissanteApp.swift */,
+				A10000000000000000000013 /* Assets.xcassets */,
+			);
+			path = CroissanteApp;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000005 /* Croissante.app */,
+				W10000000000000000000005 /* CroissanteWidgetExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000201 /* Croissante */ = {
+			isa = PBXGroup;
+			children = (
+				CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */,
+				B10000000000000000000202 /* Constants */,
+				B10000000000000000000203 /* Models */,
+				B10000000000000000000204 /* Services */,
+				B10000000000000000000205 /* ViewModels */,
+				B10000000000000000000206 /* Views */,
+				B10000000000000000000124 /* conjugation.json */,
+				B10000000000000000000123 /* words_test_500.json */,
+				B10000000000000000000208 /* Resources */,
+			);
+			path = Croissante;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000202 /* Constants */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000111 /* Colors.swift */,
+			);
+			path = Constants;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000203 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000112 /* DailyRecord.swift */,
+				B10000000000000000000113 /* LearningRecord.swift */,
+				B10000000000000000000114 /* SimpleWord.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000204 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000115 /* AppIconManager.swift */,
+				B10000000000000000000116 /* FeedbackService.swift */,
+				B10000000000000000000117 /* ICloudSyncService.swift */,
+				B10000000000000000000118 /* ImagePickerService.swift */,
+				B10000000000000000000119 /* SRSManager.swift */,
+				B1000000000000000000011A /* SpotlightService.swift */,
+				B10000000000000000000126 /* AudioCacheManager.swift */,
+				B10000000000000000000127 /* ElevenLabsTTSService.swift */,
+				B10000000000000000000128 /* NetworkMonitor.swift */,
+				B10000000000000000000129 /* WidgetDataService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000205 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				B1000000000000000000011B /* AppState.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000206 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000122 /* ContentView.swift */,
+				B10000000000000000000207 /* Components */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000207 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				B1000000000000000000011C /* AmbientLightBackground.swift */,
+				B1000000000000000000011D /* CheckInHeatmapView.swift */,
+				B1000000000000000000011E /* PolysemousWordView.swift */,
+				B1000000000000000000011F /* SearchSheetView.swift */,
+				B10000000000000000000121 /* WordCardView.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000208 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000125 /* croissante_dev_icon.png */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		W10000000000000000000300 /* CroissanteWidget */ = {
+			isa = PBXGroup;
+			children = (
+				W10000000000000000000013 /* Info.plist */,
+				W10000000000000000000011 /* CroissanteWidgetBundle.swift */,
+				W10000000000000000000012 /* DailyWordWidget.swift */,
+			);
+			path = CroissanteWidget;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000006 /* Croissante */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000000000000000000000B /* Build configuration list for PBXNativeTarget "Croissante" */;
+			buildPhases = (
+				A10000000000000000000007 /* Sources */,
+				A10000000000000000000008 /* Frameworks */,
+				A10000000000000000000009 /* Resources */,
+				W10000000000000000000090 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				W10000000000000000000081 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000003 /* CroissanteApp */,
+			);
+			name = Croissante;
+			productName = Croissante;
+			productReference = A10000000000000000000005 /* Croissante.app */;
+			productType = "com.apple.product-type.application";
+		};
+		W10000000000000000000006 /* CroissanteWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = W1000000000000000000000B /* Build configuration list for PBXNativeTarget "CroissanteWidgetExtension" */;
+			buildPhases = (
+				W10000000000000000000007 /* Sources */,
+				W10000000000000000000008 /* Frameworks */,
+				W10000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CroissanteWidgetExtension;
+			productName = CroissanteWidgetExtension;
+			productReference = W10000000000000000000005 /* CroissanteWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					A10000000000000000000006 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					W10000000000000000000006 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = A1000000000000000000000A /* Build configuration list for PBXProject "Croissante" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A10000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A10000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000006 /* Croissante */,
+				W10000000000000000000006 /* CroissanteWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000012 /* Assets.xcassets in Resources */,
+				B10000000000000000000031 /* words_test_500.json in Resources */,
+				B10000000000000000000032 /* conjugation.json in Resources */,
+				B10000000000000000000033 /* croissante_dev_icon.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		W10000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* CroissanteApp.swift in Sources */,
+				B10000000000000000000011 /* Colors.swift in Sources */,
+				B10000000000000000000012 /* DailyRecord.swift in Sources */,
+				B10000000000000000000013 /* LearningRecord.swift in Sources */,
+				B10000000000000000000014 /* SimpleWord.swift in Sources */,
+				B10000000000000000000015 /* AppIconManager.swift in Sources */,
+				B10000000000000000000016 /* FeedbackService.swift in Sources */,
+				B10000000000000000000017 /* ICloudSyncService.swift in Sources */,
+				B10000000000000000000018 /* ImagePickerService.swift in Sources */,
+				B10000000000000000000019 /* SRSManager.swift in Sources */,
+				B1000000000000000000001A /* SpotlightService.swift in Sources */,
+				B1000000000000000000001B /* AppState.swift in Sources */,
+				B1000000000000000000001C /* AmbientLightBackground.swift in Sources */,
+				B1000000000000000000001D /* CheckInHeatmapView.swift in Sources */,
+				B1000000000000000000001E /* PolysemousWordView.swift in Sources */,
+				B1000000000000000000001F /* SearchSheetView.swift in Sources */,
+				B10000000000000000000021 /* WordCardView.swift in Sources */,
+				B10000000000000000000022 /* ContentView.swift in Sources */,
+				B10000000000000000000034 /* AudioCacheManager.swift in Sources */,
+				B10000000000000000000035 /* ElevenLabsTTSService.swift in Sources */,
+				B10000000000000000000036 /* NetworkMonitor.swift in Sources */,
+				B10000000000000000000037 /* WidgetDataService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		W10000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				W10000000000000000000001 /* CroissanteWidgetBundle.swift in Sources */,
+				W10000000000000000000002 /* DailyWordWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		W10000000000000000000081 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = W10000000000000000000006 /* CroissanteWidgetExtension */;
+			targetProxy = W10000000000000000000080 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A1000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		A1000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+		A1000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M4X7UBJ3DR;
+				ENABLE_DEBUG_DYLIB = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Croissante;
+				INFOPLIST_KEY_CFBundleName = Croissante;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Used to take a profile photo";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Used to choose a profile photo";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante;
+				PRODUCT_MODULE_NAME = Croissante;
+				PRODUCT_NAME = Croissante;
+				STRIP_INSTALLED_PRODUCT = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A1000000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M4X7UBJ3DR;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Croissante;
+				INFOPLIST_KEY_CFBundleName = Croissante;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Used to take a profile photo";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Used to choose a profile photo";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante;
+				PRODUCT_MODULE_NAME = Croissante;
+				PRODUCT_NAME = Croissante;
+				STRIP_INSTALLED_PRODUCT = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		W1000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M4X7UBJ3DR;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CroissanteWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRIP_INSTALLED_PRODUCT = NO;
+				STRIP_SWIFT_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		W1000000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M4X7UBJ3DR;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CroissanteWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRIP_INSTALLED_PRODUCT = NO;
+				STRIP_SWIFT_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A1000000000000000000000A /* Build configuration list for PBXProject "Croissante" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000000C /* Debug */,
+				A1000000000000000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000000000000000000000B /* Build configuration list for PBXNativeTarget "Croissante" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000000E /* Debug */,
+				A1000000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		W1000000000000000000000B /* Build configuration list for PBXNativeTarget "CroissanteWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				W1000000000000000000000E /* Debug */,
+				W1000000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A10000000000000000000001 /* Project object */;
+}

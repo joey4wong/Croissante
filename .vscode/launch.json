@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DailyFrenchWord}",
+            "name": "Debug DailyFrenchWordApp",
+            "target": "DailyFrenchWordApp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug DailyFrenchWordApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DailyFrenchWord}",
+            "name": "Release DailyFrenchWordApp",
+            "target": "DailyFrenchWordApp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release DailyFrenchWordApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DailyFrenchWord}",
+            "name": "Debug CroissanteApp",
+            "target": "CroissanteApp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug CroissanteApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DailyFrenchWord}",
+            "name": "Release CroissanteApp",
+            "target": "CroissanteApp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release CroissanteApp"
+        }
+    ]
+}
