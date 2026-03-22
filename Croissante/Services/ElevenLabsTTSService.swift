@@ -16,11 +16,15 @@ public class ElevenLabsTTSService {
     
     private let networkMonitor = NetworkMonitor.shared
     private let audioCache = AudioCacheManager.shared
+    private let systemSynthesizer = AVSpeechSynthesizer()
     
     private var audioPlayer: AVAudioPlayer?
     
     private var isPlaying = false
     private var currentTask: Task<Void, Never>?
+    private var memberUnlocked: Bool {
+        UserDefaults.standard.bool(forKey: "memberUnlocked")
+    }
     
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
@@ -49,6 +53,10 @@ public class ElevenLabsTTSService {
             audioPlayer = nil
             isPlaying = false
         }
+
+        if systemSynthesizer.isSpeaking {
+            systemSynthesizer.stopSpeaking(at: .immediate)
+        }
         
     }
     
@@ -68,13 +76,25 @@ public class ElevenLabsTTSService {
     private func performSpeak(_ text: String, language: String) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
-        
+
+        if systemSynthesizer.isSpeaking {
+            systemSynthesizer.stopSpeaking(at: .immediate)
+        }
+
+        guard memberUnlocked else {
+            speakWithSystemTTS(trimmedText, language: language)
+            return
+        }
+
+        guard networkMonitor.isReachable else {
+            speakWithSystemTTS(trimmedText, language: language)
+            return
+        }
+
         if let cachedURL = audioCache.getCachedAudioURL(forText: trimmedText) {
             await playAudio(from: cachedURL)
             return
         }
-        
-        guard networkMonitor.isReachable else { return }
         
         do {
             let audioData = try await fetchAudioFromElevenLabs(trimmedText)
@@ -84,7 +104,21 @@ public class ElevenLabsTTSService {
             } else {
                 await playAudio(from: audioData)
             }
-        } catch {}
+        } catch {
+            speakWithSystemTTS(trimmedText, language: language)
+        }
+    }
+
+    private func speakWithSystemTTS(_ text: String, language: String) {
+        if isPlaying {
+            audioPlayer?.stop()
+            audioPlayer = nil
+            isPlaying = false
+        }
+
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: language) ?? AVSpeechSynthesisVoice(language: "fr-FR")
+        systemSynthesizer.speak(utterance)
     }
     
     private func makeRequestBody(for text: String) -> [String: Any] {
@@ -158,6 +192,7 @@ public class ElevenLabsTTSService {
     }
     
     func preloadAudio(for texts: [String]) async {
+        guard memberUnlocked else { return }
         for text in texts {
             let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedText.isEmpty else { continue }

@@ -230,6 +230,7 @@ public final class SRSManager: ObservableObject {
                 masteredCount: masteredCount
             ).rawValue
         }
+        pruneHeatmapDataToCurrentYear(today: today)
 
         // Migration: if an older single-deck payload exists for today, import it as current level snapshot.
         if savedDeckDate == today,
@@ -265,6 +266,7 @@ public final class SRSManager: ObservableObject {
     
     private func saveLearningState() {
         updateTodaySnapshots()
+        pruneHeatmapDataToCurrentYear(today: todayKey())
         storeCurrentLevelSnapshot(for: todayKey())
 
         // Save learning records
@@ -304,6 +306,7 @@ public final class SRSManager: ObservableObject {
 
     private func refreshDailyDeckIfNeeded() {
         let today = todayKey()
+        pruneHeatmapDataToCurrentYear(today: today)
         pruneStaleLevelSnapshots(today: today)
         if restoreLevelSnapshotIfAvailable(for: targetLevel, on: today) {
             if dailyDeckWordIds.count > dailyDeckLimit {
@@ -320,8 +323,11 @@ public final class SRSManager: ObservableObject {
     // MARK: - Learning Actions
     
     public func markWordMastered(_ wordId: String) {
-        let countedInTodayDeck = dailyDeckWordIds.contains(wordId)
         let now = Date()
+        if handleInfinitePracticeSwipe(wordId, now: now) {
+            return
+        }
+        let countedInTodayDeck = dailyDeckWordIds.contains(wordId)
         let oldCorrects = learningRecords[wordId]?.consecutiveCorrects ?? 0
 
         // 新词首次“掌握”只记为 1 次连对，不再直接毕业。
@@ -352,18 +358,22 @@ public final class SRSManager: ObservableObject {
     
     public func markWordBlurry(_ wordId: String) {
         let now = Date()
+        if handleInfinitePracticeSwipe(wordId, now: now) {
+            return
+        }
         let oldRecord = learningRecords[wordId] ?? LearningRecord(
             wordId: wordId,
             consecutiveCorrects: 0,
             nextReviewDate: now
         )
 
-        // 连续答对次数保持不变，下次明天复习。
+        // 连续答对次数回退一档，下次明天复习。
+        let nextCorrects = max(0, oldRecord.consecutiveCorrects - 1)
         let nextReviewDate = dateByAddingDays(retryIntervalDays, from: now)
         
         learningRecords[wordId] = LearningRecord(
             wordId: wordId,
-            consecutiveCorrects: oldRecord.consecutiveCorrects,
+            consecutiveCorrects: nextCorrects,
             nextReviewDate: nextReviewDate
         )
         
@@ -380,6 +390,9 @@ public final class SRSManager: ObservableObject {
     
     public func markWordForgot(_ wordId: String) {
         let now = Date()
+        if handleInfinitePracticeSwipe(wordId, now: now) {
+            return
+        }
 
         // 连续答对归零，下次明天复习。
         learningRecords[wordId] = LearningRecord(
@@ -405,6 +418,15 @@ public final class SRSManager: ObservableObject {
         )
 
         saveLearningState()
+    }
+
+    @discardableResult
+    private func handleInfinitePracticeSwipe(_ wordId: String, now: Date) -> Bool {
+        guard isInfinitePracticeActive else { return false }
+        removeWordFromLearningQueue(wordId)
+        refillInfiniteQueueIfNeeded(now: now)
+        saveLearningState()
+        return true
     }
 
     public func resetWordToNew(_ wordId: String) {
@@ -561,11 +583,8 @@ public final class SRSManager: ObservableObject {
     
     func setTargetLevel(_ level: String) {
         guard targetLevel != level else { return }
-        storeCurrentLevelSnapshot(for: todayKey())
         targetLevel = level
-        if !restoreLevelSnapshotIfAvailable(for: level, on: todayKey()) {
-            generateDailyDeck()
-        }
+        resetTodayProgressForPlanChange(now: Date())
         saveLearningState()
     }
 
@@ -573,16 +592,23 @@ public final class SRSManager: ObservableObject {
         let normalizedLimit = supportedDailyDeckLimits.contains(limit) ? limit : defaultDailyDeckLimit
         guard dailyDeckLimit != normalizedLimit else { return }
         dailyDeckLimit = normalizedLimit
-        resetTodayProgressForGoalChange(now: Date())
+        resetTodayProgressForPlanChange(now: Date())
         saveLearningState()
     }
 
-    private func resetTodayProgressForGoalChange(now: Date) {
+    private func resetTodayProgressForPlanChange(now: Date) {
         let today = todayKey()
         levelDailyDeckSnapshots.removeAll()
         dailyCompletionRatios.removeValue(forKey: today)
         dailyStudyStates.removeValue(forKey: today)
         rebuildDeck(now: now)
+    }
+
+    private func pruneHeatmapDataToCurrentYear(today: String) {
+        guard today.count >= 4 else { return }
+        let yearPrefix = String(today.prefix(4)) + "-"
+        dailyCompletionRatios = dailyCompletionRatios.filter { $0.key.hasPrefix(yearPrefix) }
+        dailyStudyStates = dailyStudyStates.filter { $0.key.hasPrefix(yearPrefix) }
     }
 
     private func extendTodayDeckIfNeeded(now: Date) {

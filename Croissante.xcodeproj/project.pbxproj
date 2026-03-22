@@ -90,6 +90,7 @@
 		B10000000000000000000127 /* ElevenLabsTTSService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevenLabsTTSService.swift; sourceTree = "<group>"; };
 		B10000000000000000000128 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		B10000000000000000000129 /* WidgetDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataService.swift; sourceTree = "<group>"; };
+		B10000000000000000000130 /* AppAlternateIconsInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AppAlternateIconsInfo.plist; sourceTree = "<group>"; };
 		CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteDebug.entitlements; sourceTree = "<group>"; };
 		CB1004D62F6E0757009C269E /* CroissanteWidgetExtensionDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteWidgetExtensionDebug.entitlements; sourceTree = "<group>"; };
 		W10000000000000000000005 /* CroissanteWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CroissanteWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -148,6 +149,7 @@
 		B10000000000000000000201 /* Croissante */ = {
 			isa = PBXGroup;
 			children = (
+				B10000000000000000000130 /* AppAlternateIconsInfo.plist */,
 				CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */,
 				B10000000000000000000202 /* Constants */,
 				B10000000000000000000203 /* Models */,
@@ -416,8 +418,18 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = (
+						"AppIcon-08",
+						"AppIcon-09",
+						"AppIcon-Landscape",
+						"AppIcon-Ivory",
+						"AppIcon-Neon",
+						"AppIcon-Gold",
+						"AppIcon-Washi",
+					"AppIcon-Crystal",
+				);
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
@@ -425,6 +437,7 @@
 				DEVELOPMENT_TEAM = M4X7UBJ3DR;
 				ENABLE_DEBUG_DYLIB = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Croissante;
 				INFOPLIST_KEY_CFBundleName = Croissante;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
@@ -459,13 +472,24 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = (
+						"AppIcon-08",
+						"AppIcon-09",
+						"AppIcon-Landscape",
+						"AppIcon-Ivory",
+						"AppIcon-Neon",
+						"AppIcon-Gold",
+						"AppIcon-Washi",
+					"AppIcon-Crystal",
+				);
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = M4X7UBJ3DR;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Croissante;
 				INFOPLIST_KEY_CFBundleName = Croissante;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";

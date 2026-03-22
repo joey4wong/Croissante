@@ -124,7 +124,7 @@ public struct ContentView: View {
             SearchSelectedWordCardView(
                 word: word,
                 themeMode: appState.themeMode,
-                dismissOnTapOrUpSwipe: true,
+                dismissOnTap: true,
                 onDismiss: { spotlightWord = nil },
                 onSwipeForgot: { srsManager.markWordForgot(word.id) },
                 onSwipeMastered: { srsManager.markWordMastered(word.id) },
@@ -279,7 +279,7 @@ struct SearchSelectedWordCardView: View {
     let word: SimpleWord
     let themeMode: ThemeMode
     let allowsBlurrySwipe: Bool
-    let dismissOnTapOrUpSwipe: Bool
+    let dismissOnTap: Bool
     let onDismiss: () -> Void
     let onSwipeForgot: () -> Void
     let onSwipeMastered: () -> Void
@@ -289,7 +289,7 @@ struct SearchSelectedWordCardView: View {
         word: SimpleWord,
         themeMode: ThemeMode = .system,
         allowsBlurrySwipe: Bool = true,
-        dismissOnTapOrUpSwipe: Bool = false,
+        dismissOnTap: Bool = false,
         onDismiss: @escaping () -> Void,
         onSwipeForgot: @escaping () -> Void,
         onSwipeMastered: @escaping () -> Void,
@@ -298,7 +298,7 @@ struct SearchSelectedWordCardView: View {
         self.word = word
         self.themeMode = themeMode
         self.allowsBlurrySwipe = allowsBlurrySwipe
-        self.dismissOnTapOrUpSwipe = dismissOnTapOrUpSwipe
+        self.dismissOnTap = dismissOnTap
         self.onDismiss = onDismiss
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
@@ -313,7 +313,7 @@ struct SearchSelectedWordCardView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if dismissOnTapOrUpSwipe {
+                if dismissOnTap {
                     backgroundGradient.ignoresSafeArea()
                         .contentShape(Rectangle())
                         .onTapGesture { onDismiss() }
@@ -327,7 +327,7 @@ struct SearchSelectedWordCardView: View {
                     isActiveTab: true,
                     resetTransformAfterSwipe: false,
                     allowsBlurrySwipe: allowsBlurrySwipe,
-                    onSwipeUpWithoutAction: dismissOnTapOrUpSwipe ? { onDismiss() } : nil,
+                    onSwipeUpWithoutAction: dismissOnTap ? { onDismiss() } : nil,
                     onSwipeForgot: {
                         onDismiss()
                         DispatchQueue.main.async {
@@ -637,6 +637,14 @@ private struct DiscoverCard: View {
         ElevenLabsTTSService.speakText(trimmedWord, language: "fr-FR")
     }
 
+    private func speakExampleSentence() {
+        let trimmedExample = word.exampleFr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedExample.isEmpty else { return }
+
+        ElevenLabsTTSService.stopPlayback()
+        ElevenLabsTTSService.speakText(trimmedExample, language: "fr-FR")
+    }
+
     private func cancelScheduledSpeech() {
         pendingSpeechTask?.cancel()
         pendingSpeechTask = nil
@@ -876,13 +884,27 @@ private struct DiscoverCard: View {
             if !word.exampleFr.isEmpty || !translatedExample.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     if !word.exampleFr.isEmpty {
-                        Text(word.exampleFr)
-                            .font(.system(size: 16, weight: .regular, design: .default))
-                            .multilineTextAlignment(.leading)
-                            .lineSpacing(3)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(exampleTextColor)
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(word.exampleFr)
+                                .font(.system(size: 16, weight: .regular, design: .default))
+                                .multilineTextAlignment(.leading)
+                                .lineSpacing(3)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(exampleTextColor)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Button {
+                                cancelScheduledSpeech()
+                                speakExampleSentence()
+                            } label: {
+                                Image(systemName: "speaker.wave.2.fill")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(secondaryTextColor)
+                                    .padding(.top, 2)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     if !translatedExample.isEmpty {
                         Text(translatedExample)
@@ -992,7 +1014,7 @@ private struct ProgressScreen: View {
                 word: word,
                 themeMode: appState.themeMode,
                 allowsBlurrySwipe: true,
-                dismissOnTapOrUpSwipe: true,
+                dismissOnTap: true,
                 onDismiss: { selectedWordForCard = nil },
                 onSwipeForgot: { srsManager.markWordForgot(word.id) },
                 onSwipeMastered: { srsManager.markWordMastered(word.id) },
@@ -1005,7 +1027,7 @@ private struct ProgressScreen: View {
                 word: word,
                 themeMode: appState.themeMode,
                 allowsBlurrySwipe: true,
-                dismissOnTapOrUpSwipe: true,
+                dismissOnTap: true,
                 onDismiss: { selectedWordForCard = nil },
                 onSwipeForgot: { srsManager.markWordForgot(word.id) },
                 onSwipeMastered: { srsManager.markWordMastered(word.id) },
@@ -1153,6 +1175,7 @@ private struct SettingsScreen: View {
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var appIconManager = AppIconManager.shared
     @State private var showingAvatarPicker = false
     @State private var showingFAQ = false
     @State private var showingTermsOfUse = false
@@ -1160,6 +1183,9 @@ private struct SettingsScreen: View {
     @State private var showingTipOptions = false
     @State private var showingShareSheet = false
     @State private var showingMemberUnlock = false
+    @State private var showingAppIconPicker = false
+    @State private var appIconErrorMessage: String?
+    @State private var showingAppIconError = false
     @State private var avatarBottomGlobalY: CGFloat = 0
     @State private var themeSelectionOverride: Int?
     @State private var themeApplyTask: Task<Void, Never>?
@@ -1182,6 +1208,13 @@ private struct SettingsScreen: View {
         ("hqfrgApggtO1785R4Fsn", "Theodore"),
         ("sANWqF1bCMzR6eyZbCGw", "Marie")
     ]
+    private let appIconTileSize: CGFloat = 68
+    private var appIconGridColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(appIconTileSize), spacing: 64, alignment: .center),
+            count: 3
+        )
+    }
     private let developerContactEmail = "joey4wong@gmail.com"
     private var appShareMessage: String {
         appState.localized(
@@ -1230,8 +1263,13 @@ private struct SettingsScreen: View {
         dailyCardLimits.firstIndex(of: srsManager.dailyDeckLimit) ?? (dailyCardLimits.count - 1)
     }
 
+    private var systemVoiceName: String {
+        appState.localized("System TTS", "系统 TTS", "सिस्टम TTS")
+    }
+
     private var selectedVoiceName: String {
-        voiceOptions.first(where: { $0.id == appState.selectedVoiceId })?.name ?? voiceOptions[0].name
+        guard appState.memberUnlocked else { return systemVoiceName }
+        return voiceOptions.first(where: { $0.id == appState.selectedVoiceId })?.name ?? voiceOptions[0].name
     }
 
     private var spotlightToggleBinding: Binding<Bool> {
@@ -1338,14 +1376,14 @@ private struct SettingsScreen: View {
             FAQItem(
                 id: "goal-upgrade",
                 question: appState.localized(
-                    "What happens if I change my daily goal during the day?",
-                    "如果我在当天修改每日目标，会发生什么？",
-                    "What happens if I change my daily goal during the day?"
+                    "What happens if I change my daily goal or level during the day?",
+                    "如果我在当天修改每日目标或等级，会发生什么？",
+                    "What happens if I change my daily goal or level during the day?"
                 ),
                 answer: appState.localized(
-                    "Changing the goal always resets today. The app rebuilds today's target pool using the new goal for your current level, clears today's completion progress, and usually returns today's heatmap state to the blinking dot until you make progress again. If the rebuilt deck has no eligible cards, today stays in the no-eligible state instead.",
-                    "只要你修改每日目标，当天都会被重置。系统会按你当前等级和新的目标值重建今天的目标池，清空当天完成进度，并通常把热力图今天的状态恢复成闪烁的小绿点，直到你再次产生进度。若重建后当前等级确实没有可发卡，则今天会保持“暂无可发卡”状态。",
-                    "Changing the goal always resets today. The app rebuilds today's target pool using the new goal for your current level, clears today's completion progress, and usually returns today's heatmap state to the blinking dot until you make progress again. If the rebuilt deck has no eligible cards, today stays in the no-eligible state instead."
+                    "Changing either the daily goal or the level rebuilds today's study plan from scratch. The app generates a new target pool from your current level and current goal, clears today's completion progress, and recalculates today's heatmap from zero. If the rebuilt plan still has eligible cards, today usually goes back to the blinking green dot; if not, today stays gray in the no-eligible state.",
+                    "只要你在当天修改每日目标或等级，系统就会把“今天的学习计划”整套重建。它会按你当前的等级和目标重新生成今天的目标池，清空今天的完成进度，并把今天的热力图按新计划从 0 重新计算。若重建后仍有可发卡，今天通常会回到闪烁的小绿点；若重建后没有可发卡，今天就会保持灰色，也就是“暂无可发卡”状态。",
+                    "Changing either the daily goal or the level rebuilds today's study plan from scratch. The app generates a new target pool from your current level and current goal, clears today's completion progress, and recalculates today's heatmap from zero. If the rebuilt plan still has eligible cards, today usually goes back to the blinking green dot; if not, today stays gray in the no-eligible state."
                 )
             ),
             FAQItem(
@@ -1369,9 +1407,9 @@ private struct SettingsScreen: View {
                     "When is today's Explore session actually complete?"
                 ),
                 answer: appState.localized(
-                    "The day is complete when every card currently in today's target pool is marked Mastered. If a card is marked Blurry or Forgot, the app can replace it with another eligible card; that unsettled card is deferred to a later review.",
-                    "只有当“今天当前目标池”中的卡片都被标记为“掌握”时，首页才算完成。若你标记了“模糊/忘记”，系统会尝试用其他可发卡替换它，而这张未稳固卡会延后到后续复习。",
-                    "The day is complete when every card currently in today's target pool is marked Mastered. If a card is marked Blurry or Forgot, the app can replace it with another eligible card; that unsettled card is deferred to a later review."
+                    "The day is complete when every card currently in today's base target pool is marked Mastered. If a card is marked Blurry or Forgot there, the app can replace it with another eligible card; Continue ∞ is separate and does not reopen today's completion.",
+                    "只有当“今天基础目标池”中的卡片都被标记为“掌握”时，首页才算完成。若你在这组卡片里标记“模糊/忘记”，系统会尝试补入其他可发卡；Continue ∞ 属于独立加练，不会重新打开今天的完成状态。",
+                    "The day is complete when every card currently in today's base target pool is marked Mastered. If a card is marked Blurry or Forgot there, the app can replace it with another eligible card; Continue ∞ is separate and does not reopen today's completion."
                 )
             ),
             FAQItem(
@@ -1382,9 +1420,9 @@ private struct SettingsScreen: View {
                     "What is Continue ∞ and when does it appear?"
                 ),
                 answer: appState.localized(
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Using it does not reset today's completion, celebration state, or heatmap completion color.",
-                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。开启加练不会重置你今天的完成状态、庆祝状态或热力图完成颜色。",
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Using it does not reset today's completion, celebration state, or heatmap completion color."
+                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there are disposable practice only: they do not write memory state, progress buckets, today's completion, or the heatmap.",
+                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。这里的滑动只用于继续练习，不会写入记忆状态、进度分类、今日完成状态或热力图。",
+                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there are disposable practice only: they do not write memory state, progress buckets, today's completion, or the heatmap."
                 )
             ),
             FAQItem(
@@ -1408,9 +1446,9 @@ private struct SettingsScreen: View {
                     "How does the heatmap color system work?"
                 ),
                 answer: appState.localized(
-                    "The heatmap follows a daily state snapshot: completed days are deep green; in-progress days are light/medium green by completion ratio (20%-69% / 70%-99%), and below 20% shows a blinking dot only for today. If you change today's goal, today's heatmap state is reset and usually starts again from that blinking dot. If no eligible cards are available after the reset, today stays gray.",
-                    "热力图基于“每日状态快照”显示：完成日为深绿；进行中按比例分级（20%-69% 浅绿、70%-99% 绿色），低于 20% 时仅今天显示闪烁绿点。只要你修改今天的每日目标，今天的热力图状态也会被重置，并通常从这个闪烁绿点重新开始；如果重置后没有可发卡，今天则保持灰色。",
-                    "The heatmap follows a daily state snapshot: completed days are deep green; in-progress days are light/medium green by completion ratio (20%-69% / 70%-99%), and below 20% shows a blinking dot only for today. If you change today's goal, today's heatmap state is reset and usually starts again from that blinking dot. If no eligible cards are available after the reset, today stays gray."
+                    "The heatmap shows the state of that day's study plan, not raw swipe count. Deep green means completed. While in progress, 70%-99% is green, 20%-69% is light green, and below 20% only today's cell uses the blinking green dot. That blinking dot is only for today; after the day passes, progress below 20% is no longer highlighted and the cell appears gray. Gray also covers days with no eligible cards.",
+                    "热力图显示的是“当天学习计划的状态”，不是单纯的滑动次数。深绿表示已完成；进行中时，70%-99% 显示绿色，20%-69% 显示浅绿，低于 20% 时只有今天这一天会显示闪烁的小绿点。这个闪烁点只用于今天；一旦过了今天，低于 20% 的进度不再单独高亮，会显示为灰色。灰色也包括当天本来就没有可发卡的情况。",
+                    "The heatmap shows the state of that day's study plan, not raw swipe count. Deep green means completed. While in progress, 70%-99% is green, 20%-69% is light green, and below 20% only today's cell uses the blinking green dot. That blinking dot is only for today; after the day passes, progress below 20% is no longer highlighted and the cell appears gray. Gray also covers days with no eligible cards."
                 )
             ),
             FAQItem(
@@ -1447,9 +1485,9 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "Mastered counts as a successful learning step, pushes the next review further out, and removes the card from today's queue. Blurry keeps your current progress but marks the card for near-term review (and today may swap in another eligible card). Forgot resets the card into rebuilding and schedules a later relearning review.",
-                    "“掌握”代表一次有效记住，系统会延长它下一次出现时间，并把它从今天任务中移除。“模糊”会保留你当前进度，并把该词安排到近期复习（今天可能补入其他可发卡）。“忘记”会把该词重置到重建阶段，并安排到后续复习中重新学习。",
-                    "Mastered counts as a successful learning step, pushes the next review further out, and removes the card from today's queue. Blurry keeps your current progress but marks the card for near-term review (and today may swap in another eligible card). Forgot resets the card into rebuilding and schedules a later relearning review."
+                    "On today's base deck, swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. On cards opened from Search, Progress, or Spotlight, swipe up simply closes the card. In Continue ∞, swipes are non-persistent and only advance practice.",
+                    "在今天的基础牌堆里，右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑不记录任何操作。对于从搜索、进度或 Spotlight 打开的弹出卡片，上滑仅表示关闭卡片。进入 Continue ∞ 后，所有滑动都不持久记录，只负责继续练习。",
+                    "On today's base deck, swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. On cards opened from Search, Progress, or Spotlight, swipe up simply closes the card. In Continue ∞, swipes are non-persistent and only advance practice."
                 )
             ),
             FAQItem(
@@ -1624,6 +1662,7 @@ private struct SettingsScreen: View {
                         SettingsCardRow(
                             icon: "waveform",
                             title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
+                            titleTrailingSymbol: appState.memberUnlocked ? nil : "lock.fill",
                             subtitle: "",
                             titleFontSize: 13,
                             rowVerticalPadding: 12,
@@ -1631,19 +1670,35 @@ private struct SettingsScreen: View {
                             showsDivider: false,
                             matchPickerFont: true
                         ) {
-                            Picker(
-                                selectedVoiceName,
-                                selection: Binding(
-                                    get: { appState.selectedVoiceId },
-                                    set: { appState.selectedVoiceId = $0 }
-                                )
-                            ) {
-                                ForEach(voiceOptions, id: \.id) { option in
-                                    Text(option.name).tag(option.id)
+                            if appState.memberUnlocked {
+                                Picker(
+                                    selectedVoiceName,
+                                    selection: Binding(
+                                        get: { appState.selectedVoiceId },
+                                        set: { appState.selectedVoiceId = $0 }
+                                    )
+                                ) {
+                                    ForEach(voiceOptions, id: \.id) { option in
+                                        Text(option.name).tag(option.id)
+                                    }
                                 }
+                                .pickerStyle(.menu)
+                                .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            } else {
+                                Button {
+                                    showingMemberUnlock = true
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(systemVoiceName)
+                                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundStyle(isDarkMode ? Color.white.opacity(0.34) : Color.black.opacity(0.30))
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .pickerStyle(.menu)
-                            .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                         }
                 }
                 .padding(.horizontal, 20)
@@ -1716,26 +1771,7 @@ private struct SettingsScreen: View {
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                         }
 
-                        SettingsCardRow(
-                            icon: "swirl.circle.righthalf.filled",
-                            iconAssetName: "croissante_dev_icon",
-                            title: appState.localized("App Icon", "应用图标", "ऐप आइकन"),
-                            subtitle: appState.localized("Default", "默认", "डिफ़ॉल्ट"),
-                            titleFontSize: 13,
-                            rowVerticalPadding: 12,
-                            showsDivider: false,
-                            matchPickerFont: true
-                        ) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "lock.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.36) : Color.black.opacity(0.26))
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
-                                    .padding(.trailing, chevronTrailingInset)
-                            }
-                        }
+                        appIconOptionsSection
                 }
                 .padding(.horizontal, 20)
 
@@ -1869,7 +1905,7 @@ private struct SettingsScreen: View {
                         }
 
                         SettingsActionButtonsRow(labels: [
-                            appState.localized("Contact", "联系", "संपर्क"),
+                            appState.localized("Report", "联系", "संपर्क"),
                             appState.localized("Tip", "打赏", "टिप"),
                             appState.localized("Rate", "评分", "रेट"),
                             appState.localized("Share", "分享", "शेयर")
@@ -1903,6 +1939,14 @@ private struct SettingsScreen: View {
                 .environmentObject(appState)
             #if os(iOS)
                 .presentationDetents([.height(memberPaywallDetentHeight)])
+                .presentationDragIndicator(.visible)
+            #endif
+        }
+        .sheet(isPresented: $showingAppIconPicker) {
+            appIconPickerSheet
+                .environmentObject(appState)
+            #if os(iOS)
+                .presentationDetents([.height(370), .large])
                 .presentationDragIndicator(.visible)
             #endif
         }
@@ -1994,6 +2038,17 @@ private struct SettingsScreen: View {
             ActivityShareSheet(activityItems: [appShareMessage])
         }
         #endif
+        .alert(
+            appState.localized("Unable to Change Icon", "图标切换失败", "आइकन बदलना असफल"),
+            isPresented: $showingAppIconError
+        ) {
+            Button(appState.localized("OK", "好的", "ठीक है"), role: .cancel) {}
+        } message: {
+            Text(appIconErrorMessage ?? appState.localized("Please try again later.", "请稍后再试。", "कृपया बाद में फिर कोशिश करें।"))
+        }
+        .onAppear {
+            syncAppIconState()
+        }
         .onChange(of: appState.themeMode) { _, _ in
             guard let themeSelectionOverride else { return }
             if themeSelectionOverride == selectedThemeIndex {
@@ -2057,6 +2112,127 @@ private struct SettingsScreen: View {
         }
         AppStore.requestReview(in: scene)
         #endif
+    }
+
+    private var appIconOptionsSection: some View {
+        Button {
+            showingAppIconPicker = true
+        } label: {
+            SettingsCardRow(
+                icon: "swirl.circle.righthalf.filled",
+                iconAssetName: "croissante_dev_icon",
+                title: appState.localized("App Icon", "应用图标", "ऐप आइकन"),
+                subtitle: "",
+                titleFontSize: 13,
+                rowVerticalPadding: 12,
+                showsDivider: false,
+                matchPickerFont: true
+            ) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                    .padding(.trailing, chevronTrailingInset)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var appIconPickerSheet: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(isDarkMode ? Color.white.opacity(0.24) : Color.black.opacity(0.16))
+                .frame(width: 36, height: 5)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+
+            GeometryReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVGrid(columns: appIconGridColumns, spacing: 22) {
+                        ForEach(AppIconManager.AppIcon.allIcons) { icon in
+                            appIconTile(icon)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(minHeight: proxy.size.height, alignment: .center)
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+
+    private func appIconTile(_ icon: AppIconManager.AppIcon) -> some View {
+        let isSelected = appIconManager.currentIcon.id == icon.id
+        let isMemberIcon = !AppIconManager.AppIcon.freeIconIDs.contains(icon.id)
+        let isLocked = isMemberIcon && !appState.memberUnlocked
+        let borderColor = isSelected
+            ? (isDarkMode ? Color.white.opacity(0.6) : Color.black.opacity(0.35))
+            : (isDarkMode ? Color.white.opacity(0.16) : Color.black.opacity(0.10))
+        let borderWidth = isSelected ? 1.5 : 1.0
+
+        return Button {
+            showingAppIconPicker = false
+
+            if isLocked {
+                presentMemberUnlockAfterClosingIconPicker()
+                return
+            }
+
+            applyAppIcon(icon)
+        } label: {
+            Image(icon.previewAssetName)
+                .resizable()
+                .scaledToFill()
+                .frame(width: appIconTileSize, height: appIconTileSize)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(borderColor, lineWidth: borderWidth)
+                )
+                .overlay(alignment: .topTrailing) {
+                    if isLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86))
+                            .padding(6)
+                            .background(
+                                Circle()
+                                    .fill(isDarkMode ? Color.black.opacity(0.68) : Color.white.opacity(0.9))
+                            )
+                            .padding(6)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .disabled(appIconManager.changingIcon || (!isLocked && isSelected))
+        .opacity(appIconManager.changingIcon && !isSelected ? 0.6 : 1)
+    }
+
+    private func presentMemberUnlockAfterClosingIconPicker() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            showingMemberUnlock = true
+        }
+    }
+
+    @MainActor
+    private func syncAppIconState() {
+        appIconManager.refreshCurrentIcon()
+        appState.appIconName = appIconManager.currentIcon.iconName
+    }
+
+    private func applyAppIcon(_ icon: AppIconManager.AppIcon) {
+        Task { @MainActor in
+            if appIconManager.currentIcon.id == icon.id {
+                return
+            }
+            do {
+                try await appIconManager.changeIcon(to: icon)
+                appState.appIconName = icon.iconName
+            } catch {
+                appIconErrorMessage = error.localizedDescription
+                showingAppIconError = true
+            }
+        }
     }
 
     #if os(iOS)
@@ -2646,6 +2822,7 @@ private struct SettingsCardRow<Trailing: View>: View {
     let icon: String
     let iconAssetName: String?
     let title: String
+    let titleTrailingSymbol: String?
     let subtitle: String
     let titleFontSize: CGFloat
     let rowVerticalPadding: CGFloat
@@ -2659,6 +2836,7 @@ private struct SettingsCardRow<Trailing: View>: View {
         icon: String,
         iconAssetName: String? = nil,
         title: String,
+        titleTrailingSymbol: String? = nil,
         subtitle: String,
         titleFontSize: CGFloat = 13,
         rowVerticalPadding: CGFloat = 16,
@@ -2670,6 +2848,7 @@ private struct SettingsCardRow<Trailing: View>: View {
         self.icon = icon
         self.iconAssetName = iconAssetName
         self.title = title
+        self.titleTrailingSymbol = titleTrailingSymbol
         self.subtitle = subtitle
         self.titleFontSize = titleFontSize
         self.rowVerticalPadding = rowVerticalPadding
@@ -2720,15 +2899,23 @@ private struct SettingsCardRow<Trailing: View>: View {
                     }
                 }
                 .foregroundStyle(iconAssetName == nil ? iconColor : customIconColor)
-                .frame(width: iconAssetName == nil ? 26 : 30, alignment: .center)
+                .frame(width: 26, alignment: .center)
 
                 if showsSubtitle {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(title)
-                            .font(resolvedTitleFont)
-                            .foregroundStyle(titleColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.84)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            Text(title)
+                                .font(resolvedTitleFont)
+                                .foregroundStyle(titleColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.84)
+
+                            if let titleTrailingSymbol {
+                                Image(systemName: titleTrailingSymbol)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(subtitleColor)
+                            }
+                        }
                         Text(subtitle)
                             .font(resolvedSubtitleFont)
                             .foregroundStyle(subtitleColor)
@@ -2736,11 +2923,19 @@ private struct SettingsCardRow<Trailing: View>: View {
                             .minimumScaleFactor(0.84)
                     }
                 } else {
-                    Text(title)
-                        .font(resolvedTitleFont)
-                        .foregroundStyle(titleColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.84)
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(resolvedTitleFont)
+                            .foregroundStyle(titleColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.84)
+
+                        if let titleTrailingSymbol {
+                            Image(systemName: titleTrailingSymbol)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(subtitleColor)
+                        }
+                    }
                 }
 
                 Spacer(minLength: 10)
@@ -3047,30 +3242,38 @@ private struct MemberUnlockPaywallView: View {
     }
 
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    @State private var selectedFeatureIndex = 0
     @State private var selectedPlan: MemberPlan = .monthly
     @State private var showingAllPlans = false
 
-    private let features: [MemberUnlockFeature] = [
-        MemberUnlockFeature(id: "app-icon", title: "App Icon", symbol: "app"),
-        MemberUnlockFeature(id: "widget", title: "Widget", symbol: "square.grid.2x2.fill")
-    ]
+    private var benefits: [MemberUnlockBenefit] {
+        [
+            MemberUnlockBenefit(
+                id: "natural-voice",
+                symbol: "waveform",
+                title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
+                subtitle: appState.localized("More natural spoken playback", "更自然的语音朗读", "और अधिक प्राकृतिक आवाज़ प्लेबैक")
+            ),
+            MemberUnlockBenefit(
+                id: "widget",
+                symbol: "square.grid.2x2.fill",
+                title: appState.localized("Widget", "小组件", "विजेट"),
+                subtitle: appState.localized("Quick access on your Home Screen", "主屏快速访问", "होम स्क्रीन पर त्वरित पहुंच")
+            ),
+            MemberUnlockBenefit(
+                id: "member-icon",
+                symbol: "app.badge.fill",
+                title: appState.localized("Member Icon", "会员图标", "सदस्य आइकन"),
+                subtitle: appState.localized("Unlock member-only app icon styles", "解锁会员专属图标样式", "केवल सदस्य आइकन शैली अनलॉक करें")
+            )
+        ]
+    }
     private let horizontalPadding: CGFloat = 24
     private var isDarkMode: Bool { colorScheme == .dark }
 
     private var backgroundColor: LinearGradient {
         AppColors.appBackgroundGradient(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-    private var cardBackgroundColor: Color {
-        isDarkMode
-            ? Color(red: 0.15, green: 0.16, blue: 0.20)
-            : Color(red: 0.93, green: 0.93, blue: 0.94)
-    }
-    private var insetBackgroundColor: Color {
-        isDarkMode
-            ? Color(red: 0.23, green: 0.24, blue: 0.28)
-            : Color(red: 0.875, green: 0.875, blue: 0.885)
     }
     private var strokeColor: Color {
         isDarkMode ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
@@ -3101,73 +3304,66 @@ private struct MemberUnlockPaywallView: View {
     private var planUnselectedIconColor: Color {
         isDarkMode ? Color.white.opacity(0.86) : Color.black.opacity(0.62)
     }
-    private var pageDotInactiveColor: Color {
-        isDarkMode ? Color.white.opacity(0.24) : Color.black.opacity(0.20)
-    }
     private var legalDotColor: Color {
         isDarkMode ? Color.white.opacity(0.30) : Color.black.opacity(0.32)
-    }
-    private var featureCardShadowColor: Color {
-        isDarkMode ? Color.black.opacity(0.30) : Color.black.opacity(0.03)
     }
 
     var body: some View {
         GeometryReader { proxy in
             let availableWidth = proxy.size.width - horizontalPadding * 2
             let maxContentWidth = availableWidth.isFinite ? min(max(availableWidth, 0), 430) : 0
-            let featureCardSide = min(maxContentWidth * 0.88, 320)
 
             ZStack {
                 backgroundColor
                     .ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    Spacer().frame(height: 8)
-                    featureSection(maxContentWidth: maxContentWidth, featureCardSide: featureCardSide)
-                    HStack(spacing: 7) {
-                        ForEach(features.indices, id: \.self) { index in
-                            Circle()
-                                .fill(index == selectedFeatureIndex ? primaryTextColor : pageDotInactiveColor)
-                                .frame(width: 7, height: 7)
-                        }
-                    }
-                    .padding(.vertical, 10)
+                    Spacer().frame(height: 18)
+                    benefitsSection(maxContentWidth: maxContentWidth)
+                    Spacer().frame(height: 12)
                     planAndCtaSection(maxContentWidth: maxContentWidth)
-                    Spacer().frame(height: 10)
-                    legalSection(bottomInset: max(14, proxy.safeAreaInsets.bottom + 2))
+                    Spacer().frame(height: 6)
+                    legalSection(bottomInset: max(4, proxy.safeAreaInsets.bottom - 8))
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func featureSection(maxContentWidth: CGFloat, featureCardSide: CGFloat) -> some View {
-        let scale: CGFloat = showingAllPlans ? 0.62 : 1.0
-        let visualSide = featureCardSide * scale
+    private func benefitsSection(maxContentWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(benefits.enumerated()), id: \.element.id) { index, benefit in
+                HStack(spacing: 14) {
+                    Image(systemName: benefit.symbol)
+                        .font(.system(size: 19, weight: .regular, design: .default))
+                        .foregroundStyle(primaryTextColor)
+                        .frame(width: 24)
 
-        HStack {
-            Spacer(minLength: 0)
-            TabView(selection: $selectedFeatureIndex) {
-                ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
-                    MemberUnlockFeatureCard(
-                        feature: feature,
-                        cardBackgroundColor: cardBackgroundColor,
-                        insetBackgroundColor: insetBackgroundColor,
-                        strokeColor: strokeColor,
-                        titleColor: primaryTextColor,
-                        shadowColor: featureCardShadowColor
-                    )
-                    .tag(index)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(benefit.title)
+                            .font(.system(size: 17, weight: .semibold, design: .default))
+                            .foregroundStyle(primaryTextColor)
+
+                        Text(benefit.subtitle)
+                            .font(.system(size: 13, weight: .regular, design: .default))
+                            .foregroundStyle(secondaryTextColor)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+
+                if index < benefits.count - 1 {
+                    Rectangle()
+                        .fill(strokeColor)
+                        .frame(height: 1)
+                        .padding(.leading, 38)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(width: featureCardSide, height: featureCardSide)
-            .scaleEffect(scale, anchor: .center)
-            .frame(width: featureCardSide * scale, height: visualSide)
-            .animation(.spring(response: 0.34, dampingFraction: 0.84), value: showingAllPlans)
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: maxContentWidth)
+        .padding(.horizontal, 6)
     }
 
     @ViewBuilder
@@ -3204,8 +3400,11 @@ private struct MemberUnlockPaywallView: View {
                 .font(.system(size: 13, weight: .regular, design: .default))
                 .foregroundStyle(secondaryTextColor)
 
-            Button(action: {}) {
-                Text("Continue")
+            Button {
+                appState.memberUnlocked = true
+                dismiss()
+            } label: {
+                Text(appState.memberUnlocked ? "Unlocked" : "Continue")
                     .font(.system(size: 17, weight: .semibold, design: .default))
                     .foregroundStyle(buttonTextColor)
                     .frame(maxWidth: .infinity)
@@ -3217,6 +3416,7 @@ private struct MemberUnlockPaywallView: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: maxContentWidth)
+            .disabled(appState.memberUnlocked)
 
         }
         .padding(.horizontal, horizontalPadding)
@@ -3307,53 +3507,9 @@ private struct MemberUnlockPaywallView: View {
     }
 }
 
-private struct MemberUnlockFeature: Identifiable {
+private struct MemberUnlockBenefit: Identifiable {
     let id: String
-    let title: String
     let symbol: String
-}
-
-private struct MemberUnlockFeatureCard: View {
-    let feature: MemberUnlockFeature
-    let cardBackgroundColor: Color
-    let insetBackgroundColor: Color
-    let strokeColor: Color
-    let titleColor: Color
-    let shadowColor: Color
-
-    private var symbolFontSize: CGFloat {
-        feature.id == "app-icon" ? 32 : 28
-    }
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 26, style: .continuous)
-            .fill(cardBackgroundColor)
-            .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(strokeColor, lineWidth: 1)
-            )
-            .overlay(
-                VStack(spacing: 16) {
-                    Spacer(minLength: 0)
-
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 17, style: .continuous)
-                            .fill(insetBackgroundColor)
-                            .frame(width: 96, height: 96)
-
-                        Image(systemName: feature.symbol)
-                            .font(.system(size: symbolFontSize, weight: feature.id == "app-icon" ? .regular : .semibold))
-                            .foregroundStyle(titleColor)
-                    }
-
-                    Text(feature.title)
-                        .font(.system(size: 20, weight: .semibold, design: .default))
-                        .foregroundStyle(titleColor)
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 24)
-            )
-            .shadow(color: shadowColor, radius: 2, x: 0, y: 1)
-    }
+    let title: String
+    let subtitle: String
 }

@@ -11,6 +11,7 @@ struct CheckInHeatmapView: View {
 
     private let calendar: Calendar
     private let today: Date
+    private let displayYear: Int
 
     private let cellSize: CGFloat = 15
     private let cellSpacing: CGFloat = 4
@@ -28,6 +29,7 @@ struct CheckInHeatmapView: View {
         self.today = configuredCalendar.startOfDay(for: referenceDate)
 
         let year = configuredCalendar.component(.year, from: self.today)
+        self.displayYear = year
 
         let startOfYear = configuredCalendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? self.today
         let endOfYear = configuredCalendar.date(from: DateComponents(year: year, month: 12, day: 31)) ?? self.today
@@ -263,7 +265,15 @@ struct CheckInHeatmapView: View {
         }
     }
 
-    private func dayCell(for date: Date) -> some View {
+    private func dayCell(for date: Date) -> AnyView {
+        let isInDisplayYear = calendar.component(.year, from: date) == displayYear
+        if !isInDisplayYear {
+            return AnyView(
+                Color.clear
+                    .frame(width: cellSize, height: cellSize)
+            )
+        }
+
         let isToday = calendar.isDate(date, inSameDayAs: today)
         let ratio = srsManager.masteryProgressRatio(for: date)
         let state = srsManager.studyState(for: date)
@@ -320,44 +330,46 @@ struct CheckInHeatmapView: View {
         let glowLayerColor = glowColor ?? .clear
         let showGlow = glowColor != nil
 
-        return RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(fillColor)
-            .frame(width: cellSize, height: cellSize)
-            .overlay {
-                if let glowColor {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(glowColor.opacity(0.88), lineWidth: 0.9)
-                        .blur(radius: 0.8)
-                }
-            }
-            .overlay(alignment: .center) {
-                if showTodayDot {
-                    ZStack {
-                        Circle()
-                            .fill(todayDotColor.opacity(colorScheme == .dark ? 0.34 : 0.28))
-                            .frame(width: 9.6, height: 9.6)
-                            .blur(radius: 1.2)
-                            .opacity(todayDotBlink ? 1.0 : 0.46)
-                            .scaleEffect(todayDotBlink ? 1.0 : 0.80)
-                        Circle()
-                            .fill(todayDotColor.opacity(colorScheme == .dark ? 0.50 : 0.38))
-                            .frame(width: 6.8, height: 6.8)
-                            .blur(radius: 0.45)
-                            .opacity(todayDotBlink ? 1.0 : 0.58)
-                            .scaleEffect(todayDotBlink ? 1.0 : 0.88)
-                        Circle()
-                            .fill(todayDotColor)
-                            .frame(width: 3.8, height: 3.8)
+        return AnyView(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(fillColor)
+                .frame(width: cellSize, height: cellSize)
+                .overlay {
+                    if let glowColor {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(glowColor.opacity(0.88), lineWidth: 0.9)
+                            .blur(radius: 0.8)
                     }
-                    .shadow(color: todayDotColor.opacity(colorScheme == .dark ? 0.38 : 0.26), radius: 2.8, x: 0, y: 0)
                 }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(todayBorderColor, lineWidth: showTodayBorder ? 1 : 0)
-            )
-            .shadow(color: showGlow ? glowLayerColor.opacity(0.58) : .clear, radius: showGlow ? 2.6 : 0, x: 0, y: 0)
-            .shadow(color: showGlow ? glowLayerColor.opacity(0.30) : .clear, radius: showGlow ? 6.2 : 0, x: 0, y: 0)
+                .overlay(alignment: .center) {
+                    if showTodayDot {
+                        ZStack {
+                            Circle()
+                                .fill(todayDotColor.opacity(colorScheme == .dark ? 0.34 : 0.28))
+                                .frame(width: 9.6, height: 9.6)
+                                .blur(radius: 1.2)
+                                .opacity(todayDotBlink ? 1.0 : 0.46)
+                                .scaleEffect(todayDotBlink ? 1.0 : 0.80)
+                            Circle()
+                                .fill(todayDotColor.opacity(colorScheme == .dark ? 0.50 : 0.38))
+                                .frame(width: 6.8, height: 6.8)
+                                .blur(radius: 0.45)
+                                .opacity(todayDotBlink ? 1.0 : 0.58)
+                                .scaleEffect(todayDotBlink ? 1.0 : 0.88)
+                            Circle()
+                                .fill(todayDotColor)
+                                .frame(width: 3.8, height: 3.8)
+                        }
+                        .shadow(color: todayDotColor.opacity(colorScheme == .dark ? 0.38 : 0.26), radius: 2.8, x: 0, y: 0)
+                    }
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(todayBorderColor, lineWidth: showTodayBorder ? 1 : 0)
+                )
+                .shadow(color: showGlow ? glowLayerColor.opacity(0.58) : .clear, radius: showGlow ? 2.6 : 0, x: 0, y: 0)
+                .shadow(color: showGlow ? glowLayerColor.opacity(0.30) : .clear, radius: showGlow ? 6.2 : 0, x: 0, y: 0)
+        )
     }
 
     private static let monthFormatter: DateFormatter = {

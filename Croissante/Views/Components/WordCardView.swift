@@ -145,11 +145,7 @@ struct WordCardView: View {
         let velocityThreshold: CGFloat = 800
         
         // 判断手势方向
-        if dragY < -swipeThreshold || velocityY < -velocityThreshold {
-            // 上滑 - 模糊
-            animateSwipeUp()
-            onMarkBlurry?(word.id)
-        } else if dragY > swipeThreshold || velocityY > velocityThreshold {
+        if dragY > swipeThreshold || velocityY > velocityThreshold {
             // 下滑 - 模糊
             animateSwipeDown()
             onMarkBlurry?(word.id)
@@ -170,14 +166,6 @@ struct WordCardView: View {
                 showMasteredLabel = false
                 showBlurryLabel = false
             }
-        }
-    }
-    
-    private func animateSwipeUp() {
-        let targetOffset = CGSize(width: 0, height: -400)
-        withAnimation(.easeOut(duration: 0.3)) {
-            dragOffset = targetOffset
-            showBlurryLabel = true
         }
     }
     
@@ -339,7 +327,7 @@ struct WordCardView: View {
                         // 显示相应的标签
                         showForgotLabel = value.translation.width < -50
                         showMasteredLabel = value.translation.width > 50
-                        showBlurryLabel = abs(value.translation.height) > 50
+                        showBlurryLabel = value.translation.height > 50
                     }
                     .onEnded { value in
                         handleDragEnd(value, availableWidth: max(geometry.size.width, 1))
@@ -371,17 +359,7 @@ struct WordCardView: View {
             }
             
             if showBlurryLabel && !isDragging {
-                if dragOffset.height < 0 {
-                    // 上滑模糊标签
-                    VStack {
-                        blurryLabel
-                            .rotationEffect(.degrees(-10))
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 36)
-                    .transition(.opacity)
-                } else {
+                if dragOffset.height > 0 {
                     // 下滑模糊标签
                     VStack {
                         Spacer()
