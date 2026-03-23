@@ -1183,6 +1183,7 @@ private struct SettingsScreen: View {
     @State private var showingTipOptions = false
     @State private var showingShareSheet = false
     @State private var showingMemberUnlock = false
+    @State private var memberPaywallShowingAllPlans = false
     @State private var showingAppIconPicker = false
     @State private var appIconErrorMessage: String?
     @State private var showingAppIconError = false
@@ -1209,12 +1210,6 @@ private struct SettingsScreen: View {
         ("sANWqF1bCMzR6eyZbCGw", "Marie")
     ]
     private let appIconTileSize: CGFloat = 68
-    private var appIconGridColumns: [GridItem] {
-        Array(
-            repeating: GridItem(.fixed(appIconTileSize), spacing: 64, alignment: .center),
-            count: 3
-        )
-    }
     private let developerContactEmail = "joey4wong@gmail.com"
     private var appShareMessage: String {
         appState.localized(
@@ -1318,8 +1313,10 @@ private struct SettingsScreen: View {
         colorScheme == .dark
     }
 
+    private let memberPaywallCollapsedDetentHeight: CGFloat = 508
+    private let memberPaywallExpandedDetentHeight: CGFloat = 618
     private var memberPaywallDetentHeight: CGFloat {
-        618
+        memberPaywallShowingAllPlans ? memberPaywallExpandedDetentHeight : memberPaywallCollapsedDetentHeight
     }
 
     private var avatarMetalRingGradient: [Color] {
@@ -1630,6 +1627,7 @@ private struct SettingsScreen: View {
                                     Text(levelLabels[i]).tag(i)
                                 }
                             }
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                         }
@@ -1655,6 +1653,7 @@ private struct SettingsScreen: View {
                                     Text(dailyCardLimitLabels[i]).tag(i)
                                 }
                             }
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                         }
@@ -1682,6 +1681,7 @@ private struct SettingsScreen: View {
                                         Text(option.name).tag(option.id)
                                     }
                                 }
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 .pickerStyle(.menu)
                                 .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                             } else {
@@ -1725,6 +1725,7 @@ private struct SettingsScreen: View {
                                     Text(languages[i]).tag(languageCodes[i])
                                 }
                             }
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                         }
@@ -1767,6 +1768,7 @@ private struct SettingsScreen: View {
                                     Text(themes[i]).tag(i)
                                 }
                             }
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                         }
@@ -1934,8 +1936,10 @@ private struct SettingsScreen: View {
         .onPreferenceChange(SettingsAvatarBottomPreferenceKey.self) { y in
             avatarBottomGlobalY = y
         }
-        .sheet(isPresented: $showingMemberUnlock) {
-            MemberUnlockPaywallView()
+        .sheet(isPresented: $showingMemberUnlock, onDismiss: {
+            memberPaywallShowingAllPlans = false
+        }) {
+            MemberUnlockPaywallView(showingAllPlans: $memberPaywallShowingAllPlans)
                 .environmentObject(appState)
             #if os(iOS)
                 .presentationDetents([.height(memberPaywallDetentHeight)])
@@ -2146,14 +2150,21 @@ private struct SettingsScreen: View {
                 .padding(.bottom, 12)
 
             GeometryReader { proxy in
+                let horizontalSpacing = max((proxy.size.width - appIconTileSize * 3) / 4, 0)
+                let columns = Array(
+                    repeating: GridItem(.fixed(appIconTileSize), spacing: horizontalSpacing, alignment: .center),
+                    count: 3
+                )
+
                 ScrollView(showsIndicators: false) {
-                    LazyVGrid(columns: appIconGridColumns, spacing: 22) {
+                    LazyVGrid(columns: columns, spacing: 22) {
                         ForEach(AppIconManager.AppIcon.allIcons) { icon in
                             appIconTile(icon)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
                     .frame(minHeight: proxy.size.height, alignment: .center)
+                    .padding(.horizontal, horizontalSpacing)
                     .padding(.vertical, 8)
                 }
             }
@@ -3244,8 +3255,8 @@ private struct MemberUnlockPaywallView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Binding var showingAllPlans: Bool
     @State private var selectedPlan: MemberPlan = .monthly
-    @State private var showingAllPlans = false
 
     private var benefits: [MemberUnlockBenefit] {
         [
@@ -3270,6 +3281,14 @@ private struct MemberUnlockPaywallView: View {
         ]
     }
     private let horizontalPadding: CGFloat = 24
+    private let planOptionRowHeight: CGFloat = 48
+    private let planOptionSpacing: CGFloat = 8
+    private let planOptionsAnimation = Animation.spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.12)
+    private var planOptionsExpandedHeight: CGFloat {
+        let count = CGFloat(MemberPlan.allCases.count)
+        let spacingCount = max(0, CGFloat(MemberPlan.allCases.count - 1))
+        return (count * planOptionRowHeight) + (spacingCount * planOptionSpacing)
+    }
     private var isDarkMode: Bool { colorScheme == .dark }
 
     private var backgroundColor: LinearGradient {
@@ -3370,9 +3389,11 @@ private struct MemberUnlockPaywallView: View {
     private func planAndCtaSection(maxContentWidth: CGFloat) -> some View {
         VStack(spacing: 14) {
             inlinePlanOptionsSection(maxContentWidth: maxContentWidth)
-                .frame(height: showingAllPlans ? nil : 0, alignment: .top)
+                .frame(maxHeight: showingAllPlans ? planOptionsExpandedHeight : 0, alignment: .top)
                 .clipped()
                 .opacity(showingAllPlans ? 1 : 0)
+                .scaleEffect(y: showingAllPlans ? 1 : 0.96, anchor: .top)
+                .allowsHitTesting(showingAllPlans)
 
             HStack(spacing: 12) {
                 Text(selectedPlan.priceText)
@@ -3383,8 +3404,9 @@ private struct MemberUnlockPaywallView: View {
 
                 Button(action: togglePlanOptions) {
                     HStack(spacing: 8) {
-                        Image(systemName: showingAllPlans ? "chevron.down" : "chevron.up")
+                        Image(systemName: "chevron.up")
                             .font(.system(size: 15, weight: .medium))
+                            .rotationEffect(.degrees(showingAllPlans ? 180 : 0))
                         Text(showingAllPlans ? "Hide all plans" : "Show all plans")
                             .font(.system(size: 15, weight: .regular, design: .default))
                     }
@@ -3420,16 +3442,16 @@ private struct MemberUnlockPaywallView: View {
 
         }
         .padding(.horizontal, horizontalPadding)
-        .animation(.easeInOut(duration: 0.25), value: showingAllPlans)
+        .animation(planOptionsAnimation, value: showingAllPlans)
     }
 
     @ViewBuilder
     private func inlinePlanOptionsSection(maxContentWidth: CGFloat) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: planOptionSpacing) {
             ForEach(MemberPlan.allCases) { plan in
                 Button {
                     selectedPlan = plan
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                    withAnimation(planOptionsAnimation) {
                         showingAllPlans = false
                     }
                 } label: {
@@ -3446,7 +3468,7 @@ private struct MemberUnlockPaywallView: View {
                     }
                     .padding(.horizontal, 18)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(height: planOptionRowHeight)
                     .background(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(.ultraThinMaterial)
@@ -3501,7 +3523,7 @@ private struct MemberUnlockPaywallView: View {
     }
 
     private func togglePlanOptions() {
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+        withAnimation(planOptionsAnimation) {
             showingAllPlans.toggle()
         }
     }

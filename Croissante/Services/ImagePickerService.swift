@@ -373,6 +373,7 @@ struct ImagePickerView: UIViewControllerRepresentable {
             parent.isPresented = false
         }
     }
+    
 }
 #endif
 
@@ -500,7 +501,7 @@ struct AvatarEditorView: View {
             Spacer(minLength: 0)
         }
             #if os(iOS)
-            .sheet(item: $activeImageSource) { source in
+            .fullScreenCover(item: $activeImageSource) { source in
                 ImagePickerView(
                     selectedImage: $avatarImage,
                     isPresented: Binding(
@@ -509,6 +510,7 @@ struct AvatarEditorView: View {
                     ),
                     sourceType: source == .camera ? .camera : .photoLibrary
                 )
+                .ignoresSafeArea()
             }
             #endif
             .alert(appState.localized("Error", "错误", "त्रुटि"), isPresented: $showError) {
