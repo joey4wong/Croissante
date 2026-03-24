@@ -1397,15 +1397,8 @@ private struct SettingsScreen: View {
     private let voiceOptions: [(id: String, name: String)] = [
         ("coral", "Coral"),
         ("alloy", "Alloy"),
-        ("ash", "Ash"),
-        ("ballad", "Ballad"),
         ("echo", "Echo"),
-        ("fable", "Fable"),
-        ("nova", "Nova"),
-        ("onyx", "Onyx"),
-        ("sage", "Sage"),
-        ("shimmer", "Shimmer"),
-        ("verse", "Verse")
+        ("shimmer", "Shimmer")
     ]
     private let appIconTileSize: CGFloat = 68
     private let developerContactEmail = "joey4wong@gmail.com"

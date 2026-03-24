@@ -11,7 +11,7 @@ public class OpenAITTSService {
     }
 
     private let supportedVoices: Set<String> = [
-        "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"
+        "coral", "alloy", "echo", "shimmer"
     ]
 
     private var selectedVoiceId: String {
@@ -24,6 +24,8 @@ public class OpenAITTSService {
     
     private let modelId = "gpt-4o-mini-tts"
     private let outputFormat = "mp3"
+    private let openAISpeechSpeed: Float = 1.15
+    private let ttsInstructions = "Parle uniquement en français. Si le texte contient une autre langue, lis-le avec une prononciation française."
     
     private let networkMonitor = NetworkMonitor.shared
     private let audioCache = AudioCacheManager.shared
@@ -130,6 +132,8 @@ public class OpenAITTSService {
             "model": modelId,
             "voice": voice,
             "input": text,
+            "speed": openAISpeechSpeed,
+            "instructions": ttsInstructions,
             "response_format": outputFormat
         ]
     }
@@ -158,7 +162,7 @@ public class OpenAITTSService {
     }
 
     private func cacheTextKey(for text: String) -> String {
-        "\(modelId)|\(voice)|\(text)"
+        "\(modelId)|\(voice)|\(openAISpeechSpeed)|\(ttsInstructions)|\(text)"
     }
     
     private func playAudio(from source: Any) async {

@@ -11,7 +11,7 @@ public enum ThemeMode: Int, Codable {
 @MainActor
 public final class AppState: ObservableObject {
     private static let supportedVoiceIds: Set<String> = [
-        "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"
+        "coral", "alloy", "echo", "shimmer"
     ]
 
     private enum Keys {
