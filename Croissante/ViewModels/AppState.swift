@@ -329,7 +329,7 @@ public final class AppState: ObservableObject {
         var byIdMap: [String: SimpleWord] = [:]
         
         for word in words {
-            let key = normalizeText(word.word)
+            let key = normalizeText(word.word.isEmpty ? word.displayWord : word.word)
             if !key.isEmpty {
                 siblingMap[key, default: []].append(word.id)
             }
@@ -343,24 +343,31 @@ public final class AppState: ObservableObject {
     public func getWordById(_ id: String) -> SimpleWord? {
         return wordByIdMap[id]
     }
+
+    public func getAllSenses(_ word: SimpleWord) -> [SimpleWord] {
+        let key = normalizeText(word.word.isEmpty ? word.displayWord : word.word)
+        let ids = wordSiblingMap[key] ?? []
+        return ids
+            .compactMap { wordByIdMap[$0] }
+            .sorted { lhs, rhs in
+                if lhs.senseIndex != rhs.senseIndex {
+                    return lhs.senseIndex < rhs.senseIndex
+                }
+                return lhs.id < rhs.id
+            }
+    }
     
     public func getSiblings(_ word: SimpleWord) -> [SimpleWord] {
-        let key = normalizeText(word.word)
-        let ids = wordSiblingMap[key] ?? []
-        return ids.compactMap { id in
-            guard id != word.id else { return nil }
-            return wordByIdMap[id]
-        }
+        getAllSenses(word).filter { $0.id != word.id }
     }
     
     public func hasMultipleEntries(_ word: SimpleWord) -> Bool {
-        let key = normalizeText(word.word)
-        return (wordSiblingMap[key]?.count ?? 0) > 1
+        getAllSenses(word).count > 1
     }
     
     public func isPolysemous(_ word: SimpleWord?) -> Bool {
         guard let word = word else { return false }
-        return hasMultipleEntries(word) || word.translationZh.contains("1.")
+        return hasMultipleEntries(word)
     }
     
     // MARK: - Learning Functions
@@ -440,7 +447,9 @@ public final class AppState: ObservableObject {
         
         let results = words.filter { word in
             let normalizedWord = normalizeText(word.word)
+            let normalizedDisplayWord = normalizeText(word.displayWord)
             return normalizedWord.contains(normalizedQuery) ||
+                normalizedDisplayWord.contains(normalizedQuery) ||
                 normalizeText(word.translationEn).contains(normalizedQuery) ||
                 normalizeText(word.translationZh).contains(normalizedQuery) ||
                 normalizeText(word.translationHi).contains(normalizedQuery) ||

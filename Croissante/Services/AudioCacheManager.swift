@@ -36,7 +36,7 @@ class AudioCacheManager {
     
     private init() {
         let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        cacheDirectory = cachesDirectory.appendingPathComponent("ElevenLabsAudio", isDirectory: true)
+        cacheDirectory = cachesDirectory.appendingPathComponent("TTSAudio", isDirectory: true)
         cacheInfoFile = cacheDirectory.appendingPathComponent("cacheInfo.json")
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         loadCacheInfo()

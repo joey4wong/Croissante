@@ -5,14 +5,34 @@ import AVFoundation
 public class ElevenLabsTTSService {
     static let shared = ElevenLabsTTSService()
     
-    private let apiKey = "sk_a08ac62ab0c95ca994e786a627d0c9353a169df960d900af"
-    
-    private var voiceId: String {
+    private var apiKey: String {
+        (Bundle.main.object(forInfoDictionaryKey: "OpenAIAPIKey") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private var selectedVoiceId: String {
         UserDefaults.standard.string(forKey: "selectedVoiceId") ?? "oziFLKtaxVDHQAh7o45V"
     }
     
-    private let modelId = "eleven_flash_v2_5"
-    private let outputFormat = "mp3_44100_192"
+    private var voice: String {
+        switch selectedVoiceId {
+        case "oziFLKtaxVDHQAh7o45V":
+            return "onyx"
+        case "F1toM6PcP54s45kOOAyV":
+            return "coral"
+        case "hqfrgApggtO1785R4Fsn":
+            return "sage"
+        case "sANWqF1bCMzR6eyZbCGw":
+            return "shimmer"
+        case "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse":
+            return selectedVoiceId
+        default:
+            return "coral"
+        }
+    }
+    
+    private let modelId = "gpt-4o-mini-tts"
+    private let outputFormat = "mp3"
     
     private let networkMonitor = NetworkMonitor.shared
     private let audioCache = AudioCacheManager.shared
@@ -37,7 +57,7 @@ public class ElevenLabsTTSService {
     }
     
     func speak(_ text: String, language: String = "fr-FR") async {
-        currentTask?.cancel()
+        stop()
         
         currentTask = Task { @MainActor in
             await performSpeak(text, language: language)
@@ -47,21 +67,12 @@ public class ElevenLabsTTSService {
     func stop() {
         currentTask?.cancel()
         currentTask = nil
-        
-        if isPlaying {
-            audioPlayer?.stop()
-            audioPlayer = nil
-            isPlaying = false
-        }
-
-        if systemSynthesizer.isSpeaking {
-            systemSynthesizer.stopSpeaking(at: .immediate)
-        }
-        
+        stopAudioPlayback()
+        stopSystemSpeech()
     }
     
     func isCurrentlySpeaking() -> Bool {
-        isPlaying
+        isPlaying || systemSynthesizer.isSpeaking
     }
     
     private func setupAudioSession() {
@@ -85,21 +96,27 @@ public class ElevenLabsTTSService {
             speakWithSystemTTS(trimmedText, language: language)
             return
         }
+        
+        guard !apiKey.isEmpty else {
+            speakWithSystemTTS(trimmedText, language: language)
+            return
+        }
 
         guard networkMonitor.isReachable else {
             speakWithSystemTTS(trimmedText, language: language)
             return
         }
 
-        if let cachedURL = audioCache.getCachedAudioURL(forText: trimmedText) {
+        let cacheText = cacheTextKey(for: trimmedText)
+        if let cachedURL = audioCache.getCachedAudioURL(forText: cacheText) {
             await playAudio(from: cachedURL)
             return
         }
         
         do {
-            let audioData = try await fetchAudioFromElevenLabs(trimmedText)
+            let audioData = try await fetchAudioFromOpenAI(trimmedText)
             
-            if let cachedURL = audioCache.cacheAudioData(audioData, forText: trimmedText) {
+            if let cachedURL = audioCache.cacheAudioData(audioData, forText: cacheText) {
                 await playAudio(from: cachedURL)
             } else {
                 await playAudio(from: audioData)
@@ -110,11 +127,7 @@ public class ElevenLabsTTSService {
     }
 
     private func speakWithSystemTTS(_ text: String, language: String) {
-        if isPlaying {
-            audioPlayer?.stop()
-            audioPlayer = nil
-            isPlaying = false
-        }
+        stopAudioPlayback()
 
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: language) ?? AVSpeechSynthesisVoice(language: "fr-FR")
@@ -123,25 +136,21 @@ public class ElevenLabsTTSService {
     
     private func makeRequestBody(for text: String) -> [String: Any] {
         [
-            "text": text,
-            "model_id": modelId,
-            "voice_settings": [
-                "stability": 0.5,
-                "similarity_boost": 0.75,
-                "style": 0.0,
-                "use_speaker_boost": true
-            ],
-            "output_format": outputFormat
+            "model": modelId,
+            "voice": voice,
+            "input": text,
+            "response_format": outputFormat
         ]
     }
     
-    private func fetchAudioFromElevenLabs(_ text: String) async throws -> Data {
-        let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceId)")!
+    private func fetchAudioFromOpenAI(_ text: String) async throws -> Data {
+        guard !apiKey.isEmpty else { throw TTSError.networkError }
+        let url = URL(string: "https://api.openai.com/v1/audio/speech")!
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: makeRequestBody(for: text))
         
         let (data, response) = try await urlSession.data(for: request)
@@ -151,57 +160,49 @@ public class ElevenLabsTTSService {
         }
         
         if httpResponse.statusCode != 200 {
-            if httpResponse.statusCode == 422,
-               let errorString = String(data: data, encoding: .utf8),
-               errorString.contains("quota_exceeded") || errorString.contains("credits") {
-                #if os(iOS)
-                NotificationCenter.default.post(name: Notification.Name("ElevenLabsQuotaExceeded"), object: nil)
-                #endif
-            }
             throw TTSError.apiError(statusCode: httpResponse.statusCode)
         }
         
         return data
     }
+
+    private func cacheTextKey(for text: String) -> String {
+        "\(modelId)|\(voice)|\(text)"
+    }
     
     private func playAudio(from source: Any) async {
         do {
-            let player: AVAudioPlayer
-            if let url = source as? URL {
-                player = try AVAudioPlayer(contentsOf: url)
-            } else if let data = source as? Data {
-                player = try AVAudioPlayer(data: data)
-            } else {
-                return
-            }
+            let player = try makeAudioPlayer(from: source)
             
             player.prepareToPlay()
             audioPlayer = player
             isPlaying = true
             player.play()
             
-            while player.isPlaying && !Task.isCancelled {
-                try await Task.sleep(nanoseconds: 100_000_000)
+            while player.isPlaying {
+                try Task.checkCancellation()
+                try await Task.sleep(nanoseconds: 50_000_000)
             }
-            
-            if !Task.isCancelled {
-                audioPlayer = nil
-                isPlaying = false
-            }
-        } catch {}
+        } catch is CancellationError {
+            stopAudioPlayback()
+        } catch {
+            stopAudioPlayback()
+        }
     }
     
     func preloadAudio(for texts: [String]) async {
         guard memberUnlocked else { return }
+        guard !apiKey.isEmpty else { return }
         for text in texts {
             let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedText.isEmpty else { continue }
-            guard !audioCache.hasCachedAudio(forText: trimmedText) else { continue }
+            let cacheText = cacheTextKey(for: trimmedText)
+            guard !audioCache.hasCachedAudio(forText: cacheText) else { continue }
             guard networkMonitor.isReachable else { break }
             
             do {
-                let audioData = try await fetchAudioFromElevenLabs(trimmedText)
-                _ = audioCache.cacheAudioData(audioData, forText: trimmedText)
+                let audioData = try await fetchAudioFromOpenAI(trimmedText)
+                _ = audioCache.cacheAudioData(audioData, forText: cacheText)
                 try await Task.sleep(nanoseconds: 100_000_000)
             } catch {}
         }
@@ -214,13 +215,33 @@ public class ElevenLabsTTSService {
     func getCacheStats() -> (size: Int64, count: Int) {
         (audioCache.getCacheSize(), audioCache.getCacheFileCount())
     }
+    
+    private func makeAudioPlayer(from source: Any) throws -> AVAudioPlayer {
+        if let url = source as? URL {
+            return try AVAudioPlayer(contentsOf: url)
+        }
+        if let data = source as? Data {
+            return try AVAudioPlayer(data: data)
+        }
+        throw TTSError.audioPlaybackError
+    }
+    
+    private func stopAudioPlayback() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        isPlaying = false
+    }
+    
+    private func stopSystemSpeech() {
+        guard systemSynthesizer.isSpeaking else { return }
+        systemSynthesizer.stopSpeaking(at: .immediate)
+    }
 }
 
 enum TTSError: Error {
     case networkError
     case apiError(statusCode: Int)
     case audioPlaybackError
-    case invalidText
 }
 
 extension ElevenLabsTTSService {

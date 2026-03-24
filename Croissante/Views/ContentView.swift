@@ -4,6 +4,7 @@ import StoreKit
 import WidgetKit
 #if os(iOS)
 import UIKit
+import CoreMotion
 #endif
 
 private enum MainTab: CaseIterable, Hashable {
@@ -195,13 +196,14 @@ private struct DiscoverScreen: View {
                     DiscoverCard(
                         word: word,
                         screenWidth: geo.size.width,
+                        cardHeight: geo.size.height * 0.35,
                         isActiveTab: isActiveTab,
                         onSwipeForgot: { onSwipeForgot(word.id) },
                         onSwipeMastered: { onSwipeMastered(word.id) },
                         onSwipeBlurry: { onSwipeBlurry(word.id) }
                     )
                     .frame(width: geo.size.width, height: geo.size.height)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2 + 12)
                 } else if shouldShowCompletionCelebration {
                     DeckCompletionCelebrationView(
                         showContinueInfiniteButton: srsManager.canStartInfinitePractice,
@@ -536,6 +538,7 @@ private struct PartyPopperSymbolView: View {
 private struct DiscoverCard: View {
     let word: SimpleWord
     let screenWidth: CGFloat
+    let cardHeight: CGFloat?
     let isActiveTab: Bool
     let resetTransformAfterSwipe: Bool
     let allowsBlurrySwipe: Bool
@@ -551,10 +554,14 @@ private struct DiscoverCard: View {
     @State private var dragRotation: Angle = .zero
     @State private var isSwipeCompleting = false
     @State private var pendingSpeechTask: Task<Void, Never>?
+    @State private var displayedWord: SimpleWord
+    @State private var allSenses: [SimpleWord] = []
+    @State private var currentSensePosition: Int = 0
 
     init(
         word: SimpleWord,
         screenWidth: CGFloat,
+        cardHeight: CGFloat? = nil,
         isActiveTab: Bool,
         resetTransformAfterSwipe: Bool = true,
         allowsBlurrySwipe: Bool = true,
@@ -566,6 +573,7 @@ private struct DiscoverCard: View {
     ) {
         self.word = word
         self.screenWidth = screenWidth
+        self.cardHeight = cardHeight
         self.isActiveTab = isActiveTab
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
         self.allowsBlurrySwipe = allowsBlurrySwipe
@@ -574,6 +582,7 @@ private struct DiscoverCard: View {
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
         self.onSwipeBlurry = onSwipeBlurry
+        _displayedWord = State(initialValue: word)
     }
 
     private let swipeThreshold: CGFloat = 100
@@ -628,9 +637,76 @@ private struct DiscoverCard: View {
     private var exampleTranslationColor: Color {
         isDarkMode ? AppColors.nocturneTextTertiary : Color.black.opacity(0.48)
     }
-
+    private var titleBaseFontSize: CGFloat {
+        let count = displayedWord.displayWord.count
+        if count >= 24 { return 42 }
+        if count >= 20 { return 46 }
+        if count >= 16 { return 50 }
+        return 56
+    }
+    private enum NounCornerTone {
+        case green
+        case red
+        case lavender
+    }
+    private var nounFlags: Set<String> {
+        Set(displayedWord.nounUIFlags)
+    }
+    private var nounEntityType: String {
+        displayedWord.nounUIEntityType
+    }
+    private var isNounCard: Bool {
+        let normalizedTag = displayedWord.tag
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard normalizedTag == "n" || normalizedTag.hasPrefix("n.") else { return false }
+        return nounEntityType.isEmpty || nounEntityType.contains("name") || nounEntityType.contains("entity")
+    }
+    private var nounCornerTone: NounCornerTone? {
+        guard isNounCard else { return nil }
+        if nounFlags.contains("common_gender") || nounFlags.contains("proper_noun_like") {
+            return .lavender
+        }
+        switch displayedWord.nounUICorner {
+        case "green":
+            return .green
+        case "red":
+            return .red
+        case "dual", "neutral":
+            return .lavender
+        case "not_applicable":
+            return nil
+        default:
+            return nil
+        }
+    }
+    private var nounCornerColor: Color {
+        guard let tone = nounCornerTone else { return .clear }
+        switch tone {
+        case .green:
+            return isDarkMode ? Color(red: 0.45, green: 0.81, blue: 0.66) : Color(red: 0.43, green: 0.77, blue: 0.62)
+        case .red:
+            return isDarkMode ? Color(red: 0.83, green: 0.51, blue: 0.54) : Color(red: 0.86, green: 0.49, blue: 0.51)
+        case .lavender:
+            return isDarkMode ? Color(red: 0.72, green: 0.66, blue: 0.88) : Color(red: 0.71, green: 0.62, blue: 0.88)
+        }
+    }
+    @ViewBuilder
+    private var nounCornerBadge: some View {
+        if nounCornerTone != nil {
+            NounCornerAccentShape()
+                .stroke(
+                    nounCornerColor.opacity(isDarkMode ? 0.96 : 0.92),
+                    style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+                )
+                .frame(width: 84, height: 72)
+                .padding(.top, 8)
+                .padding(.trailing, 8)
+                .allowsHitTesting(false)
+        }
+    }
     private func speakWord() {
-        let trimmedWord = word.word.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedWord = displayedWord.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedWord.isEmpty else { return }
         
         ElevenLabsTTSService.stopPlayback()
@@ -638,7 +714,7 @@ private struct DiscoverCard: View {
     }
 
     private func speakExampleSentence() {
-        let trimmedExample = word.exampleFr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedExample = displayedWord.exampleFr.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedExample.isEmpty else { return }
 
         ElevenLabsTTSService.stopPlayback()
@@ -665,6 +741,43 @@ private struct DiscoverCard: View {
             guard !Task.isCancelled else { return }
             guard isActiveTab, appState.autoPlay else { return }
             speakWord()
+        }
+    }
+
+    private var hasMultipleSenses: Bool {
+        allSenses.count > 1
+    }
+
+    private func refreshSenses(using source: SimpleWord) {
+        let senses = appState.getAllSenses(source)
+        if senses.isEmpty {
+            allSenses = [source]
+            displayedWord = source
+            currentSensePosition = 0
+            return
+        }
+
+        allSenses = senses
+        if let selected = senses.firstIndex(where: { $0.id == displayedWord.id }) {
+            currentSensePosition = selected
+            displayedWord = senses[selected]
+            return
+        }
+        if let initial = senses.firstIndex(where: { $0.id == source.id }) {
+            currentSensePosition = initial
+            displayedWord = senses[initial]
+            return
+        }
+        currentSensePosition = 0
+        displayedWord = senses[0]
+    }
+
+    private func showNextSense() {
+        guard hasMultipleSenses else { return }
+        let next = (currentSensePosition + 1) % allSenses.count
+        withAnimation(.easeInOut(duration: 0.18)) {
+            currentSensePosition = next
+            displayedWord = allSenses[next]
         }
     }
 
@@ -755,6 +868,14 @@ private struct DiscoverCard: View {
                 .padding(.horizontal, 26)
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .top)
+                .overlay(alignment: .bottomTrailing) {
+                    bottomMetaBar
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 12)
+                }
+                .overlay(alignment: .topTrailing) {
+                    nounCornerBadge
+                }
                 .background(cardSurfaceColor, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -815,6 +936,7 @@ private struct DiscoverCard: View {
                     }
                 }
                 .onChange(of: word.id) { _, _ in
+                    refreshSenses(using: word)
                     if isActiveTab && appState.autoPlay {
                         scheduleAutoPlay()
                     }
@@ -824,6 +946,7 @@ private struct DiscoverCard: View {
                 }
                 .onAppear {
                     FeedbackService.prepareInteractive()
+                    refreshSenses(using: word)
                     if isActiveTab && appState.autoPlay {
                         scheduleAutoPlay()
                     }
@@ -833,95 +956,163 @@ private struct DiscoverCard: View {
 
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(word.level.uppercased())
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(levelTextColor)
-                .padding(.bottom, 16)
-
-            HStack(alignment: .center, spacing: 8) {
-                Spacer(minLength: 0)
-                Text(word.word)
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    Text(displayedWord.level.uppercased())
+                    if !displayedWord.auxiliary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(displayedWord.auxiliary)
+                    }
+                }
+                Text(displayedWord.displayWord)
+                    .font(.system(size: titleBaseFontSize, weight: .bold, design: .rounded))
                     .tracking(0.2)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.68)
+                    .minimumScaleFactor(0.42)
+                    .allowsTightening(true)
                     .foregroundStyle(headlineTextColor)
-                Button {
-                    cancelScheduledSpeech()
-                    speakWord()
-                } label: {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(secondaryTextColor)
-                        .padding(.top, 4)
-                }
-                .buttonStyle(.plain)
-                Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.bottom, 22)
             }
-            .padding(.bottom, 22)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(levelTextColor)
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                cancelScheduledSpeech()
+                speakWord()
+            }
 
             Rectangle()
                 .fill(dividerColor)
                 .frame(height: 1)
                 .padding(.bottom, 20)
 
-            HStack(alignment: .top, spacing: 10) {
-                Text(posLabel(word.tag))
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundStyle(secondaryTextColor)
-                    .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 10) {
+                    Text(posLabel(displayedWord.tag))
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(secondaryTextColor)
+                        .padding(.top, 1)
 
-                Text(appState.translationText(for: word))
-                    .font(.system(size: 16, weight: .regular, design: .default))
-                    .lineSpacing(5)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(bodyTextColor)
-            }
-            .multilineTextAlignment(.leading)
+                    Text(appState.translationText(for: displayedWord))
+                        .font(.system(size: 16, weight: .regular, design: .default))
+                        .lineSpacing(5)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(bodyTextColor)
+                }
+                .multilineTextAlignment(.leading)
 
-            let translatedExample = appState.translatedExampleText(for: word)
-            if !word.exampleFr.isEmpty || !translatedExample.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    if !word.exampleFr.isEmpty {
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(word.exampleFr)
+                let translatedExample = appState.translatedExampleText(for: displayedWord)
+                if !displayedWord.exampleFr.isEmpty || !translatedExample.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if !displayedWord.exampleFr.isEmpty {
+                            Text(displayedWord.exampleFr)
+                                .foregroundStyle(exampleTextColor)
                                 .font(.system(size: 16, weight: .regular, design: .default))
                                 .multilineTextAlignment(.leading)
                                 .lineSpacing(3)
                                 .lineLimit(nil)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .foregroundStyle(exampleTextColor)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Button {
-                                cancelScheduledSpeech()
-                                speakExampleSentence()
-                            } label: {
-                                Image(systemName: "speaker.wave.2.fill")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(secondaryTextColor)
-                                    .padding(.top, 2)
-                            }
-                            .buttonStyle(.plain)
+                        }
+                        if !translatedExample.isEmpty {
+                            Text(translatedExample)
+                                .font(.system(size: 15, weight: .regular, design: .default))
+                                .multilineTextAlignment(.leading)
+                                .lineSpacing(2)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(exampleTranslationColor)
                         }
                     }
-                    if !translatedExample.isEmpty {
-                        Text(translatedExample)
-                            .font(.system(size: 15, weight: .regular, design: .default))
-                            .multilineTextAlignment(.leading)
-                            .lineSpacing(2)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(exampleTranslationColor)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 18)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 18)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                cancelScheduledSpeech()
+                speakExampleSentence()
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
     }
+
+    @ViewBuilder
+    private var bottomMetaBar: some View {
+        if hasMultipleSenses {
+            Button(action: showNextSense) {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("\(displayedWord.senseIndex)/\(allSenses.count)")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(secondaryTextColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(isDarkMode ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct NounCornerAccentShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let leg: CGFloat = min(rect.width, rect.height) * 0.30
+        let inset: CGFloat = 8
+        let radius: CGFloat = 9
+        let maxX = rect.maxX - inset
+        let minY = rect.minY + inset
+
+        var path = Path()
+        path.move(to: CGPoint(x: maxX - leg, y: minY))
+        path.addLine(to: CGPoint(x: maxX - radius, y: minY))
+        path.addArc(
+            center: CGPoint(x: maxX - radius, y: minY + radius),
+            radius: radius,
+            startAngle: .degrees(-90),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: maxX, y: minY + leg))
+        return path
+    }
+}
+
+#Preview("Noun Corner Badge") {
+    DiscoverCard(
+        word: SimpleWord(
+            id: "preview_noun_corner",
+            word: "paléontologue",
+            tag: "N",
+            level: "B2",
+            translationZh: "古生物学家",
+            translationEn: "paleontologist",
+            exampleFr: "Le paleontologue etudie les fossiles.",
+            exampleZh: "古生物学家研究化石。",
+            displayWord: "un paléontologue",
+            nounUICorner: "red",
+            nounUIFlags: [],
+            nounUIEntityType: "named_entity"
+        ),
+        screenWidth: 390,
+        cardHeight: 320,
+        isActiveTab: true,
+        onSwipeForgot: {},
+        onSwipeMastered: {},
+        onSwipeBlurry: {}
+    )
+    .padding(.horizontal, 20)
+    .frame(width: 430, height: 420)
+    .environmentObject(AppState())
 }
 
 private struct ProgressScreen: View {
@@ -1195,9 +1386,9 @@ private struct SettingsScreen: View {
     @State private var avatarLoadTask: Task<Void, Never>?
     #endif
 
-    private let levels = ["All", "A1", "A2", "B1", "B2", "C1"]
+    private let levels = ["All", "A1", "A2", "B1", "B2", "C1", "C2"]
     private var levelLabels: [String] {
-        [appState.localized("All", "全部", "सभी"), "A1", "A2", "B1", "B2", "C1"]
+        [appState.localized("All", "全部", "सभी"), "A1", "A2", "B1", "B2", "C1", "C2"]
     }
     private let languageCodes = ["en", "zh", "hi"]
     private var languages: [String] { ["English", "中文", "हिन्दी"] }
@@ -2149,6 +2340,24 @@ private struct SettingsScreen: View {
                 .padding(.top, 8)
                 .padding(.bottom, 12)
 
+            #if os(iOS)
+            let physicsPickerMinHeight = appIconTileSize * 3 + 22 * 2 + 16
+            GeometryReader { proxy in
+                AppIconPhysicsPicker(
+                    icons: AppIconManager.AppIcon.allIcons,
+                    currentIconID: appIconManager.currentIcon.id,
+                    memberUnlocked: appState.memberUnlocked,
+                    isDarkMode: isDarkMode,
+                    isApplying: appIconManager.changingIcon,
+                    tileSize: appIconTileSize,
+                    onTapIcon: handleAppIconSelection
+                )
+                .frame(width: proxy.size.width, height: max(proxy.size.height, physicsPickerMinHeight))
+            }
+            .frame(maxWidth: .infinity, minHeight: physicsPickerMinHeight, maxHeight: .infinity, alignment: .center)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+            #else
             GeometryReader { proxy in
                 let horizontalSpacing = max((proxy.size.width - appIconTileSize * 3) / 4, 0)
                 let columns = Array(
@@ -2168,7 +2377,22 @@ private struct SettingsScreen: View {
                     .padding(.vertical, 8)
                 }
             }
+            #endif
         }
+    }
+
+    private func handleAppIconSelection(_ icon: AppIconManager.AppIcon) {
+        let isMemberIcon = !AppIconManager.AppIcon.freeIconIDs.contains(icon.id)
+        let isLocked = isMemberIcon && !appState.memberUnlocked
+
+        showingAppIconPicker = false
+
+        if isLocked {
+            presentMemberUnlockAfterClosingIconPicker()
+            return
+        }
+
+        applyAppIcon(icon)
     }
 
     private func appIconTile(_ icon: AppIconManager.AppIcon) -> some View {
@@ -2181,14 +2405,7 @@ private struct SettingsScreen: View {
         let borderWidth = isSelected ? 1.5 : 1.0
 
         return Button {
-            showingAppIconPicker = false
-
-            if isLocked {
-                presentMemberUnlockAfterClosingIconPicker()
-                return
-            }
-
-            applyAppIcon(icon)
+            handleAppIconSelection(icon)
         } label: {
             Image(icon.previewAssetName)
                 .resizable()
@@ -2252,6 +2469,387 @@ private struct SettingsScreen: View {
     }
     #endif
 }
+
+#if os(iOS)
+private struct AppIconPhysicsPicker: UIViewRepresentable {
+    let icons: [AppIconManager.AppIcon]
+    let currentIconID: String
+    let memberUnlocked: Bool
+    let isDarkMode: Bool
+    let isApplying: Bool
+    let tileSize: CGFloat
+    let onTapIcon: (AppIconManager.AppIcon) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> AppIconPhysicsContainerView {
+        let view = AppIconPhysicsContainerView()
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: AppIconPhysicsContainerView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.applyCurrentState(animated: true)
+    }
+
+    final class Coordinator: NSObject, UICollisionBehaviorDelegate {
+        var parent: AppIconPhysicsPicker
+        weak var container: AppIconPhysicsContainerView?
+        private var animator: UIDynamicAnimator?
+        private let gravityBehavior = UIGravityBehavior()
+        private let collisionBehavior = UICollisionBehavior()
+        private let itemBehavior = UIDynamicItemBehavior()
+        private let motionManager = CMMotionManager()
+        private var tilesByID: [String: AppIconPhysicsTileView] = [:]
+        private var orderedIDs: [String] = []
+        private var didPlaceInitialGrid = false
+        private var lastContainerBoundsSize: CGSize = .zero
+        private var lastCollisionSoundTime: CFTimeInterval = 0
+        private let collisionVelocityThreshold: CGFloat = 140
+        private let collisionSoundCooldown: CFTimeInterval = 0.14
+
+        init(parent: AppIconPhysicsPicker) {
+            self.parent = parent
+        }
+
+        func attach(to container: AppIconPhysicsContainerView) {
+            self.container = container
+            container.coordinator = self
+            container.clipsToBounds = true
+            container.backgroundColor = .clear
+            setupAnimatorIfNeeded(referenceView: container)
+            applyCurrentState(animated: false)
+            startMotionUpdatesIfNeeded()
+            FeedbackService.prepareInteractive()
+        }
+
+        func applyCurrentState(animated: Bool) {
+            guard let container else { return }
+            syncTiles(in: container)
+            updateTileStates()
+
+            if !didPlaceInitialGrid {
+                placeTilesInGrid(animated: false)
+                didPlaceInitialGrid = true
+            } else if animated {
+                keepTilesInsideBounds()
+            }
+        }
+
+        func containerDidLayout() {
+            guard let container else { return }
+            let bounds = container.bounds
+            guard bounds.width > 0, bounds.height > 0 else { return }
+
+            let sizeChanged = bounds.size != lastContainerBoundsSize
+            lastContainerBoundsSize = bounds.size
+            collisionBehavior.setTranslatesReferenceBoundsIntoBoundary(with: .zero)
+            if !didPlaceInitialGrid || sizeChanged {
+                placeTilesInGrid(animated: false)
+                didPlaceInitialGrid = true
+            } else {
+                keepTilesInsideBounds()
+            }
+        }
+
+        func stopMotionUpdates() {
+            motionManager.stopDeviceMotionUpdates()
+        }
+
+        private func setupAnimatorIfNeeded(referenceView: UIView) {
+            guard animator == nil else { return }
+            let animator = UIDynamicAnimator(referenceView: referenceView)
+
+            gravityBehavior.magnitude = 1.25
+            collisionBehavior.translatesReferenceBoundsIntoBoundary = true
+            collisionBehavior.collisionDelegate = self
+
+            itemBehavior.elasticity = 0.83
+            itemBehavior.friction = 0.06
+            itemBehavior.resistance = 0.08
+            itemBehavior.angularResistance = 0.18
+            itemBehavior.allowsRotation = true
+            itemBehavior.density = 0.78
+
+            animator.addBehavior(gravityBehavior)
+            animator.addBehavior(collisionBehavior)
+            animator.addBehavior(itemBehavior)
+            self.animator = animator
+        }
+
+        private func syncTiles(in container: UIView) {
+            let newOrderedIDs = parent.icons.map(\.id)
+            let newIDSet = Set(newOrderedIDs)
+
+            for (id, tile) in tilesByID where !newIDSet.contains(id) {
+                gravityBehavior.removeItem(tile)
+                collisionBehavior.removeItem(tile)
+                itemBehavior.removeItem(tile)
+                tile.removeFromSuperview()
+                tilesByID.removeValue(forKey: id)
+            }
+
+            for icon in parent.icons {
+                if let tile = tilesByID[icon.id] {
+                    tile.updateIcon(icon)
+                    continue
+                }
+
+                let tile = AppIconPhysicsTileView(icon: icon, tileSize: parent.tileSize)
+                tile.addTarget(self, action: #selector(handleTileTap(_:)), for: .touchUpInside)
+                container.addSubview(tile)
+                tilesByID[icon.id] = tile
+                gravityBehavior.addItem(tile)
+                collisionBehavior.addItem(tile)
+                itemBehavior.addItem(tile)
+            }
+
+            orderedIDs = newOrderedIDs
+        }
+
+        private func updateTileStates() {
+            for icon in parent.icons {
+                guard let tile = tilesByID[icon.id] else { continue }
+                let isSelected = parent.currentIconID == icon.id
+                let isMemberIcon = !AppIconManager.AppIcon.freeIconIDs.contains(icon.id)
+                let isLocked = isMemberIcon && !parent.memberUnlocked
+                let isDisabled = parent.isApplying || (!isLocked && isSelected)
+
+                tile.applyState(
+                    isSelected: isSelected,
+                    isLocked: isLocked,
+                    isDarkMode: parent.isDarkMode,
+                    isDisabled: isDisabled
+                )
+                tile.isUserInteractionEnabled = !isDisabled
+            }
+        }
+
+        private func placeTilesInGrid(animated: Bool) {
+            guard let container else { return }
+
+            let width = container.bounds.width
+            let height = container.bounds.height
+            guard width > 0, height > 0 else { return }
+
+            let tileSize = parent.tileSize
+            let columns = 3
+            let rows = Int(ceil(Double(max(orderedIDs.count, 1)) / Double(columns)))
+            let horizontalSpacing = max((width - (tileSize * CGFloat(columns))) / CGFloat(columns + 1), 0)
+            let verticalSpacing: CGFloat = 22
+            let totalHeight = (tileSize * CGFloat(rows)) + (verticalSpacing * CGFloat(max(rows - 1, 0)))
+            let originY = max((height - totalHeight) / 2, 8)
+
+            let updates = {
+                for (index, id) in self.orderedIDs.enumerated() {
+                    guard let tile = self.tilesByID[id] else { continue }
+                    let row = index / columns
+                    let col = index % columns
+                    let x = horizontalSpacing + (tileSize / 2) + CGFloat(col) * (tileSize + horizontalSpacing)
+                    let y = originY + (tileSize / 2) + CGFloat(row) * (tileSize + verticalSpacing)
+                    tile.center = CGPoint(x: x, y: y)
+                    self.animator?.updateItem(usingCurrentState: tile)
+                }
+            }
+
+            if animated {
+                UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                    updates()
+                }
+            } else {
+                updates()
+            }
+        }
+
+        private func keepTilesInsideBounds() {
+            guard let container else { return }
+            let bounds = container.bounds
+            guard bounds.width > 0, bounds.height > 0 else { return }
+
+            let halfSize = parent.tileSize / 2
+            for id in orderedIDs {
+                guard let tile = tilesByID[id] else { continue }
+                var center = tile.center
+                center.x = min(max(center.x, halfSize), bounds.width - halfSize)
+                center.y = min(max(center.y, halfSize), bounds.height - halfSize)
+                if center != tile.center {
+                    tile.center = center
+                    animator?.updateItem(usingCurrentState: tile)
+                }
+            }
+        }
+
+        private func startMotionUpdatesIfNeeded() {
+            guard motionManager.isDeviceMotionAvailable else { return }
+            guard !motionManager.isDeviceMotionActive else { return }
+
+            motionManager.deviceMotionUpdateInterval = 1.0 / 45.0
+            motionManager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
+                guard let self, let motion else { return }
+                self.updateGravity(with: motion.gravity)
+            }
+        }
+
+        private func updateGravity(with gravity: CMAcceleration) {
+            var dx = gravity.x
+            var dy = -gravity.y
+
+            if let orientation = container?.window?.windowScene?.effectiveGeometry.interfaceOrientation {
+                switch orientation {
+                case .portrait:
+                    dx = gravity.x
+                    dy = -gravity.y
+                case .portraitUpsideDown:
+                    dx = -gravity.x
+                    dy = gravity.y
+                case .landscapeLeft:
+                    dx = gravity.y
+                    dy = gravity.x
+                case .landscapeRight:
+                    dx = -gravity.y
+                    dy = -gravity.x
+                default:
+                    break
+                }
+            }
+
+            gravityBehavior.gravityDirection = CGVector(dx: dx, dy: dy)
+        }
+
+        @objc
+        private func handleTileTap(_ sender: AppIconPhysicsTileView) {
+            parent.onTapIcon(sender.icon)
+        }
+
+        func collisionBehavior(
+            _ behavior: UICollisionBehavior,
+            beganContactFor item1: UIDynamicItem,
+            with item2: UIDynamicItem,
+            at p: CGPoint
+        ) {
+            emitCollisionSoundIfNeeded(item1: item1, item2: item2)
+        }
+
+        func collisionBehavior(
+            _ behavior: UICollisionBehavior,
+            beganContactFor item: UIDynamicItem,
+            withBoundaryIdentifier identifier: NSCopying?,
+            at p: CGPoint
+        ) {
+            emitCollisionSoundIfNeeded(item1: item, item2: nil)
+        }
+
+        private func emitCollisionSoundIfNeeded(item1: UIDynamicItem, item2: UIDynamicItem?) {
+            let now = CFAbsoluteTimeGetCurrent()
+            guard now - lastCollisionSoundTime >= collisionSoundCooldown else { return }
+
+            let v1 = itemBehavior.linearVelocity(for: item1)
+            let velocityMagnitude: CGFloat
+            if let item2 {
+                let v2 = itemBehavior.linearVelocity(for: item2)
+                velocityMagnitude = hypot(v1.x - v2.x, v1.y - v2.y)
+            } else {
+                velocityMagnitude = hypot(v1.x, v1.y)
+            }
+
+            guard velocityMagnitude >= collisionVelocityThreshold else { return }
+
+            lastCollisionSoundTime = now
+            FeedbackService.gearTick()
+        }
+    }
+}
+
+private final class AppIconPhysicsContainerView: UIView {
+    weak var coordinator: AppIconPhysicsPicker.Coordinator?
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil {
+            coordinator?.stopMotionUpdates()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        coordinator?.containerDidLayout()
+    }
+}
+
+private final class AppIconPhysicsTileView: UIControl {
+    private(set) var icon: AppIconManager.AppIcon
+    private let imageView = UIImageView()
+    private let lockBadgeView = UIView()
+    private let lockImageView = UIImageView()
+    private let cornerRadius: CGFloat = 20
+
+    init(icon: AppIconManager.AppIcon, tileSize: CGFloat) {
+        self.icon = icon
+        super.init(frame: CGRect(origin: .zero, size: CGSize(width: tileSize, height: tileSize)))
+
+        imageView.image = UIImage(named: icon.previewAssetName)
+        imageView.contentMode = .scaleAspectFill
+        imageView.frame = bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        imageView.layer.cornerRadius = cornerRadius
+        imageView.layer.masksToBounds = true
+        addSubview(imageView)
+
+        layer.cornerRadius = cornerRadius
+        layer.borderWidth = 1
+        layer.masksToBounds = true
+
+        lockImageView.image = UIImage(systemName: "lock.fill")
+        lockImageView.contentMode = .scaleAspectFit
+        lockBadgeView.addSubview(lockImageView)
+        addSubview(lockBadgeView)
+
+        isExclusiveTouch = true
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let badgeSize: CGFloat = 22
+        let inset: CGFloat = 6
+        lockBadgeView.frame = CGRect(
+            x: bounds.width - badgeSize - inset,
+            y: inset,
+            width: badgeSize,
+            height: badgeSize
+        )
+        lockBadgeView.layer.cornerRadius = badgeSize / 2
+        lockImageView.frame = lockBadgeView.bounds.insetBy(dx: 5, dy: 5)
+    }
+
+    func updateIcon(_ icon: AppIconManager.AppIcon) {
+        guard self.icon.id != icon.id || self.icon.previewAssetName != icon.previewAssetName else { return }
+        self.icon = icon
+        imageView.image = UIImage(named: icon.previewAssetName)
+    }
+
+    func applyState(isSelected: Bool, isLocked: Bool, isDarkMode: Bool, isDisabled: Bool) {
+        if isSelected {
+            layer.borderColor = (isDarkMode ? UIColor.white.withAlphaComponent(0.60) : UIColor.black.withAlphaComponent(0.35)).cgColor
+            layer.borderWidth = 1.5
+        } else {
+            layer.borderColor = (isDarkMode ? UIColor.white.withAlphaComponent(0.16) : UIColor.black.withAlphaComponent(0.10)).cgColor
+            layer.borderWidth = 1.0
+        }
+
+        alpha = (isDisabled && !isSelected) ? 0.6 : 1.0
+        lockBadgeView.isHidden = !isLocked
+        lockBadgeView.backgroundColor = isDarkMode ? UIColor.black.withAlphaComponent(0.68) : UIColor.white.withAlphaComponent(0.90)
+        lockImageView.tintColor = isDarkMode ? UIColor.white.withAlphaComponent(0.92) : UIColor.black.withAlphaComponent(0.86)
+    }
+}
+#endif
 
 private struct FAQItem: Identifiable {
     let id: String
