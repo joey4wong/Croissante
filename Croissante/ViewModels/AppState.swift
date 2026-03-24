@@ -10,6 +10,10 @@ public enum ThemeMode: Int, Codable {
 
 @MainActor
 public final class AppState: ObservableObject {
+    private static let supportedVoiceIds: Set<String> = [
+        "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"
+    ]
+
     private enum Keys {
         static let themeMode = "themeMode"
         static let level = "level"
@@ -57,8 +61,14 @@ public final class AppState: ObservableObject {
     @Published public var avatarPath: String = "" {
         didSet { saveAvatarPath() }
     }
-    @Published public var selectedVoiceId: String = "oziFLKtaxVDHQAh7o45V" {
+    @Published public var selectedVoiceId: String = "coral" {
         didSet {
+            if !Self.supportedVoiceIds.contains(selectedVoiceId) {
+                if selectedVoiceId != "coral" {
+                    selectedVoiceId = "coral"
+                }
+                return
+            }
             saveSelectedVoiceId()
             AudioCacheManager.shared.clearCache()
         }

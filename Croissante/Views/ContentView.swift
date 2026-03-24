@@ -709,16 +709,16 @@ private struct DiscoverCard: View {
         let trimmedWord = displayedWord.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedWord.isEmpty else { return }
         
-        ElevenLabsTTSService.stopPlayback()
-        ElevenLabsTTSService.speakText(trimmedWord, language: "fr-FR")
+        OpenAITTSService.stopPlayback()
+        OpenAITTSService.speakText(trimmedWord, language: "fr-FR")
     }
 
     private func speakExampleSentence() {
         let trimmedExample = displayedWord.exampleFr.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedExample.isEmpty else { return }
 
-        ElevenLabsTTSService.stopPlayback()
-        ElevenLabsTTSService.speakText(trimmedExample, language: "fr-FR")
+        OpenAITTSService.stopPlayback()
+        OpenAITTSService.speakText(trimmedExample, language: "fr-FR")
     }
 
     private func cancelScheduledSpeech() {
@@ -728,7 +728,7 @@ private struct DiscoverCard: View {
 
     private func stopSpeechPlayback() {
         cancelScheduledSpeech()
-        ElevenLabsTTSService.stopPlayback()
+        OpenAITTSService.stopPlayback()
     }
 
     private func scheduleAutoPlay(delay: TimeInterval = 0.32) {
@@ -1395,10 +1395,17 @@ private struct SettingsScreen: View {
     private let dailyCardLimits = [5, 10, 15, 20, 50]
     private var dailyCardLimitLabels: [String] { dailyCardLimits.map(String.init) }
     private let voiceOptions: [(id: String, name: String)] = [
-        ("oziFLKtaxVDHQAh7o45V", "Frederic"),
-        ("F1toM6PcP54s45kOOAyV", "Koraly"),
-        ("hqfrgApggtO1785R4Fsn", "Theodore"),
-        ("sANWqF1bCMzR6eyZbCGw", "Marie")
+        ("coral", "Coral"),
+        ("alloy", "Alloy"),
+        ("ash", "Ash"),
+        ("ballad", "Ballad"),
+        ("echo", "Echo"),
+        ("fable", "Fable"),
+        ("nova", "Nova"),
+        ("onyx", "Onyx"),
+        ("sage", "Sage"),
+        ("shimmer", "Shimmer"),
+        ("verse", "Verse")
     ]
     private let appIconTileSize: CGFloat = 68
     private let developerContactEmail = "joey4wong@gmail.com"
@@ -2141,7 +2148,7 @@ private struct SettingsScreen: View {
             appIconPickerSheet
                 .environmentObject(appState)
             #if os(iOS)
-                .presentationDetents([.height(370), .large])
+                .presentationDetents([.height(370)])
                 .presentationDragIndicator(.visible)
             #endif
         }
@@ -2505,7 +2512,7 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
         private let motionManager = CMMotionManager()
         private var tilesByID: [String: AppIconPhysicsTileView] = [:]
         private var orderedIDs: [String] = []
-        private var didPlaceInitialGrid = false
+        private var didPlaceInitialDrop = false
         private var lastContainerBoundsSize: CGSize = .zero
         private var lastCollisionSoundTime: CFTimeInterval = 0
         private let collisionVelocityThreshold: CGFloat = 140
@@ -2531,9 +2538,8 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             syncTiles(in: container)
             updateTileStates()
 
-            if !didPlaceInitialGrid {
-                placeTilesInGrid(animated: false)
-                didPlaceInitialGrid = true
+            if !didPlaceInitialDrop {
+                didPlaceInitialDrop = placeTilesAtTop()
             } else if animated {
                 keepTilesInsideBounds()
             }
@@ -2547,9 +2553,10 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             let sizeChanged = bounds.size != lastContainerBoundsSize
             lastContainerBoundsSize = bounds.size
             collisionBehavior.setTranslatesReferenceBoundsIntoBoundary(with: .zero)
-            if !didPlaceInitialGrid || sizeChanged {
-                placeTilesInGrid(animated: false)
-                didPlaceInitialGrid = true
+            if !didPlaceInitialDrop {
+                didPlaceInitialDrop = placeTilesAtTop()
+            } else if sizeChanged {
+                keepTilesInsideBounds()
             } else {
                 keepTilesInsideBounds()
             }
@@ -2628,40 +2635,39 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             }
         }
 
-        private func placeTilesInGrid(animated: Bool) {
-            guard let container else { return }
+        @discardableResult
+        private func placeTilesAtTop() -> Bool {
+            guard let container else { return false }
 
             let width = container.bounds.width
             let height = container.bounds.height
-            guard width > 0, height > 0 else { return }
+            guard width > 0, height > 0 else { return false }
 
             let tileSize = parent.tileSize
-            let columns = 3
-            let rows = Int(ceil(Double(max(orderedIDs.count, 1)) / Double(columns)))
-            let horizontalSpacing = max((width - (tileSize * CGFloat(columns))) / CGFloat(columns + 1), 0)
-            let verticalSpacing: CGFloat = 22
-            let totalHeight = (tileSize * CGFloat(rows)) + (verticalSpacing * CGFloat(max(rows - 1, 0)))
-            let originY = max((height - totalHeight) / 2, 8)
+            let halfSize = tileSize / 2
+            let spawnY = -halfSize
+            let centerX = width / 2
+            let spreadStep = min(tileSize * 0.22, 16)
+            let middleIndex = CGFloat(max(orderedIDs.count - 1, 0)) / 2
 
-            let updates = {
-                for (index, id) in self.orderedIDs.enumerated() {
-                    guard let tile = self.tilesByID[id] else { continue }
-                    let row = index / columns
-                    let col = index % columns
-                    let x = horizontalSpacing + (tileSize / 2) + CGFloat(col) * (tileSize + horizontalSpacing)
-                    let y = originY + (tileSize / 2) + CGFloat(row) * (tileSize + verticalSpacing)
-                    tile.center = CGPoint(x: x, y: y)
-                    self.animator?.updateItem(usingCurrentState: tile)
-                }
+            for (index, id) in orderedIDs.enumerated() {
+                guard let tile = tilesByID[id] else { continue }
+                let x = centerX + (CGFloat(index) - middleIndex) * spreadStep
+                let clampedX = min(max(x, halfSize), width - halfSize)
+                tile.center = CGPoint(x: clampedX, y: spawnY)
+
+                let linearVelocity = itemBehavior.linearVelocity(for: tile)
+                itemBehavior.addLinearVelocity(
+                    CGPoint(x: -linearVelocity.x, y: -linearVelocity.y),
+                    for: tile
+                )
+                let angularVelocity = itemBehavior.angularVelocity(for: tile)
+                itemBehavior.addAngularVelocity(-angularVelocity, for: tile)
+
+                animator?.updateItem(usingCurrentState: tile)
             }
 
-            if animated {
-                UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-                    updates()
-                }
-            } else {
-                updates()
-            }
+            return true
         }
 
         private func keepTilesInsideBounds() {
@@ -3599,8 +3605,8 @@ private struct SettingsActionButtonsRow: View {
 
     private var actionColor: Color {
         colorScheme == .dark
-            ? Color(red: 0.15, green: 0.63, blue: 1.00)
-            : Color(red: 0.02, green: 0.48, blue: 1.00)
+            ? Color(red: 0.64, green: 0.64, blue: 0.66)
+            : Color(red: 0.52, green: 0.52, blue: 0.54)
     }
 
     private var dividerColor: Color {

@@ -126,8 +126,8 @@ struct WordCardView: View {
     
     // 发音功能
     private func speakWord() {
-        ElevenLabsTTSService.stopPlayback()
-        ElevenLabsTTSService.speakText(word.word, language: "fr-FR")
+        OpenAITTSService.stopPlayback()
+        OpenAITTSService.speakText(word.word, language: "fr-FR")
     }
     
     // 手势处理

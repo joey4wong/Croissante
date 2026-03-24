@@ -2,33 +2,24 @@ import Foundation
 import AVFoundation
 
 @MainActor
-public class ElevenLabsTTSService {
-    static let shared = ElevenLabsTTSService()
+public class OpenAITTSService {
+    static let shared = OpenAITTSService()
     
     private var apiKey: String {
         (Bundle.main.object(forInfoDictionaryKey: "OpenAIAPIKey") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    private let supportedVoices: Set<String> = [
+        "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"
+    ]
+
     private var selectedVoiceId: String {
-        UserDefaults.standard.string(forKey: "selectedVoiceId") ?? "oziFLKtaxVDHQAh7o45V"
+        UserDefaults.standard.string(forKey: "selectedVoiceId") ?? "coral"
     }
     
     private var voice: String {
-        switch selectedVoiceId {
-        case "oziFLKtaxVDHQAh7o45V":
-            return "onyx"
-        case "F1toM6PcP54s45kOOAyV":
-            return "coral"
-        case "hqfrgApggtO1785R4Fsn":
-            return "sage"
-        case "sANWqF1bCMzR6eyZbCGw":
-            return "shimmer"
-        case "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse":
-            return selectedVoiceId
-        default:
-            return "coral"
-        }
+        supportedVoices.contains(selectedVoiceId) ? selectedVoiceId : "coral"
     }
     
     private let modelId = "gpt-4o-mini-tts"
@@ -244,7 +235,7 @@ enum TTSError: Error {
     case audioPlaybackError
 }
 
-extension ElevenLabsTTSService {
+extension OpenAITTSService {
     @MainActor
     static func speakText(_ text: String, language: String = "fr-FR") {
         Task {
