@@ -19,16 +19,6 @@ final class SpotlightService {
         CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { _ in }
     }
     
-    func updateWords(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]], spotlightEnabled: Bool) {
-        guard spotlightEnabled else { return }
-        indexItemsInChunks(makeSearchableItems(words, conjugationFormsByLemma: conjugationFormsByLemma))
-    }
-    
-    func deleteWords(_ wordIds: [String]) {
-        let identifiers = wordIds.map { "word_\($0)" }
-        CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: identifiers) { _ in }
-    }
-    
     func handleUserActivity(_ userActivity: NSUserActivity) -> String? {
         guard userActivity.activityType == CSSearchableItemActionType,
               let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
@@ -53,7 +43,7 @@ final class SpotlightService {
     private func makeSearchableItem(for word: SimpleWord, conjugationFormsByLemma: [String: [String]]) -> CSSearchableItem {
         let uniqueIdentifier = "word_\(word.id)"
         let description = word.translationEn.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lemma = word.word.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let lemma = SearchTextNormalizer.normalize(word.word)
         let forms = conjugationFormsByLemma[lemma] ?? []
         let formsText = forms.isEmpty ? "" : " • \(forms.prefix(12).joined(separator: " "))"
 

@@ -9,8 +9,13 @@ final class ICloudSyncService {
     }
 
     private let ubiquitousStore = NSUbiquitousKeyValueStore.default
+    private let maxPayloadBytes = 900_000
+    private let pushDebounceNanoseconds: UInt64 = 900_000_000
     private var externalChangeObserver: NSObjectProtocol?
     private var remotePayloadHandler: ((Data) -> Void)?
+    private var pendingPushTask: Task<Void, Never>?
+    private var lastQueuedPayloadFingerprint: Int?
+    private var lastPushedPayloadFingerprint: Int?
     private(set) var isEnabled = false
 
     private init() {}
@@ -32,6 +37,9 @@ final class ICloudSyncService {
             }
         } else {
             stopObserving()
+            pendingPushTask?.cancel()
+            pendingPushTask = nil
+            lastQueuedPayloadFingerprint = nil
         }
     }
 
@@ -47,8 +55,22 @@ final class ICloudSyncService {
 
     func push(payload: Data) {
         guard isEnabled else { return }
-        ubiquitousStore.set(payload, forKey: Keys.learningPayload)
-        ubiquitousStore.synchronize()
+        guard payload.count <= maxPayloadBytes else { return }
+
+        let fingerprint = payload.hashValue
+        if lastQueuedPayloadFingerprint == fingerprint || lastPushedPayloadFingerprint == fingerprint {
+            return
+        }
+
+        lastQueuedPayloadFingerprint = fingerprint
+        pendingPushTask?.cancel()
+
+        let delay = pushDebounceNanoseconds
+        pendingPushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            await self?.commitPush(payload: payload, fingerprint: fingerprint)
+        }
     }
 
     private func startObserving() {
@@ -77,6 +99,19 @@ final class ICloudSyncService {
     private func handleExternalChange() {
         guard isEnabled else { return }
         guard let payload = payloadData() else { return }
+        if payload.hashValue == lastPushedPayloadFingerprint {
+            return
+        }
         remotePayloadHandler?(payload)
+    }
+
+    private func commitPush(payload: Data, fingerprint: Int) {
+        pendingPushTask = nil
+        guard isEnabled else { return }
+        guard payload.count <= maxPayloadBytes else { return }
+        ubiquitousStore.set(payload, forKey: Keys.learningPayload)
+        ubiquitousStore.synchronize()
+        lastQueuedPayloadFingerprint = nil
+        lastPushedPayloadFingerprint = fingerprint
     }
 }

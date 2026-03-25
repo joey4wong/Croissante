@@ -26,7 +26,7 @@
 		B1000000000000000000001F /* SearchSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011F /* SearchSheetView.swift */; };
 		B10000000000000000000021 /* WordCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000121 /* WordCardView.swift */; };
 		B10000000000000000000022 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000122 /* ContentView.swift */; };
-		B10000000000000000000031 /* words_test_500.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000123 /* words_test_500.json */; };
+		B10000000000000000000031 /* Croisssante-Words.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000123 /* Croisssante-Words.json */; };
 		B10000000000000000000032 /* conjugation.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000124 /* conjugation.json */; };
 		B10000000000000000000033 /* croissante_dev_icon.png in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000125 /* croissante_dev_icon.png */; };
 		B10000000000000000000034 /* AudioCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000126 /* AudioCacheManager.swift */; };
@@ -83,7 +83,7 @@
 		B1000000000000000000011F /* SearchSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSheetView.swift; sourceTree = "<group>"; };
 		B10000000000000000000121 /* WordCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordCardView.swift; sourceTree = "<group>"; };
 		B10000000000000000000122 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		B10000000000000000000123 /* words_test_500.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = words_test_500.json; sourceTree = "<group>"; };
+		B10000000000000000000123 /* Croisssante-Words.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Croisssante-Words.json"; sourceTree = "<group>"; };
 		B10000000000000000000124 /* conjugation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = conjugation.json; sourceTree = "<group>"; };
 		B10000000000000000000125 /* croissante_dev_icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = croissante_dev_icon.png; sourceTree = "<group>"; };
 		B10000000000000000000126 /* AudioCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheManager.swift; sourceTree = "<group>"; };
@@ -157,7 +157,7 @@
 				B10000000000000000000205 /* ViewModels */,
 				B10000000000000000000206 /* Views */,
 				B10000000000000000000124 /* conjugation.json */,
-				B10000000000000000000123 /* words_test_500.json */,
+				B10000000000000000000123 /* Croisssante-Words.json */,
 				B10000000000000000000208 /* Resources */,
 			);
 			path = Croissante;
@@ -331,7 +331,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000012 /* Assets.xcassets in Resources */,
-				B10000000000000000000031 /* words_test_500.json in Resources */,
+				B10000000000000000000031 /* Croisssante-Words.json in Resources */,
 				B10000000000000000000032 /* conjugation.json in Resources */,
 				B10000000000000000000033 /* croissante_dev_icon.png in Resources */,
 			);
@@ -484,6 +484,7 @@
 				);
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
@@ -559,6 +560,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;

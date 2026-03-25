@@ -9,12 +9,6 @@ enum SearchPresentationStyle {
 }
 
 struct SearchSheetView: View {
-    private struct IndexedWord {
-        let word: SimpleWord
-        let normalizedWord: String
-        let normalizedExamples: String
-    }
-
     @Binding var isPresented: Bool
     @State private var searchQuery = ""
     @State private var searchResults: [SimpleWord] = []
@@ -23,11 +17,8 @@ struct SearchSheetView: View {
     @FocusState private var isSearchFieldFocused: Bool
     @AppStorage("search_recent_word_ids") private var recentWordIDsStorage: String = ""
     
-    let allWords: [SimpleWord]
     private let wordById: [String: SimpleWord]
-    private let wordByNormalizedText: [String: SimpleWord]
-    private let normalizedConjugationMap: [String: String]
-    private let indexedWords: [IndexedWord]
+    private let searchIndex: WordSearchIndex
     let presentationStyle: SearchPresentationStyle
     var onWordSelected: ((SimpleWord) -> Void)?
     
@@ -69,35 +60,14 @@ struct SearchSheetView: View {
         isPresented: Binding<Bool>,
         allWords: [SimpleWord],
         conjugationMap: [String: String] = [:],
+        searchIndex: WordSearchIndex? = nil,
         presentationStyle: SearchPresentationStyle = .sheet,
         onWordSelected: ((SimpleWord) -> Void)? = nil
     ) {
         self._isPresented = isPresented
-        self.allWords = allWords
         self.presentationStyle = presentationStyle
         self.wordById = Dictionary(uniqueKeysWithValues: allWords.map { ($0.id, $0) })
-
-        var normalizedWordLookup: [String: SimpleWord] = [:]
-        for word in allWords where normalizedWordLookup[Self.normalize(word.word)] == nil {
-            normalizedWordLookup[Self.normalize(word.word)] = word
-        }
-        self.wordByNormalizedText = normalizedWordLookup
-
-        var normalizedConjugations: [String: String] = [:]
-        for (form, root) in conjugationMap {
-            normalizedConjugations[Self.normalize(form)] = Self.normalize(root)
-        }
-        self.normalizedConjugationMap = normalizedConjugations
-        self.indexedWords = allWords.map { word in
-            IndexedWord(
-                word: word,
-                normalizedWord: Self.normalize(word.word),
-                normalizedExamples: Self.normalize(
-                    "\(word.exampleFr) \(word.exampleEn) \(word.exampleZh) \(word.exampleHi)"
-                )
-            )
-        }
-
+        self.searchIndex = searchIndex ?? WordSearchIndex.build(words: allWords, conjugationMap: conjugationMap)
         self.onWordSelected = onWordSelected
     }
     
@@ -162,9 +132,9 @@ struct SearchSheetView: View {
                 allowsBlurrySwipe: true,
                 dismissOnTap: true,
                 onDismiss: { selectedWordForCard = nil },
-                onSwipeForgot: { srsManager.markWordForgot(word.id) },
-                onSwipeMastered: { srsManager.markWordMastered(word.id) },
-                onSwipeBlurry: { srsManager.markWordBlurry(word.id) }
+                onSwipeForgot: { srsManager.markWordForgot($0) },
+                onSwipeMastered: { srsManager.markWordMastered($0) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0) }
             )
         }
         #else
@@ -175,9 +145,9 @@ struct SearchSheetView: View {
                 allowsBlurrySwipe: true,
                 dismissOnTap: true,
                 onDismiss: { selectedWordForCard = nil },
-                onSwipeForgot: { srsManager.markWordForgot(word.id) },
-                onSwipeMastered: { srsManager.markWordMastered(word.id) },
-                onSwipeBlurry: { srsManager.markWordBlurry(word.id) }
+                onSwipeForgot: { srsManager.markWordForgot($0) },
+                onSwipeMastered: { srsManager.markWordMastered($0) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0) }
             )
         }
         #endif
@@ -487,9 +457,9 @@ struct SearchSheetView: View {
         }
 
         var scored: [(word: SimpleWord, score: Int)] = []
-        scored.reserveCapacity(indexedWords.count)
+        scored.reserveCapacity(searchIndex.indexedWords.count)
 
-        for indexed in indexedWords {
+        for indexed in searchIndex.indexedWords {
             let word = indexed.word
             let french = indexed.normalizedWord
             let examples = indexed.normalizedExamples
@@ -520,8 +490,7 @@ struct SearchSheetView: View {
 
         var finalResults = sorted
 
-        if let normalizedRoot = normalizedConjugationMap[query],
-           let bridgeWord = wordByNormalizedText[normalizedRoot] {
+        for bridgeWord in searchIndex.bridgeWords(for: rawQuery).reversed() {
             finalResults.removeAll { $0.id == bridgeWord.id }
             finalResults.insert(bridgeWord, at: 0)
         }
@@ -539,14 +508,7 @@ struct SearchSheetView: View {
     }
 
     private func normalizeSearchText(_ text: String) -> String {
-        Self.normalize(text)
-    }
-
-    private static func normalize(_ text: String) -> String {
-        text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
+        SearchTextNormalizer.normalize(text)
     }
 }
 

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - SimpleWord Model
 
-public struct SimpleWord: Identifiable, Codable {
+public struct SimpleWord: Identifiable, Codable, Sendable {
     public let id: String
     public let word: String
     public let displayWord: String

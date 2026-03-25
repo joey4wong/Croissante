@@ -8,14 +8,156 @@ public enum ThemeMode: Int, Codable {
     case graphite = 4
 }
 
+public enum CardFontStyle: String, Codable {
+    case sfPro
+    case sfRounded
+    case avenirNext
+}
+
+enum SearchTextNormalizer {
+    static func normalize(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    static func normalizeExact(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+fileprivate struct ConjugationData: Sendable {
+    static let empty = ConjugationData(
+        map: [:],
+        formsByLemma: [:],
+        exactLemmasByForm: [:],
+        normalizedLemmasByForm: [:]
+    )
+
+    let map: [String: String]
+    let formsByLemma: [String: [String]]
+    let exactLemmasByForm: [String: [String]]
+    let normalizedLemmasByForm: [String: [String]]
+
+    static func build(from map: [String: String]) -> ConjugationData {
+        var formsByLemma: [String: Set<String>] = [:]
+        var exactLemmasByForm: [String: Set<String>] = [:]
+        var normalizedLemmasByForm: [String: Set<String>] = [:]
+
+        for (form, lemma) in map {
+            let exactForm = SearchTextNormalizer.normalizeExact(form)
+            let normalizedForm = SearchTextNormalizer.normalize(form)
+            let normalizedLemma = SearchTextNormalizer.normalize(lemma)
+            guard !exactForm.isEmpty, !normalizedForm.isEmpty, !normalizedLemma.isEmpty else { continue }
+            formsByLemma[normalizedLemma, default: []].insert(exactForm)
+            exactLemmasByForm[exactForm, default: []].insert(normalizedLemma)
+            normalizedLemmasByForm[normalizedForm, default: []].insert(normalizedLemma)
+        }
+
+        return ConjugationData(
+            map: map,
+            formsByLemma: formsByLemma.mapValues { Array($0).sorted() },
+            exactLemmasByForm: exactLemmasByForm.mapValues { Array($0).sorted() },
+            normalizedLemmasByForm: normalizedLemmasByForm.mapValues { Array($0).sorted() }
+        )
+    }
+}
+
+struct SearchIndexedWord: Sendable {
+    let word: SimpleWord
+    let normalizedWord: String
+    let normalizedExamples: String
+}
+
+struct WordSearchIndex: Sendable {
+    static let empty = WordSearchIndex(
+        indexedWords: [],
+        exactConjugationLemmasByForm: [:],
+        normalizedConjugationLemmasByForm: [:],
+        wordsByNormalizedLemma: [:]
+    )
+
+    let indexedWords: [SearchIndexedWord]
+    let exactConjugationLemmasByForm: [String: [String]]
+    let normalizedConjugationLemmasByForm: [String: [String]]
+    let wordsByNormalizedLemma: [String: [SimpleWord]]
+
+    static func build(words: [SimpleWord], conjugationMap: [String: String]) -> WordSearchIndex {
+        build(words: words, conjugationData: ConjugationData.build(from: conjugationMap))
+    }
+
+    fileprivate static func build(words: [SimpleWord], conjugationData: ConjugationData) -> WordSearchIndex {
+        var wordsByNormalizedLemma: [String: [SimpleWord]] = [:]
+        var indexedWords: [SearchIndexedWord] = []
+        indexedWords.reserveCapacity(words.count)
+
+        for word in words {
+            let lemmaSource = word.word.isEmpty ? word.displayWord : word.word
+            let normalizedLemma = SearchTextNormalizer.normalize(lemmaSource)
+            if !normalizedLemma.isEmpty {
+                wordsByNormalizedLemma[normalizedLemma, default: []].append(word)
+            }
+            indexedWords.append(
+                SearchIndexedWord(
+                    word: word,
+                    normalizedWord: normalizedLemma,
+                    normalizedExamples: SearchTextNormalizer.normalize(
+                        "\(word.exampleFr) \(word.exampleEn) \(word.exampleZh) \(word.exampleHi)"
+                    )
+                )
+            )
+        }
+
+        return WordSearchIndex(
+            indexedWords: indexedWords,
+            exactConjugationLemmasByForm: conjugationData.exactLemmasByForm,
+            normalizedConjugationLemmasByForm: conjugationData.normalizedLemmasByForm,
+            wordsByNormalizedLemma: wordsByNormalizedLemma
+        )
+    }
+
+    func bridgeWords(for query: String) -> [SimpleWord] {
+        let exactQuery = SearchTextNormalizer.normalizeExact(query)
+        let normalizedQuery = SearchTextNormalizer.normalize(query)
+        guard !normalizedQuery.isEmpty else { return [] }
+
+        var orderedLemmas: [String] = []
+        var seenLemmas: Set<String> = []
+        for lemma in (exactConjugationLemmasByForm[exactQuery] ?? []) + (normalizedConjugationLemmasByForm[normalizedQuery] ?? []) {
+            if seenLemmas.insert(lemma).inserted {
+                orderedLemmas.append(lemma)
+            }
+        }
+
+        var matchedWords: [SimpleWord] = []
+        var seenWordIDs: Set<String> = []
+        for lemma in orderedLemmas {
+            for word in wordsByNormalizedLemma[lemma] ?? [] where seenWordIDs.insert(word.id).inserted {
+                matchedWords.append(word)
+            }
+        }
+        return matchedWords
+    }
+}
+
+fileprivate struct LoadedResources: Sendable {
+    let words: [SimpleWord]
+    let conjugationData: ConjugationData
+}
+
 @MainActor
 public final class AppState: ObservableObject {
     private static let supportedVoiceIds: Set<String> = [
         "coral", "alloy", "echo", "shimmer"
     ]
+    private static let supportedLevels: Set<String> = [
+        "All", "A1", "A2", "B1", "B2", "C1", "C2"
+    ]
 
     private enum Keys {
         static let themeMode = "themeMode"
+        static let cardFontStyle = "cardFontStyle"
         static let level = "level"
         static let language = "language"
         static let autoPlay = "autoPlay"
@@ -24,21 +166,30 @@ public final class AppState: ObservableObject {
         static let appIconName = "appIconName"
         static let memberUnlocked = "memberUnlocked"
         static let avatarPath = "avatarPath"
-        static let masteredWords = "masteredWords"
-        static let learningQueueIds = "learningQueueIds"
         static let selectedVoiceId = "selectedVoiceId"
     }
 
     @Published public var words: [SimpleWord] = []
     @Published public var spotlightSelectedWordId: String?
-    @Published public var conjugationMap: [String: String] = [:]
     @Published public var conjugationFormsByLemma: [String: [String]] = [:]
+    @Published var wordSearchIndex: WordSearchIndex = .empty
+    @Published public private(set) var hasCompletedInitialResourceLoad: Bool = false
     
     @Published public var themeMode: ThemeMode = .system {
         didSet { saveThemeMode() }
     }
+    @Published public var cardFontStyle: CardFontStyle = .sfPro {
+        didSet { saveCardFontStyle() }
+    }
     @Published public var level: String = "All" {
-        didSet { saveLevel() }
+        didSet {
+            let canonical = Self.canonicalLevel(level)
+            if canonical != level {
+                level = canonical
+                return
+            }
+            saveLevel()
+        }
     }
     @Published public var language: String = "en" {
         didSet { saveLanguage() }
@@ -74,17 +225,9 @@ public final class AppState: ObservableObject {
         }
     }
     
-    @Published public var masteredWords: Set<String> = [] {
-        didSet { saveMasteredWords() }
-    }
-    @Published public var learningQueueIds: Set<String> = []
-    
-    @Published public var searchQuery: String = ""
-    @Published public var searchResults: [SimpleWord] = []
-    
     private var wordByIdMap: [String: SimpleWord] = [:]
     private var wordSiblingMap: [String: [String]] = [:]
-    private var normalizedConjugationMap: [String: String] = [:]
+    private var conjugationData: ConjugationData = .empty
     
     private let userDefaults = UserDefaults.standard
     private let fallbackWords: [SimpleWord] = [
@@ -132,10 +275,18 @@ public final class AppState: ObservableObject {
     
     public init() {
         loadUserPreferences()
-        loadWords()
-        loadConjugationData()
-        if spotlightEnabled {
-            SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma, spotlightEnabled: true)
+        words = fallbackWords
+        buildWordLinks(words)
+        rebuildSearchIndex()
+
+        let bundlePath = resourceBundlePath
+        Task { [bundlePath, fallbackWords = fallbackWords] in
+            let resources = await Self.loadResources(bundlePath: bundlePath, fallbackWords: fallbackWords)
+            applyLoadedResources(resources)
+            hasCompletedInitialResourceLoad = true
+            if spotlightEnabled {
+                SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma, spotlightEnabled: true)
+            }
         }
     }
 
@@ -189,10 +340,15 @@ public final class AppState: ObservableObject {
            let mode = ThemeMode(rawValue: rawValue) {
             themeMode = mode
         }
+
+        if let savedCardFontStyle = userDefaults.string(forKey: Keys.cardFontStyle),
+           let style = CardFontStyle(rawValue: savedCardFontStyle) {
+            cardFontStyle = style
+        }
         
         // Level
         if let savedLevel = userDefaults.string(forKey: Keys.level) {
-            level = savedLevel
+            level = Self.canonicalLevel(savedLevel)
         }
         
         // Language
@@ -222,16 +378,6 @@ public final class AppState: ObservableObject {
         if let savedVoiceId = userDefaults.string(forKey: Keys.selectedVoiceId) {
             selectedVoiceId = savedVoiceId
         }
-        
-        // Mastered Words
-        if let masteredWordsArray = userDefaults.stringArray(forKey: Keys.masteredWords) {
-            masteredWords = Set(masteredWordsArray)
-        }
-        
-        // Learning Queue (optional)
-        if let learningQueueArray = userDefaults.stringArray(forKey: Keys.learningQueueIds) {
-            learningQueueIds = Set(learningQueueArray)
-        }
     }
     
     // MARK: - User Preferences Saving
@@ -239,9 +385,34 @@ public final class AppState: ObservableObject {
     private func saveThemeMode() {
         userDefaults.set(themeMode.rawValue, forKey: Keys.themeMode)
     }
+
+    private func saveCardFontStyle() {
+        userDefaults.set(cardFontStyle.rawValue, forKey: Keys.cardFontStyle)
+    }
     
     private func saveLevel() {
         userDefaults.set(level, forKey: Keys.level)
+    }
+
+    private static func canonicalLevel(_ rawLevel: String) -> String {
+        let trimmed = rawLevel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "All" }
+
+        if trimmed == "全部" || trimmed == "सभी" {
+            return "All"
+        }
+
+        let upper = trimmed.uppercased()
+        if upper == "ALL" {
+            return "All"
+        }
+        if supportedLevels.contains(upper) {
+            return upper
+        }
+        if supportedLevels.contains(trimmed) {
+            return trimmed
+        }
+        return "All"
     }
     
     private func saveLanguage() {
@@ -280,42 +451,37 @@ public final class AppState: ObservableObject {
         userDefaults.set(selectedVoiceId, forKey: Keys.selectedVoiceId)
     }
     
-    private func saveMasteredWords() {
-        userDefaults.set(Array(masteredWords), forKey: Keys.masteredWords)
-    }
-    
-    private func saveLearningQueue() {
-        userDefaults.set(Array(learningQueueIds), forKey: Keys.learningQueueIds)
-    }
-    
     // MARK: - Data Loading
     
-    private func loadWords() {
-        let preferredSources = ["words_test_500", "words"]
-        words = preferredSources
-            .compactMap { loadJSONResource($0, as: [SimpleWord].self) }
-            .first ?? fallbackWords
+    private func applyLoadedResources(_ resources: LoadedResources) {
+        words = resources.words
+        conjugationData = resources.conjugationData
+        conjugationFormsByLemma = resources.conjugationData.formsByLemma
         buildWordLinks(words)
-    }
-    
-    private func loadConjugationData() {
-        conjugationMap = loadJSONResource("conjugation", as: [String: String].self) ?? [:]
-
-        var formsByLemma: [String: Set<String>] = [:]
-        var normalizedMap: [String: String] = [:]
-        for (form, lemma) in conjugationMap {
-            let normalizedLemma = normalizeText(lemma)
-            let normalizedForm = normalizeText(form)
-            guard !normalizedLemma.isEmpty, !normalizedForm.isEmpty else { continue }
-            formsByLemma[normalizedLemma, default: []].insert(normalizedForm)
-            normalizedMap[normalizedForm] = normalizedLemma
-        }
-        conjugationFormsByLemma = formsByLemma.mapValues { Array($0).sorted() }
-        normalizedConjugationMap = normalizedMap
+        rebuildSearchIndex()
     }
 
-    private func loadJSONResource<T: Decodable>(_ name: String, as type: T.Type) -> T? {
-        guard let url = resourceBundle.url(forResource: name, withExtension: "json") else {
+    private func rebuildSearchIndex() {
+        wordSearchIndex = WordSearchIndex.build(words: words, conjugationData: conjugationData)
+    }
+
+    nonisolated private static func loadResources(bundlePath: String, fallbackWords: [SimpleWord]) async -> LoadedResources {
+        await Task.detached(priority: .userInitiated) {
+            let preferredSources = ["Croisssante-Words", "words"]
+            let words = preferredSources
+                .compactMap { loadJSONResource($0, as: [SimpleWord].self, bundlePath: bundlePath) }
+                .first ?? fallbackWords
+            let conjugationMap = loadJSONResource("conjugation", as: [String: String].self, bundlePath: bundlePath) ?? [:]
+            return LoadedResources(
+                words: words,
+                conjugationData: ConjugationData.build(from: conjugationMap)
+            )
+        }.value
+    }
+
+    nonisolated private static func loadJSONResource<T: Decodable & Sendable>(_ name: String, as type: T.Type, bundlePath: String) -> T? {
+        let bundle = Bundle(path: bundlePath) ?? .main
+        guard let url = bundle.url(forResource: name, withExtension: "json") else {
             return nil
         }
         guard let data = try? Data(contentsOf: url) else {
@@ -324,11 +490,11 @@ public final class AppState: ObservableObject {
         return try? JSONDecoder().decode(type, from: data)
     }
 
-    private var resourceBundle: Bundle {
+    private var resourceBundlePath: String {
         #if SWIFT_PACKAGE
-        return .module
+        return Bundle.module.bundlePath
         #else
-        return .main
+        return Bundle.main.bundlePath
         #endif
     }
     
@@ -379,98 +545,8 @@ public final class AppState: ObservableObject {
         guard let word = word else { return false }
         return hasMultipleEntries(word)
     }
-    
-    // MARK: - Learning Functions
-    
-    public func markWordMastered(_ wordId: String) {
-        masteredWords.insert(wordId)
-    }
-    
-    public func unmarkWordMastered(_ wordId: String) {
-        masteredWords.remove(wordId)
-    }
-    
-    public func isWordMastered(_ wordId: String) -> Bool {
-        return masteredWords.contains(wordId)
-    }
-    
-    public func updateLearningQueue(_ wordIds: [String]) {
-        learningQueueIds = Set(wordIds)
-        saveLearningQueue()
-    }
-    
-    public func getLearningQueueWords() -> [SimpleWord] {
-        return learningQueueIds.compactMap { getWordById($0) }
-    }
-    
-    public func getMasteredWords() -> [SimpleWord] {
-        return masteredWords.compactMap { getWordById($0) }
-    }
-    
-    // MARK: - Clear User State
-    
-    public func clearUserState() {
-        themeMode = .system
-        level = "All"
-        language = "en"
-        autoPlay = false
-        spotlightEnabled = false
-        iCloudSyncEnabled = false
-        appIconName = nil
-        memberUnlocked = false
-        avatarPath = ""
-        masteredWords = []
-        learningQueueIds = []
-        searchQuery = ""
-        searchResults = []
-        
-        // Clear all user defaults
-        if let domain = Bundle.main.bundleIdentifier {
-            userDefaults.removePersistentDomain(forName: domain)
-        } else {
-            [
-                Keys.themeMode,
-                Keys.level,
-                Keys.language,
-                Keys.autoPlay,
-                Keys.spotlightEnabled,
-                Keys.iCloudSyncEnabled,
-                Keys.appIconName,
-                Keys.memberUnlocked,
-                Keys.avatarPath,
-                Keys.masteredWords,
-                Keys.learningQueueIds
-            ].forEach { userDefaults.removeObject(forKey: $0) }
-        }
-    }
-    
-    // MARK: - Search Functions
-    
-    public func searchWords(query: String) -> [SimpleWord] {
-        let normalizedQuery = normalizeText(query)
-        if normalizedQuery.isEmpty {
-            searchResults = []
-            return []
-        }
-
-        let conjugatedLemma = normalizedConjugationMap[normalizedQuery] ?? ""
-        
-        let results = words.filter { word in
-            let normalizedWord = normalizeText(word.word)
-            let normalizedDisplayWord = normalizeText(word.displayWord)
-            return normalizedWord.contains(normalizedQuery) ||
-                normalizedDisplayWord.contains(normalizedQuery) ||
-                normalizeText(word.translationEn).contains(normalizedQuery) ||
-                normalizeText(word.translationZh).contains(normalizedQuery) ||
-                normalizeText(word.translationHi).contains(normalizedQuery) ||
-                (!conjugatedLemma.isEmpty && conjugatedLemma == normalizedWord)
-        }
-        
-        searchResults = results
-        return results
-    }
 
     private func normalizeText(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        SearchTextNormalizer.normalize(text)
     }
 }

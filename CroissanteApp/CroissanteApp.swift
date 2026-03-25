@@ -4,6 +4,7 @@ import CoreSpotlight
 
 @main
 struct CroissanteApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
     @StateObject private var srsManager = SRSManager.shared
 
@@ -25,6 +26,19 @@ struct CroissanteApp: App {
                     animateThemeSwitch()
                     configureTabBarAppearance()
                 }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        srsManager.refreshForCurrentDayIfNeeded()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+                    srsManager.refreshForCurrentDayIfNeeded()
+                }
+                #if os(iOS)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                    srsManager.refreshForCurrentDayIfNeeded()
+                }
+                #endif
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
                     if let wordId = SpotlightService.shared.handleUserActivity(activity) {
                         appState.spotlightSelectedWordId = wordId

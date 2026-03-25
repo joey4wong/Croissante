@@ -68,6 +68,7 @@ public final class SRSManager: ObservableObject {
         let dailyCompletionRatios: [String: Double]
         let dailyStudyStates: [String: String]
         let isInfinitePracticeActive: Bool
+        let dailyDeckDate: String?
     }
 
     // MARK: - 调度配置
@@ -77,6 +78,7 @@ public final class SRSManager: ObservableObject {
     private let defaultDailyDeckLimit = 50
     // 用户可选的每日发牌数量。
     private let supportedDailyDeckLimits: Set<Int> = [5, 10, 15, 20, 50]
+    private let supportedTargetLevels: Set<String> = ["All", "A1", "A2", "B1", "B2", "C1", "C2"]
     // 每日发牌中，新词的最低保障比例（20%）。
     private let newCardQuotaRatio = 0.20
     // “模糊/忘记”后的固定复习间隔（天）。
@@ -145,10 +147,15 @@ public final class SRSManager: ObservableObject {
     
     public func configure(with appState: AppState) {
         self.appState = appState
-        targetLevel = appState.level
+        targetLevel = canonicalTargetLevel(appState.level)
         refreshDailyDeckIfNeeded()
+        reconcileDeckWithAvailableWords()
         saveLearningState()
         bindICloudSync(with: appState)
+    }
+
+    public func refreshForCurrentDayIfNeeded() {
+        refreshDailyDeckIfNeeded()
     }
     
     // MARK: - State Management
@@ -156,7 +163,7 @@ public final class SRSManager: ObservableObject {
     private func loadLearningState() {
         // Target Level
         if let savedLevel = userDefaults.string(forKey: Keys.targetLevel) {
-            targetLevel = savedLevel
+            targetLevel = canonicalTargetLevel(savedLevel)
         }
 
         // Daily Deck Limit
@@ -171,6 +178,7 @@ public final class SRSManager: ObservableObject {
         if let recordsData = userDefaults.data(forKey: Keys.learningRecords),
            let records = try? JSONDecoder().decode([String: LearningRecord].self, from: recordsData) {
             learningRecords = records
+            normalizeLearningRecordsReviewDates()
         }
 
         if let mutationAt = userDefaults.object(forKey: Keys.lastLearningStateMutationAt) as? Date {
@@ -222,13 +230,11 @@ public final class SRSManager: ObservableObject {
         if savedDeckDate != today, !savedDeckDate.isEmpty {
             let savedDeckIds = userDefaults.stringArray(forKey: Keys.dailyDeckWordIds) ?? []
             let savedMasteredIds = Set(userDefaults.stringArray(forKey: Keys.dailyMasteredDeckWordIds) ?? [])
-            let masteredCount = savedDeckIds.filter { savedMasteredIds.contains($0) }.count
-            let ratio = savedDeckIds.isEmpty ? 0 : Double(masteredCount) / Double(savedDeckIds.count)
-            dailyCompletionRatios[savedDeckDate] = max(dailyCompletionRatios[savedDeckDate] ?? 0, ratio)
-            dailyStudyStates[savedDeckDate] = stateFrom(
-                deckCount: savedDeckIds.count,
-                masteredCount: masteredCount
-            ).rawValue
+            persistHeatmapSnapshotIfNeeded(
+                dateKey: savedDeckDate,
+                deckWordIds: savedDeckIds,
+                masteredDeckWordIds: savedMasteredIds
+            )
         }
         pruneHeatmapDataToCurrentYear(today: today)
 
@@ -265,9 +271,10 @@ public final class SRSManager: ObservableObject {
     }
     
     private func saveLearningState() {
+        let today = todayKey()
         updateTodaySnapshots()
-        pruneHeatmapDataToCurrentYear(today: todayKey())
-        storeCurrentLevelSnapshot(for: todayKey())
+        pruneHeatmapDataToCurrentYear(today: today)
+        storeCurrentLevelSnapshot(for: today)
 
         // Save learning records
         if let recordsData = try? JSONEncoder().encode(learningRecords) {
@@ -279,7 +286,7 @@ public final class SRSManager: ObservableObject {
         userDefaults.set(dailyDeckLimit, forKey: Keys.dailyDeckLimit)
         
         // Save daily deck
-        userDefaults.set(todayKey(), forKey: Keys.dailyDeckDate)
+        userDefaults.set(today, forKey: Keys.dailyDeckDate)
         userDefaults.set(dailyDeckWordIds, forKey: Keys.dailyDeckWordIds)
         userDefaults.set(learningQueueIds, forKey: Keys.learningQueueIds)
         userDefaults.set(Array(dailyMasteredDeckWordIds), forKey: Keys.dailyMasteredDeckWordIds)
@@ -304,12 +311,37 @@ public final class SRSManager: ObservableObject {
         }
     }
 
-    private func refreshDailyDeckIfNeeded() {
+    private func refreshDailyDeckIfNeeded(knownDeckDate: String? = nil) {
         let today = todayKey()
+        let currentDeckDate = knownDeckDate ?? (userDefaults.string(forKey: Keys.dailyDeckDate) ?? "")
+
+        if currentDeckDate != today, !currentDeckDate.isEmpty {
+            persistHeatmapSnapshotIfNeeded(
+                dateKey: currentDeckDate,
+                deckWordIds: dailyDeckWordIds,
+                masteredDeckWordIds: dailyMasteredDeckWordIds
+            )
+        }
+
         pruneHeatmapDataToCurrentYear(today: today)
         pruneStaleLevelSnapshots(today: today)
+
+        if currentDeckDate != today {
+            if restoreLevelSnapshotIfAvailable(for: targetLevel, on: today) {
+                if dailyDeckWordIds.isEmpty || dailyDeckWordIds.count > dailyDeckLimit {
+                    generateDailyDeck()
+                } else {
+                    sanitizeDeckState()
+                }
+            } else {
+                generateDailyDeck()
+            }
+            saveLearningState()
+            return
+        }
+
         if restoreLevelSnapshotIfAvailable(for: targetLevel, on: today) {
-            if dailyDeckWordIds.count > dailyDeckLimit {
+            if dailyDeckWordIds.isEmpty || dailyDeckWordIds.count > dailyDeckLimit {
                 generateDailyDeck()
             }
         } else if dailyDeckWordIds.isEmpty || dailyDeckWordIds.count > dailyDeckLimit {
@@ -435,26 +467,45 @@ public final class SRSManager: ObservableObject {
         blurryWordIds.remove(wordId)
         masteredWordIds.remove(wordId)
         dailyMasteredDeckWordIds.remove(wordId)
-        rebuildLearningQueue()
+        refreshCurrentDeckState(afterMutating: wordId)
+        saveLearningState()
+    }
+
+    public func resetLearningData() {
+        learningRecords = [:]
+        forgotWordIds = []
+        blurryWordIds = []
+        masteredWordIds = []
+        dailyDeckWordIds = []
+        dailyMasteredDeckWordIds = []
+        learningQueueIds = []
+        dailyCompletionRatios = [:]
+        dailyStudyStates = [:]
+        isInfinitePracticeActive = false
+        levelDailyDeckSnapshots = [:]
+        if let appState {
+            targetLevel = appState.level
+        }
+        rebuildDeck(now: Date())
         saveLearningState()
     }
     
     func removeWordFromMastered(_ wordId: String) {
         masteredWordIds.remove(wordId)
         dailyMasteredDeckWordIds.remove(wordId)
-        rebuildLearningQueue()
+        refreshCurrentDeckState(afterMutating: wordId)
         saveLearningState()
     }
     
     func removeWordFromBlurry(_ wordId: String) {
         blurryWordIds.remove(wordId)
-        rebuildLearningQueue()
+        refreshCurrentDeckState(afterMutating: wordId)
         saveLearningState()
     }
     
     func removeWordFromForgot(_ wordId: String) {
         forgotWordIds.remove(wordId)
-        rebuildLearningQueue()
+        refreshCurrentDeckState(afterMutating: wordId)
         saveLearningState()
     }
     
@@ -547,7 +598,42 @@ public final class SRSManager: ObservableObject {
     }
     
     private func todayKey() -> String {
-        dayFormatter.string(from: Date())
+        dayKey(for: Date())
+    }
+
+    private func dayKey(for date: Date) -> String {
+        dayFormatter.string(from: date)
+    }
+
+    private func persistHeatmapSnapshotIfNeeded(
+        dateKey: String,
+        deckWordIds: [String],
+        masteredDeckWordIds: Set<String>
+    ) {
+        guard !dateKey.isEmpty else { return }
+        let masteredCount = deckWordIds.filter { masteredDeckWordIds.contains($0) }.count
+        let ratio = deckWordIds.isEmpty ? 0 : Double(masteredCount) / Double(deckWordIds.count)
+        dailyCompletionRatios[dateKey] = max(dailyCompletionRatios[dateKey] ?? 0, ratio)
+        dailyStudyStates[dateKey] = stateFrom(
+            deckCount: deckWordIds.count,
+            masteredCount: masteredCount
+        ).rawValue
+    }
+
+    private func normalizedReviewDate(_ date: Date) -> Date {
+        calendar.startOfDay(for: date)
+    }
+
+    private func normalizeLearningRecordsReviewDates() {
+        learningRecords = learningRecords.reduce(into: [:]) { partialResult, pair in
+            let record = pair.value
+            let normalizedDate = normalizedReviewDate(record.nextReviewDate)
+            partialResult[pair.key] = LearningRecord(
+                wordId: record.wordId,
+                consecutiveCorrects: record.consecutiveCorrects,
+                nextReviewDate: normalizedDate
+            )
+        }
     }
 
     private func dailyNewWordQuota(for deckLimit: Int) -> Int {
@@ -556,12 +642,14 @@ public final class SRSManager: ObservableObject {
     }
 
     private func dateByAddingDays(_ days: Int, from date: Date) -> Date {
-        calendar.date(byAdding: .day, value: days, to: date) ?? date
+        let anchor = normalizedReviewDate(date)
+        return calendar.date(byAdding: .day, value: days, to: anchor) ?? anchor
     }
 
     private func scheduledReviewDate(for consecutiveCorrects: Int, from date: Date) -> Date {
+        let anchor = normalizedReviewDate(date)
         if consecutiveCorrects >= masteryThreshold {
-            return calendar.date(byAdding: .year, value: graduationYears, to: date) ?? date
+            return calendar.date(byAdding: .year, value: graduationYears, to: anchor) ?? anchor
         }
 
         let intervalDays: Int
@@ -578,12 +666,13 @@ public final class SRSManager: ObservableObject {
             intervalDays = 15
         }
 
-        return dateByAddingDays(intervalDays, from: date)
+        return dateByAddingDays(intervalDays, from: anchor)
     }
     
     func setTargetLevel(_ level: String) {
-        guard targetLevel != level else { return }
-        targetLevel = level
+        let normalizedLevel = canonicalTargetLevel(level)
+        guard targetLevel != normalizedLevel else { return }
+        targetLevel = normalizedLevel
         resetTodayProgressForPlanChange(now: Date())
         saveLearningState()
     }
@@ -689,11 +778,32 @@ public final class SRSManager: ObservableObject {
     private func rebuildLearningQueueFromDeck() {
         sanitizeDeckState(preferredQueueIds: dailyDeckWordIds)
     }
+
+    private func refreshCurrentDeckState(afterMutating wordId: String? = nil) {
+        guard let wordId, dailyDeckWordIds.contains(wordId), !dailyMasteredDeckWordIds.contains(wordId) else {
+            sanitizeDeckState()
+            return
+        }
+        sanitizeDeckState(preferredQueueIds: [wordId] + learningQueueIds)
+    }
     
     public func getLearningQueueWords() -> [SimpleWord] {
         refillInfiniteQueueIfNeeded(now: Date())
         guard let appState = appState else { return [] }
-        return learningQueueIds.compactMap { appState.getWordById($0) }
+        let resolved = learningQueueIds.compactMap { appState.getWordById($0) }
+        if resolved.isEmpty,
+           !isInfinitePracticeActive,
+           todayStudyState == .inProgress {
+            rebuildLearningQueueFromDeck()
+            var repaired = learningQueueIds.compactMap { appState.getWordById($0) }
+            if repaired.isEmpty {
+                generateDailyDeck()
+                repaired = learningQueueIds.compactMap { appState.getWordById($0) }
+            }
+            saveLearningState()
+            return repaired
+        }
+        return resolved
     }
     
     func getDailyDeckWords() -> [SimpleWord] {
@@ -781,9 +891,11 @@ public final class SRSManager: ObservableObject {
             return state
         }
 
-        let ratio = masteryProgressRatio(for: date)
-        if ratio >= 1 { return .completed }
-        if ratio > 0 { return .inProgress }
+        if let storedRatio = dailyCompletionRatios[key] {
+            let ratio = min(max(storedRatio, 0), 1)
+            if ratio >= 1 { return .completed }
+            return .inProgress
+        }
         return .noEligibleCards
     }
 
@@ -844,6 +956,27 @@ public final class SRSManager: ObservableObject {
         return allWords.filter { $0.level == targetLevel }
     }
 
+    private func canonicalTargetLevel(_ rawLevel: String) -> String {
+        let trimmed = rawLevel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "All" }
+
+        if trimmed == "全部" || trimmed == "सभी" {
+            return "All"
+        }
+
+        let upper = trimmed.uppercased()
+        if upper == "ALL" {
+            return "All"
+        }
+        if supportedTargetLevels.contains(upper) {
+            return upper
+        }
+        if supportedTargetLevels.contains(trimmed) {
+            return trimmed
+        }
+        return "All"
+    }
+
     private func dueReviewWords(in words: [SimpleWord], now: Date) -> [SimpleWord] {
         words
             .filter { word in
@@ -859,6 +992,15 @@ public final class SRSManager: ObservableObject {
     }
 
     private func sanitizeDeckState(preferredQueueIds: [String]? = nil) {
+        if let appState {
+            let validWordIds = Set(appState.words.map(\.id))
+            if !validWordIds.isEmpty {
+                dailyDeckWordIds = dailyDeckWordIds.filter { validWordIds.contains($0) }
+                dailyMasteredDeckWordIds = dailyMasteredDeckWordIds.intersection(Set(dailyDeckWordIds))
+                learningQueueIds = learningQueueIds.filter { validWordIds.contains($0) }
+            }
+        }
+
         let queueSource = preferredQueueIds ?? learningQueueIds
 
         if isInfinitePracticeActive {
@@ -923,6 +1065,74 @@ public final class SRSManager: ObservableObject {
                 self?.handleICloudSyncToggleChanged(isEnabled)
             }
             .store(in: &cancellables)
+
+        appState.$words
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.reconcileDeckWithAvailableWords()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func reconcileDeckWithAvailableWords() {
+        guard let appState else { return }
+        let validWordIds = Set(appState.words.map(\.id))
+        guard !validWordIds.isEmpty else { return }
+
+        let prunedLearningState = pruneLearningState(using: validWordIds)
+        let previousDeckIds = dailyDeckWordIds
+        let previousQueueIds = learningQueueIds
+        let previousMasteredDeckIds = dailyMasteredDeckWordIds
+
+        dailyDeckWordIds = dailyDeckWordIds.filter { validWordIds.contains($0) }
+        dailyMasteredDeckWordIds = dailyMasteredDeckWordIds.intersection(Set(dailyDeckWordIds))
+        learningQueueIds = learningQueueIds.filter { validWordIds.contains($0) }
+
+        if dailyDeckWordIds.isEmpty {
+            generateDailyDeck()
+        } else {
+            if dailyDeckWordIds.count < dailyDeckLimit {
+                extendTodayDeckIfNeeded(now: Date())
+            }
+            sanitizeDeckState()
+        }
+
+        if previousDeckIds != dailyDeckWordIds ||
+            previousQueueIds != learningQueueIds ||
+            previousMasteredDeckIds != dailyMasteredDeckWordIds ||
+            prunedLearningState {
+            saveLearningState()
+        }
+    }
+
+    private func pruneLearningState(using validWordIds: Set<String>) -> Bool {
+        var didPrune = false
+
+        let filteredRecords = learningRecords.filter { validWordIds.contains($0.key) }
+        if filteredRecords.count != learningRecords.count {
+            learningRecords = filteredRecords
+            didPrune = true
+        }
+
+        let filteredForgot = forgotWordIds.intersection(validWordIds)
+        if filteredForgot != forgotWordIds {
+            forgotWordIds = filteredForgot
+            didPrune = true
+        }
+
+        let filteredBlurry = blurryWordIds.intersection(validWordIds)
+        if filteredBlurry != blurryWordIds {
+            blurryWordIds = filteredBlurry
+            didPrune = true
+        }
+
+        let filteredMastered = masteredWordIds.intersection(validWordIds)
+        if filteredMastered != masteredWordIds {
+            masteredWordIds = filteredMastered
+            didPrune = true
+        }
+
+        return didPrune
     }
 
     private func handleICloudSyncToggleChanged(_ isEnabled: Bool) {
@@ -962,7 +1172,8 @@ public final class SRSManager: ObservableObject {
             masteredWordIds: Array(masteredWordIds).sorted(),
             dailyCompletionRatios: dailyCompletionRatios,
             dailyStudyStates: dailyStudyStates,
-            isInfinitePracticeActive: isInfinitePracticeActive
+            isInfinitePracticeActive: isInfinitePracticeActive,
+            dailyDeckDate: userDefaults.string(forKey: Keys.dailyDeckDate) ?? todayKey()
         )
 
         let encoder = JSONEncoder()
@@ -982,7 +1193,8 @@ public final class SRSManager: ObservableObject {
         defer { isApplyingRemoteSyncPayload = false }
 
         learningRecords = payload.learningRecords
-        targetLevel = payload.targetLevel
+        normalizeLearningRecordsReviewDates()
+        targetLevel = canonicalTargetLevel(payload.targetLevel)
         dailyDeckLimit = supportedDailyDeckLimits.contains(payload.dailyDeckLimit)
             ? payload.dailyDeckLimit
             : defaultDailyDeckLimit
@@ -997,16 +1209,27 @@ public final class SRSManager: ObservableObject {
         dailyStudyStates = payload.dailyStudyStates.filter { DailyStudyState(rawValue: $0.value) != nil }
         isInfinitePracticeActive = payload.isInfinitePracticeActive
 
+        if let appState {
+            let validWordIds = Set(appState.words.map(\.id))
+            if !validWordIds.isEmpty {
+                _ = pruneLearningState(using: validWordIds)
+            }
+        }
         sanitizeDeckState(preferredQueueIds: payload.learningQueueIds)
 
         lastLearningStateMutationAt = payload.updatedAt
         userDefaults.set(lastLearningStateMutationAt, forKey: Keys.lastLearningStateMutationAt)
 
-        if appState?.level != payload.targetLevel {
-            appState?.level = payload.targetLevel
+        if appState?.level != targetLevel {
+            appState?.level = targetLevel
         }
 
-        saveLearningState()
+        let remoteDeckDate = payload.dailyDeckDate
+            ?? payload.levelDailyDeckSnapshots[payload.targetLevel]?.date
+            ?? payload.levelDailyDeckSnapshots.values.first?.date
+            ?? todayKey()
+
+        refreshDailyDeckIfNeeded(knownDeckDate: remoteDeckDate)
     }
 
     private func loadOrCreateICloudSyncDeviceId() -> String {
