@@ -53,6 +53,7 @@ public final class SRSManager: ObservableObject {
 
     private struct SyncPayload: Codable {
         let schemaVersion: Int
+        let resetVersion: Int?
         let updatedAt: Date
         let sourceDeviceId: String
         let learningRecords: [String: LearningRecord]
@@ -106,6 +107,7 @@ public final class SRSManager: ObservableObject {
         static let dailyCompletionRatios = "daily_completion_ratios"
         static let dailyStudyStates = "daily_study_states"
         static let lastLearningStateMutationAt = "learning_state_mutation_at"
+        static let learningSyncResetVersion = "learning_sync_reset_version"
         static let iCloudSyncDeviceId = "icloud_sync_device_id"
     }
     
@@ -137,6 +139,7 @@ public final class SRSManager: ObservableObject {
     private let syncPayloadSchemaVersion = 1
     private var cancellables: Set<AnyCancellable> = []
     private var lastLearningStateMutationAt: Date = .distantPast
+    private var learningSyncResetVersion: Int = 0
     private var isApplyingRemoteSyncPayload = false
     private lazy var iCloudSyncDeviceId: String = loadOrCreateICloudSyncDeviceId()
     private var appState: AppState? = nil
@@ -183,6 +186,9 @@ public final class SRSManager: ObservableObject {
 
         if let mutationAt = userDefaults.object(forKey: Keys.lastLearningStateMutationAt) as? Date {
             lastLearningStateMutationAt = mutationAt
+        }
+        if let resetVersion = userDefaults.object(forKey: Keys.learningSyncResetVersion) as? Int {
+            learningSyncResetVersion = max(0, resetVersion)
         }
 
         if let savedRatios = userDefaults.dictionary(forKey: Keys.dailyCompletionRatios) {
@@ -305,6 +311,7 @@ public final class SRSManager: ObservableObject {
             lastLearningStateMutationAt = Date()
         }
         userDefaults.set(lastLearningStateMutationAt, forKey: Keys.lastLearningStateMutationAt)
+        userDefaults.set(learningSyncResetVersion, forKey: Keys.learningSyncResetVersion)
 
         if !isApplyingRemoteSyncPayload {
             pushLearningStateToICloudIfNeeded()
@@ -472,6 +479,7 @@ public final class SRSManager: ObservableObject {
     }
 
     public func resetLearningData() {
+        bumpLearningSyncResetVersion()
         learningRecords = [:]
         forgotWordIds = []
         blurryWordIds = []
@@ -1149,6 +1157,7 @@ public final class SRSManager: ObservableObject {
     private func pushLearningStateToICloudIfNeeded(force: Bool = false) {
         guard appState?.iCloudSyncEnabled == true else { return }
         guard !isApplyingRemoteSyncPayload else { return }
+        if adoptRemotePayloadIfResetVersionIsHigher() { return }
 
         if force {
             lastLearningStateMutationAt = Date()
@@ -1158,6 +1167,7 @@ public final class SRSManager: ObservableObject {
         let updatedAt = lastLearningStateMutationAt == .distantPast ? Date() : lastLearningStateMutationAt
         let payload = SyncPayload(
             schemaVersion: syncPayloadSchemaVersion,
+            resetVersion: learningSyncResetVersion,
             updatedAt: updatedAt,
             sourceDeviceId: iCloudSyncDeviceId,
             learningRecords: learningRecords,
@@ -1187,7 +1197,11 @@ public final class SRSManager: ObservableObject {
         guard let payload = try? decoder.decode(SyncPayload.self, from: payloadData) else { return }
         guard payload.schemaVersion == syncPayloadSchemaVersion else { return }
         guard payload.sourceDeviceId != iCloudSyncDeviceId else { return }
-        guard payload.updatedAt > lastLearningStateMutationAt else { return }
+        let remoteResetVersion = normalizedResetVersion(payload.resetVersion)
+        guard remoteResetVersion >= learningSyncResetVersion else { return }
+        if remoteResetVersion == learningSyncResetVersion {
+            guard payload.updatedAt > lastLearningStateMutationAt else { return }
+        }
 
         isApplyingRemoteSyncPayload = true
         defer { isApplyingRemoteSyncPayload = false }
@@ -1218,7 +1232,9 @@ public final class SRSManager: ObservableObject {
         sanitizeDeckState(preferredQueueIds: payload.learningQueueIds)
 
         lastLearningStateMutationAt = payload.updatedAt
+        learningSyncResetVersion = remoteResetVersion
         userDefaults.set(lastLearningStateMutationAt, forKey: Keys.lastLearningStateMutationAt)
+        userDefaults.set(learningSyncResetVersion, forKey: Keys.learningSyncResetVersion)
 
         if appState?.level != targetLevel {
             appState?.level = targetLevel
@@ -1230,6 +1246,26 @@ public final class SRSManager: ObservableObject {
             ?? todayKey()
 
         refreshDailyDeckIfNeeded(knownDeckDate: remoteDeckDate)
+    }
+
+    private func normalizedResetVersion(_ value: Int?) -> Int {
+        max(0, value ?? 0)
+    }
+
+    private func bumpLearningSyncResetVersion() {
+        if learningSyncResetVersion < Int.max {
+            learningSyncResetVersion += 1
+        }
+    }
+
+    private func adoptRemotePayloadIfResetVersionIsHigher() -> Bool {
+        guard let payloadData = iCloudSyncService.payloadData() else { return false }
+        let decoder = JSONDecoder()
+        guard let payload = try? decoder.decode(SyncPayload.self, from: payloadData) else { return false }
+        guard payload.sourceDeviceId != iCloudSyncDeviceId else { return false }
+        guard normalizedResetVersion(payload.resetVersion) > learningSyncResetVersion else { return false }
+        applyRemoteSyncPayloadIfNewer(payloadData)
+        return true
     }
 
     private func loadOrCreateICloudSyncDeviceId() -> String {
