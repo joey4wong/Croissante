@@ -6,6 +6,7 @@ public enum ThemeMode: Int, Codable {
     case dark = 2
     case paper = 3
     case graphite = 4
+    case porcelain = 5
 }
 
 public enum CardFontStyle: String, Codable {

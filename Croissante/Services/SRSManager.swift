@@ -1080,10 +1080,19 @@ public final class SRSManager: ObservableObject {
                 self?.reconcileDeckWithAvailableWords()
             }
             .store(in: &cancellables)
+
+        appState.$hasCompletedInitialResourceLoad
+            .removeDuplicates()
+            .sink { [weak self] loaded in
+                guard loaded else { return }
+                self?.reconcileDeckWithAvailableWords()
+            }
+            .store(in: &cancellables)
     }
 
     private func reconcileDeckWithAvailableWords() {
         guard let appState else { return }
+        guard appState.hasCompletedInitialResourceLoad else { return }
         let validWordIds = Set(appState.words.map(\.id))
         guard !validWordIds.isEmpty else { return }
 

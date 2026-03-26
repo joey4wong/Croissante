@@ -69,7 +69,7 @@ final class ICloudSyncService {
         pendingPushTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }
-            await self?.commitPush(payload: payload, fingerprint: fingerprint)
+            self?.commitPush(payload: payload, fingerprint: fingerprint)
         }
     }
 

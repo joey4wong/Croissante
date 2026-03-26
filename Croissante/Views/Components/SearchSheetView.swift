@@ -26,6 +26,7 @@ struct SearchSheetView: View {
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.colorScheme) private var colorScheme
     private var isDark: Bool { colorScheme == .dark }
+    private var isPorcelainTheme: Bool { appState.themeMode == .porcelain }
     private var normalizedQuery: String {
         normalizeSearchText(searchQuery)
     }
@@ -45,16 +46,18 @@ struct SearchSheetView: View {
         isDark ? .ultraThinMaterial : .regularMaterial
     }
     private var fullScreenControlFill: Color {
-        isDark ? AppColors.nocturneSurface.opacity(0.74) : Color.white.opacity(0.40)
+        if isPorcelainTheme { return AppColors.porcelainCard }
+        return isDark ? AppColors.nocturneSurface.opacity(0.74) : Color.white.opacity(0.40)
     }
     private var fullScreenControlBorder: Color {
-        isDark ? AppColors.nocturneBorder : Color.white.opacity(0.88)
+        if isPorcelainTheme { return Color.black.opacity(0.08) }
+        return isDark ? AppColors.nocturneBorder : Color.white.opacity(0.88)
     }
     private var fullScreenControlInnerBorder: Color {
-        isDark ? AppColors.nocturneBorderSoft : Color.white.opacity(0.52)
+        if isPorcelainTheme { return Color.black.opacity(0.04) }
+        return isDark ? AppColors.nocturneBorderSoft : Color.white.opacity(0.52)
     }
     private let maxRecentWordCount = 40
-    private let resultRowSpacing: CGFloat = 8
     
     init(
         isPresented: Binding<Bool>,
@@ -268,28 +271,14 @@ struct SearchSheetView: View {
                 if recentWords.isEmpty {
                     emptyStateView
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: resultRowSpacing) {
-                            ForEach(recentWords) { word in
-                                wordResultRow(word)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    wordListView(recentWords)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else if searchResults.isEmpty {
                 noResultsView
             } else {
-                ScrollView {
-                    LazyVStack(spacing: resultRowSpacing) {
-                        ForEach(searchResults) { word in
-                            wordResultRow(word)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                wordListView(searchResults)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -365,15 +354,22 @@ struct SearchSheetView: View {
     }
     
     private var resultsListView: some View {
-        ScrollView {
-            LazyVStack(spacing: resultRowSpacing) {
-                ForEach(searchResults) { word in
-                    wordResultRow(word)
-                }
+        wordListView(searchResults)
+            .frame(height: resultsListHeight)
+    }
+
+    private func wordListView(_ words: [SimpleWord]) -> some View {
+        List {
+            ForEach(words) { word in
+                wordResultRow(word)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
+                    .listRowBackground(Color.clear)
             }
-            .padding(.vertical, 4)
         }
-        .frame(height: resultsListHeight)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
     }
     
     private var recentWordIDs: [String] {
@@ -427,13 +423,25 @@ struct SearchSheetView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                withAnimation(.easeInOut(duration: 0.20)) {
+                    srsManager.resetWordToNew(word.id)
+                }
+            } label: {
+                Label(appState.localized("Delete", "删除", "हटाएं"), systemImage: "trash")
+            }
+            .tint(.red)
+        }
     }
     
     private var backgroundCard: some View {
         ZStack {
             Rectangle()
                 .fill(
-                    isDark
+                    isPorcelainTheme
+                        ? AppColors.porcelainCard
+                        : isDark
                         ? AppColors.nocturneSurface.opacity(0.90)
                         : Color(red: 0.95, green: 0.96, blue: 0.97).opacity(0.985)
                 )
@@ -441,7 +449,9 @@ struct SearchSheetView: View {
             // 边框
             RoundedRectangle(cornerRadius: 20)
                 .stroke(
-                    isDark ? AppColors.nocturneBorder : Color.black.opacity(0.07),
+                    isPorcelainTheme
+                        ? Color.black.opacity(0.08)
+                        : (isDark ? AppColors.nocturneBorder : Color.black.opacity(0.07)),
                     lineWidth: 1
                 )
         }

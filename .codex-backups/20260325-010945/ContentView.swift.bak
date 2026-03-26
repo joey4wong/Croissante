@@ -2,7 +2,6 @@ import SwiftUI
 import AVFoundation
 import StoreKit
 import WidgetKit
-import UserNotifications
 #if os(iOS)
 import UIKit
 import CoreMotion
@@ -30,7 +29,6 @@ public struct ContentView: View {
     @State private var searchSheetShowing = false
     @State private var selectedTab: MainTab = .explore
     @State private var lastContentTab: MainTab = .explore
-    @State private var settingsGearSpinToken = 0
     @State private var spotlightWord: SimpleWord?
 
     public init() {}
@@ -95,24 +93,12 @@ public struct ContentView: View {
             }
         }
         #if os(iOS)
-        .background(
-            SettingsTabGearAnimationBridge(
-                settingsIndex: 2,
-                spinToken: settingsGearSpinToken
-            )
-                .frame(width: 0, height: 0)
-        )
-        #endif
-        #if os(iOS)
         .tabBarMinimizeBehavior(.onScrollDown)
         #endif
         .tint(Color(red: 0.02, green: 0.48, blue: 1.00))
         .onChange(of: selectedTab) { _, newTab in
             guard newTab == .search else {
                 lastContentTab = newTab
-                if newTab == .settings {
-                    settingsGearSpinToken += 1
-                }
                 return
             }
 
@@ -182,240 +168,6 @@ private struct SearchPresentationModifier: ViewModifier {
         #endif
     }
 }
-
-#if os(iOS)
-private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
-    let settingsIndex: Int
-    let spinToken: Int
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(settingsIndex: settingsIndex)
-    }
-
-    func makeUIView(context: Context) -> ProbeView {
-        let view = ProbeView()
-        view.coordinator = context.coordinator
-        view.isUserInteractionEnabled = false
-        return view
-    }
-
-    func updateUIView(_ uiView: ProbeView, context: Context) {
-        context.coordinator.update(from: uiView, spinToken: spinToken)
-    }
-
-    @MainActor
-    final class ProbeView: UIView {
-        weak var coordinator: Coordinator?
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            coordinator?.refresh(from: self)
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            coordinator?.refresh(from: self)
-        }
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        private let settingsIndex: Int
-        private weak var tabBar: UITabBar?
-        private weak var tapRecognizer: UITapGestureRecognizer?
-        private var currentSpinToken = 0
-        private var lastAppliedSpinToken = 0
-
-        init(settingsIndex: Int) {
-            self.settingsIndex = settingsIndex
-        }
-
-        func refresh(from view: UIView) {
-            update(from: view, spinToken: currentSpinToken)
-        }
-
-        func update(from view: UIView, spinToken: Int) {
-            currentSpinToken = spinToken
-
-            guard let tabBar = locateTabBar(from: view) else {
-                detach()
-                return
-            }
-
-            if self.tabBar !== tabBar {
-                detach()
-                self.tabBar = tabBar
-                let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTabBarTap(_:)))
-                recognizer.cancelsTouchesInView = false
-                recognizer.delegate = self
-                tabBar.addGestureRecognizer(recognizer)
-                tapRecognizer = recognizer
-            }
-
-            guard spinToken != lastAppliedSpinToken else { return }
-            lastAppliedSpinToken = spinToken
-            animateSettingsGear()
-        }
-
-        @objc private func handleTabBarTap(_ recognizer: UITapGestureRecognizer) {
-            guard recognizer.state == .ended,
-                  let tabBar,
-                  let index = tabIndex(at: recognizer.location(in: tabBar), in: tabBar),
-                  index == settingsIndex else {
-                return
-            }
-
-            animateSettingsGear()
-        }
-
-        private func animateSettingsGear() {
-            guard let tabBar,
-                  let tabItemView = tabItemView(in: tabBar, index: settingsIndex) else {
-                return
-            }
-
-            if let imageView = findImageView(in: tabItemView) {
-                animateRotation(on: imageView.layer, key: "settingsGearSpin")
-                return
-            }
-
-            animateRotation(on: tabItemView.layer, key: "settingsGearSpinFallback")
-        }
-
-        private func animateRotation(on layer: CALayer, key: String) {
-            let animation = CABasicAnimation(keyPath: "transform.rotation.z")
-            animation.byValue = Double.pi * 2
-            animation.duration = 0.52
-            animation.isAdditive = true
-            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            layer.removeAnimation(forKey: key)
-            layer.add(animation, forKey: key)
-        }
-
-        private func detach() {
-            if let tapRecognizer {
-                tapRecognizer.view?.removeGestureRecognizer(tapRecognizer)
-            }
-            tapRecognizer = nil
-            tabBar = nil
-        }
-
-        private func tabIndex(at point: CGPoint, in tabBar: UITabBar) -> Int? {
-            guard let itemCount = tabBar.items?.count,
-                  itemCount > 0 else {
-                return nil
-            }
-
-            let itemWidth = tabBar.bounds.width / CGFloat(itemCount)
-            guard itemWidth > 0 else { return nil }
-
-            let rawIndex = Int(point.x / itemWidth)
-            return min(max(rawIndex, 0), itemCount - 1)
-        }
-
-        private func locateTabBar(from view: UIView) -> UITabBar? {
-            if let window = view.window,
-               let tabBar = preferredTabBar(in: window) {
-                return tabBar
-            }
-
-            let scenes = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .filter { $0.activationState == .foregroundActive }
-
-            for scene in scenes {
-                for window in scene.windows.reversed() {
-                    if let tabBar = preferredTabBar(in: window) {
-                        return tabBar
-                    }
-                }
-            }
-
-            return nil
-        }
-
-        private func preferredTabBar(in root: UIView) -> UITabBar? {
-            let candidates = findTabBars(in: root)
-                .filter { !$0.isHidden && $0.alpha > 0.01 && $0.bounds.width > 0 && $0.bounds.height > 0 }
-
-            return candidates.max { lhs, rhs in
-                lhs.convert(lhs.bounds, to: nil).maxY < rhs.convert(rhs.bounds, to: nil).maxY
-            }
-        }
-
-        private func findTabBars(in view: UIView) -> [UITabBar] {
-            var result: [UITabBar] = []
-            if let tabBar = view as? UITabBar {
-                result.append(tabBar)
-            }
-
-            for subview in view.subviews {
-                result.append(contentsOf: findTabBars(in: subview))
-            }
-
-            return result
-        }
-
-        private func tabItemView(in tabBar: UITabBar, index: Int) -> UIView? {
-            guard let itemCount = tabBar.items?.count,
-                  itemCount > 0,
-                  index >= 0,
-                  index < itemCount else {
-                return nil
-            }
-
-            let targetX = (CGFloat(index) + 0.5) * tabBar.bounds.width / CGFloat(itemCount)
-            let targetPoint = CGPoint(x: targetX, y: tabBar.bounds.midY)
-
-            let candidates = tabBar.subviews.filter {
-                !$0.isHidden &&
-                $0.alpha > 0.01 &&
-                $0.bounds.width > 12 &&
-                $0.bounds.height > 12 &&
-                $0.bounds.width < tabBar.bounds.width * 0.9
-            }
-
-            let containing = candidates.filter { $0.frame.contains(targetPoint) }
-            if let best = containing.min(by: { area($0.bounds) < area($1.bounds) }) {
-                return best
-            }
-
-            return candidates.min(by: { abs($0.frame.midX - targetX) < abs($1.frame.midX - targetX) })
-        }
-
-        private func area(_ rect: CGRect) -> CGFloat {
-            rect.width * rect.height
-        }
-
-        private func findImageView(in view: UIView) -> UIImageView? {
-            var imageViews: [UIImageView] = []
-            collectImageViews(in: view, into: &imageViews)
-            return imageViews.max(by: { area($0.bounds) < area($1.bounds) })
-        }
-
-        private func collectImageViews(in view: UIView, into imageViews: inout [UIImageView]) {
-            if let imageView = view as? UIImageView,
-               imageView.bounds.width > 0,
-               imageView.bounds.height > 0 {
-                imageViews.append(imageView)
-            }
-
-            for subview in view.subviews {
-                collectImageViews(in: subview, into: &imageViews)
-            }
-        }
-    }
-}
-
-extension SettingsTabGearAnimationBridge.Coordinator: UIGestureRecognizerDelegate {
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        true
-    }
-}
-#endif
 
 private struct DiscoverScreen: View {
     let words: [SimpleWord]
@@ -1415,8 +1167,6 @@ private struct NounCornerAccentShape: Shape {
     .environmentObject(AppState())
 }
 
-private let progressRevealCoordinateSpace = "progress-screen-reveal"
-
 private struct ProgressScreen: View {
     private enum ProgressBucket: CaseIterable, Hashable {
         case forgot
@@ -1438,8 +1188,6 @@ private struct ProgressScreen: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedBucket: ProgressBucket = .forgot
     @State private var selectedWordForCard: SimpleWord?
-    @State private var isWordCardVisible = false
-    @State private var wordCardRevealOrigin: CGPoint = .zero
     private var displayedWords: [SimpleWord] { Array(filteredWords.prefix(20)) }
     private var isDarkMode: Bool { colorScheme == .dark }
     private var bucketLabels: [String] {
@@ -1457,123 +1205,79 @@ private struct ProgressScreen: View {
         }
     }
 
-    private func presentWordCard(_ word: SimpleWord, at origin: CGPoint) {
-        wordCardRevealOrigin = origin
-        selectedWordForCard = word
-        isWordCardVisible = false
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.34)) {
-                isWordCardVisible = true
-            }
-        }
-    }
-
-    private func dismissWordCard() {
-        guard selectedWordForCard != nil else { return }
-        withAnimation(.easeInOut(duration: 0.22)) {
-            isWordCardVisible = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            if !isWordCardVisible {
-                selectedWordForCard = nil
-            }
-        }
-    }
-
-    private func clampedRevealOrigin(in size: CGSize) -> CGPoint {
-        CGPoint(
-            x: min(max(wordCardRevealOrigin.x, 0), size.width),
-            y: min(max(wordCardRevealOrigin.y, 0), size.height)
-        )
-    }
-
-    private func revealRadius(in size: CGSize, from origin: CGPoint) -> CGFloat {
-        let corners = [
-            CGPoint(x: 0, y: 0),
-            CGPoint(x: size.width, y: 0),
-            CGPoint(x: 0, y: size.height),
-            CGPoint(x: size.width, y: size.height)
-        ]
-        return (corners.map { hypot($0.x - origin.x, $0.y - origin.y) }.max() ?? 0) + 48
-    }
-
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                VStack(spacing: 18) {
-                    Spacer().frame(height: 10)
+        VStack(spacing: 18) {
+            Spacer().frame(height: 10)
 
-                    CheckInHeatmapView()
-                        .frame(height: 186)
-                        .padding(.horizontal, 20)
+            CheckInHeatmapView()
+                .frame(height: 186)
+                .padding(.horizontal, 20)
 
-                    PillSelector(labels: bucketLabels, selectedIndex: selectedBucketIndex, style: .glossy) { idx in
-                        guard idx < ProgressBucket.allCases.count else { return }
-                        selectedBucket = ProgressBucket.allCases[idx]
-                    }
-                    .padding(.horizontal, 20)
+            PillSelector(labels: bucketLabels, selectedIndex: selectedBucketIndex, style: .glossy) { idx in
+                guard idx < ProgressBucket.allCases.count else { return }
+                selectedBucket = ProgressBucket.allCases[idx]
+            }
+            .padding(.horizontal, 20)
 
-                    if displayedWords.isEmpty {
-                        Text(appState.localized("No words yet", "暂无单词", "अभी कोई शब्द नहीं"))
-                            .font(.system(size: 16, weight: .medium, design: .rounded))
-                            .foregroundStyle(isDarkMode ? Color.white.opacity(0.46) : Color.black.opacity(0.40))
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 24)
-                        Spacer(minLength: 180)
-                    } else {
-                        List {
-                            ForEach(displayedWords) { word in
-                                ProgressWordRow(
-                                    word: word,
-                                    onDelete: {
-                                        withAnimation(.easeInOut(duration: 0.20)) {
-                                            srsManager.resetWordToNew(word.id)
-                                        }
-                                    },
-                                    onTap: { tapLocation in
-                                        presentWordCard(word, at: tapLocation)
-                                    }
-                                )
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 4, leading: 36, bottom: 4, trailing: 20))
-                                .listRowBackground(Color.clear)
+            if displayedWords.isEmpty {
+                Text(appState.localized("No words yet", "暂无单词", "अभी कोई शब्द नहीं"))
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.46) : Color.black.opacity(0.40))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 24)
+                Spacer(minLength: 180)
+            } else {
+                List {
+                    ForEach(displayedWords) { word in
+                        ProgressWordRow(
+                            word: word,
+                            onDelete: {
+                                withAnimation(.easeInOut(duration: 0.20)) {
+                                    srsManager.resetWordToNew(word.id)
+                                }
+                            },
+                            onTap: {
+                                selectedWordForCard = word
                             }
-                        }
-                        .listStyle(.plain)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.clear)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 36, bottom: 4, trailing: 20))
+                        .listRowBackground(Color.clear)
                     }
                 }
-                if let word = selectedWordForCard {
-                    let origin = clampedRevealOrigin(in: geo.size)
-                    let radius = revealRadius(in: geo.size, from: origin)
-                    SearchSelectedWordCardView(
-                        word: word,
-                        themeMode: appState.themeMode,
-                        allowsBlurrySwipe: true,
-                        dismissOnTap: true,
-                        onDismiss: { dismissWordCard() },
-                        onSwipeForgot: { srsManager.markWordForgot($0) },
-                        onSwipeMastered: { srsManager.markWordMastered($0) },
-                        onSwipeBlurry: { srsManager.markWordBlurry($0) }
-                    )
-                    .id(word.id)
-                    .mask(
-                        Circle()
-                            .frame(
-                                width: isWordCardVisible ? radius * 2 : 2,
-                                height: isWordCardVisible ? radius * 2 : 2
-                            )
-                            .position(origin)
-                    )
-                    .opacity(isWordCardVisible ? 1 : 0.001)
-                    .allowsHitTesting(isWordCardVisible)
-                    .zIndex(1)
-                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .coordinateSpace(name: progressRevealCoordinateSpace)
+        #if os(iOS)
+        .fullScreenCover(item: $selectedWordForCard) { word in
+            SearchSelectedWordCardView(
+                word: word,
+                themeMode: appState.themeMode,
+                allowsBlurrySwipe: true,
+                dismissOnTap: true,
+                onDismiss: { selectedWordForCard = nil },
+                onSwipeForgot: { srsManager.markWordForgot($0) },
+                onSwipeMastered: { srsManager.markWordMastered($0) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0) }
+            )
+        }
+        #else
+        .sheet(item: $selectedWordForCard) { word in
+            SearchSelectedWordCardView(
+                word: word,
+                themeMode: appState.themeMode,
+                allowsBlurrySwipe: true,
+                dismissOnTap: true,
+                onDismiss: { selectedWordForCard = nil },
+                onSwipeForgot: { srsManager.markWordForgot($0) },
+                onSwipeMastered: { srsManager.markWordMastered($0) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0) }
+            )
+        }
+        #endif
     }
 }
 
@@ -1667,7 +1371,7 @@ private struct ProgressWordRow: View {
     @Environment(\.colorScheme) private var colorScheme
     let word: SimpleWord
     let onDelete: () -> Void
-    let onTap: (CGPoint) -> Void
+    let onTap: () -> Void
 
     private var translationText: String {
         appState.translationText(for: word)
@@ -1695,14 +1399,9 @@ private struct ProgressWordRow: View {
         .padding(.horizontal, 2)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .named(progressRevealCoordinateSpace))
-                .onEnded { value in
-                    let distance = hypot(value.translation.width, value.translation.height)
-                    guard distance < 8 else { return }
-                    onTap(value.location)
-                }
-        )
+        .onTapGesture {
+            onTap()
+        }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 onDelete()
@@ -1734,9 +1433,6 @@ private struct SettingsScreen: View {
     @State private var avatarBottomGlobalY: CGFloat = 0
     @State private var themeSelectionOverride: Int?
     @State private var themeApplyTask: Task<Void, Never>?
-    @AppStorage("dailyReminderEnabled") private var dailyReminderEnabled = false
-    @AppStorage("dailyReminderHour") private var dailyReminderHour = 12
-    @AppStorage("dailyReminderMinute") private var dailyReminderMinute = 0
     #if os(iOS)
     @State private var avatarImage: UIImage?
     @State private var avatarLoadTask: Task<Void, Never>?
@@ -1763,7 +1459,7 @@ private struct SettingsScreen: View {
     private let cardFontOptions: [(style: CardFontStyle, label: String)] = [
         (.sfPro, "SF Pro"),
         (.sfRounded, "SF R"),
-        (.avenirNext, "Avenir N")
+        (.avenirNext, "AvenirN")
     ]
     private var appShareMessage: String {
         appState.localized(
@@ -1824,81 +1520,6 @@ private struct SettingsScreen: View {
     }
     private var selectedCardFontLabel: String {
         cardFontOptions.first(where: { $0.style == appState.cardFontStyle })?.label ?? cardFontOptions[0].label
-    }
-    private var notificationRowTitle: String {
-        appState.localized("Reminders", "提醒", "रिमाइंडर")
-    }
-    private var reminderNotificationTitle: String {
-        appState.localized("Time to learn French", "该学习法语了", "फ्रेंच सीखने का समय")
-    }
-    private var reminderNotificationBody: String {
-        appState.localized(
-            "Open Croissante and learn a few words today.",
-            "打开 Croissante，开始今天的学习吧。",
-            "Croissante खोलें और आज कुछ शब्द सीखें।"
-        )
-    }
-    private var reminderToggleBinding: Binding<Bool> {
-        Binding(
-            get: { dailyReminderEnabled },
-            set: { newValue in
-                guard dailyReminderEnabled != newValue else { return }
-                dailyReminderEnabled = newValue
-                FeedbackService.toggleChanged(isOn: newValue)
-                updateDailyReminderScheduling()
-            }
-        )
-    }
-    private var reminderStepIndex: Int {
-        let hour = min(max(dailyReminderHour, 0), 23)
-        let minute = min(max(dailyReminderMinute, 0), 59)
-        let totalMinutes = hour * 60 + minute
-        let snapped = Int(round(Double(totalMinutes) / 15.0))
-        return min(max(snapped, 0), 95)
-    }
-    private var reminderTimeText: String {
-        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        components.hour = min(max(dailyReminderHour, 0), 23)
-        components.minute = min(max(dailyReminderMinute, 0), 59)
-        components.second = 0
-        let date = Calendar.current.date(from: components) ?? Date()
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
-    }
-
-    private func setReminderStepIndex(_ index: Int) {
-        let clamped = min(max(index, 0), 95)
-        let totalMinutes = clamped * 15
-        dailyReminderHour = totalMinutes / 60
-        dailyReminderMinute = totalMinutes % 60
-        updateDailyReminderScheduling()
-    }
-
-    private func updateDailyReminderScheduling() {
-        let enabled = dailyReminderEnabled
-        let hour = min(max(dailyReminderHour, 0), 23)
-        let minute = min(max(dailyReminderMinute, 0), 59)
-        let title = reminderNotificationTitle
-        let body = reminderNotificationBody
-
-        Task {
-            let success = await DailyReminderService.shared.configure(
-                enabled: enabled,
-                hour: hour,
-                minute: minute,
-                title: title,
-                body: body
-            )
-            if enabled && !success {
-                await MainActor.run {
-                    if dailyReminderEnabled {
-                        dailyReminderEnabled = false
-                    }
-                }
-            }
-        }
     }
 
     private var spotlightToggleBinding: Binding<Bool> {
@@ -2207,7 +1828,6 @@ private struct SettingsScreen: View {
                 }
                 .onAppear {
                     refreshAvatarImage()
-                    updateDailyReminderScheduling()
                 }
                 .onChange(of: appState.avatarPath) { _, _ in
                     refreshAvatarImage()
@@ -2338,17 +1958,6 @@ private struct SettingsScreen: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                }
-                .padding(.horizontal, 20)
-
-                SettingsGroupCard {
-                    NotificationReminderSettingsCard(
-                        title: notificationRowTitle,
-                        displayTime: reminderTimeText,
-                        stepIndex: reminderStepIndex,
-                        isEnabled: reminderToggleBinding,
-                        onChangeStep: setReminderStepIndex
-                    )
                 }
                 .padding(.horizontal, 20)
 
@@ -2631,10 +2240,7 @@ private struct SettingsScreen: View {
                     }
                 .padding(.horizontal, 20)
 
-                settingsBrandFooter
-                    .padding(.horizontal, 20)
-
-                Spacer(minLength: 24)
+                Spacer(minLength: 160)
             }
         }
         .onPreferenceChange(SettingsAvatarBottomPreferenceKey.self) { y in
@@ -2809,27 +2415,6 @@ private struct SettingsScreen: View {
 
     private func resetLearningData() {
         srsManager.resetLearningData()
-        UserDefaults.standard.removeObject(forKey: "search_recent_word_ids")
-    }
-
-    private var settingsBrandFooter: some View {
-        HStack(spacing: 8) {
-            Image("SettingsFooterBrand")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 22, height: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Croissante")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.62) : Color.black.opacity(0.54))
-
-                Text("Version 1.0")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.36) : Color.black.opacity(0.34))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var appIconOptionsSection: some View {
@@ -4145,464 +3730,6 @@ private struct SettingsCardRow<Trailing: View>: View {
     }
 }
 
-private struct NotificationReminderSettingsCard: View {
-    let title: String
-    let displayTime: String
-    let stepIndex: Int
-    @Binding var isEnabled: Bool
-    let onChangeStep: (Int) -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var isKnobDragging = false
-    @State private var knobDragBiasX: CGFloat = 0
-    @State private var lastAudibleStepIndex: Int?
-
-    private var isDarkMode: Bool { colorScheme == .dark }
-    private var titleColor: Color {
-        isDarkMode ? Color.white.opacity(0.88) : Color.black.opacity(0.84)
-    }
-    private var iconColor: Color {
-        isDarkMode ? Color.white.opacity(0.54) : Color.black.opacity(0.42)
-    }
-    private var curveColor: Color {
-        isDarkMode ? Color.white.opacity(0.78) : Color.black.opacity(0.52)
-    }
-    private var maxStepIndex: Int { 95 }
-    private var noonStepIndex: Int { 48 }
-
-    private func progress(for stepIndex: Int) -> CGFloat {
-        let clamped = min(max(stepIndex, 0), maxStepIndex)
-        if clamped <= noonStepIndex {
-            return CGFloat(clamped) / CGFloat(noonStepIndex * 2)
-        }
-        let rightStepCount = max(maxStepIndex - noonStepIndex, 1)
-        return 0.5 + CGFloat(clamped - noonStepIndex) / CGFloat(rightStepCount * 2)
-    }
-
-    private func stepIndex(for progress: CGFloat) -> Int {
-        let clamped = min(max(progress, 0), 1)
-        if clamped <= 0.5 {
-            let left = Int((clamped * CGFloat(noonStepIndex * 2)).rounded())
-            return min(max(left, 0), noonStepIndex)
-        }
-        let rightStepCount = max(maxStepIndex - noonStepIndex, 1)
-        let right = Int((CGFloat(noonStepIndex) + (clamped - 0.5) * CGFloat(rightStepCount * 2)).rounded())
-        return min(max(right, noonStepIndex), maxStepIndex)
-    }
-
-    private func snappedStepIndex(for locationX: CGFloat, width: CGFloat) -> Int {
-        let minX = NotificationReminderCurveShape.horizontalInset
-        let maxX = max(minX, width - NotificationReminderCurveShape.horizontalInset)
-        let clampedX = min(max(locationX, minX), maxX)
-        let progress = (clampedX - minX) / max(maxX - minX, 1)
-        return stepIndex(for: progress)
-    }
-
-    private func applyDragStep(at locationX: CGFloat, width: CGFloat, playSound: Bool) {
-        let snapped = snappedStepIndex(for: locationX, width: width)
-        if playSound, let lastAudibleStepIndex, snapped != lastAudibleStepIndex {
-            FeedbackService.dropletTick(steps: abs(snapped - lastAudibleStepIndex))
-        }
-        lastAudibleStepIndex = snapped
-        onChangeStep(snapped)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Image(systemName: "bell.badge.fill")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(iconColor)
-                    .frame(width: 26, alignment: .center)
-
-                Text(title)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(titleColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.88)
-
-                Spacer(minLength: 0)
-
-                Toggle("", isOn: $isEnabled)
-                    .labelsHidden()
-                    .toggleStyle(SwitchToggleStyle(tint: .green))
-                    .scaleEffect(0.84)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            VStack(spacing: 8) {
-                GeometryReader { geo in
-                    let progress = progress(for: stepIndex)
-                    let curveRect = geo.frame(in: .local).insetBy(
-                        dx: NotificationReminderCurveShape.horizontalInset,
-                        dy: NotificationReminderCurveShape.verticalInset
-                    )
-                    let markerPoint = NotificationReminderCurveShape.point(in: curveRect, progress: progress)
-
-                    ZStack {
-                        NotificationReminderCurveShape()
-                            .stroke(
-                                curveColor.opacity(isEnabled ? 0.96 : 0.46),
-                                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                            )
-
-                        NotificationLiquidGlassKnob(
-                            isDarkMode: isDarkMode,
-                            isEnabled: isEnabled,
-                            isDragging: isKnobDragging,
-                            dragBiasX: knobDragBiasX
-                        )
-                            .frame(width: 25, height: 25)
-                            .position(x: markerPoint.x, y: markerPoint.y)
-                    }
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                isKnobDragging = true
-                                knobDragBiasX = min(max(value.translation.width / 34, -1), 1)
-                                applyDragStep(at: value.location.x, width: geo.size.width, playSound: true)
-                            }
-                            .onEnded { value in
-                                isKnobDragging = false
-                                knobDragBiasX = 0
-                                applyDragStep(at: value.location.x, width: geo.size.width, playSound: true)
-                            }
-                    )
-                }
-                .frame(height: 42)
-                .padding(.horizontal, 8)
-                .padding(.top, 6)
-
-                Text(displayTime)
-                    .font(.system(size: 24, weight: .regular, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(titleColor.opacity(isEnabled ? 0.94 : 0.60))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 10)
-            }
-            .padding(.top, 6)
-        }
-        .onAppear {
-            FeedbackService.prepareInteractive()
-            lastAudibleStepIndex = stepIndex
-        }
-        .onChange(of: stepIndex) { _, newValue in
-            if !isKnobDragging {
-                lastAudibleStepIndex = newValue
-            }
-        }
-    }
-}
-
-private struct NotificationLiquidGlassKnob: View {
-    let isDarkMode: Bool
-    let isEnabled: Bool
-    let isDragging: Bool
-    let dragBiasX: CGFloat
-
-    private var stretch: CGFloat { min(abs(dragBiasX), 1) }
-    private var lensShift: CGFloat { dragBiasX * 0.06 }
-    private var surfaceOpacity: Double { isDarkMode ? 0.50 : 0.82 }
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(.regularMaterial)
-                .overlay(
-                    Circle()
-                        .fill(Color.white.opacity(surfaceOpacity))
-                )
-
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(isDarkMode ? 0.40 : 0.72),
-                            Color.white.opacity(isDarkMode ? 0.14 : 0.34)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .blendMode(.plusLighter)
-
-            Circle()
-                .fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: Color.white.opacity(isDarkMode ? 0.24 : 0.46), location: 0.16),
-                            .init(color: Color.black.opacity(isDarkMode ? 0.25 : 0.16), location: 0.46),
-                            .init(color: Color.white.opacity(isDarkMode ? 0.20 : 0.38), location: 0.80)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .scaleEffect(x: 1.34, y: 0.66)
-                .rotationEffect(.degrees(-14 + Double(dragBiasX) * 8))
-                .offset(x: dragBiasX * 2.0, y: 0.8)
-                .blur(radius: 1.2)
-                .blendMode(.overlay)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            Color.white.opacity(isDarkMode ? 0.70 : 0.95),
-                            Color.white.opacity(0)
-                        ],
-                        center: UnitPoint(x: 0.30 + lensShift, y: 0.26),
-                        startRadius: 0,
-                        endRadius: 10.5
-                    )
-                )
-                .blendMode(.screen)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            Color.black.opacity(isDarkMode ? 0.30 : 0.16),
-                            Color.black.opacity(0)
-                        ],
-                        center: UnitPoint(x: 0.72 + lensShift, y: 0.74),
-                        startRadius: 0.4,
-                        endRadius: 12
-                    )
-                )
-                .blendMode(.multiply)
-
-            Ellipse()
-                .stroke(Color.white.opacity(isDarkMode ? 0.58 : 0.90), lineWidth: 1.25)
-                .scaleEffect(x: 0.70, y: 0.40)
-                .offset(x: dragBiasX * 0.8, y: -4.4)
-                .blur(radius: 0.22)
-                .blendMode(.screen)
-
-            Ellipse()
-                .stroke(Color.black.opacity(isDarkMode ? 0.26 : 0.14), lineWidth: 1.1)
-                .scaleEffect(x: 0.78, y: 0.46)
-                .offset(x: -dragBiasX * 0.9, y: 4.8)
-                .blur(radius: 0.32)
-                .blendMode(.multiply)
-
-            Circle()
-                .stroke(
-                    AngularGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(isDarkMode ? 0.86 : 0.98), location: 0.08),
-                            .init(color: Color.white.opacity(isDarkMode ? 0.72 : 0.90), location: 0.34),
-                            .init(color: Color.black.opacity(isDarkMode ? 0.40 : 0.24), location: 0.68),
-                            .init(color: Color.black.opacity(isDarkMode ? 0.58 : 0.34), location: 0.94)
-                        ]),
-                        center: .center
-                    ),
-                    lineWidth: 1.6
-                )
-
-            Circle()
-                .stroke(Color.white.opacity(isDarkMode ? 0.56 : 0.74), lineWidth: 0.9)
-                .scaleEffect(0.90)
-                .blur(radius: 0.2)
-
-            Circle()
-                .stroke(Color.black.opacity(isDarkMode ? 0.44 : 0.24), lineWidth: 1.9)
-                .blur(radius: 1.2)
-                .offset(x: 1.2, y: 1.5)
-                .mask(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.black.opacity(0),
-                                    Color.black.opacity(0.95)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
-        }
-        .compositingGroup()
-        .opacity(isEnabled ? 1 : 0.74)
-        .scaleEffect(
-            x: isDragging ? 1.02 + stretch * 0.08 : 1,
-            y: isDragging ? 0.98 - stretch * 0.08 : 1
-        )
-        .offset(x: isDragging ? dragBiasX * 1.8 : 0)
-        .shadow(
-            color: Color.black.opacity(isDarkMode ? 0.28 : 0.15),
-            radius: isDragging ? 9 : 6,
-            x: 0,
-            y: isDragging ? 3 : 2
-        )
-        .animation(.spring(response: 0.24, dampingFraction: 0.73), value: isDragging)
-        .animation(.spring(response: 0.20, dampingFraction: 0.78), value: dragBiasX)
-    }
-}
-
-private struct NotificationReminderCurveShape: Shape {
-    static let horizontalInset: CGFloat = 10
-    static let verticalInset: CGFloat = 6
-    private static let start = CGPoint(x: 0.08, y: 0.84)
-    private static let firstControl = CGPoint(x: 0.23, y: 0.92)
-    private static let secondControl = CGPoint(x: 0.38, y: -0.24)
-    private static let mid = CGPoint(x: 0.50, y: -0.24)
-    private static let thirdControl = CGPoint(x: 0.62, y: -0.24)
-    private static let fourthControl = CGPoint(x: 0.77, y: 0.92)
-    private static let end = CGPoint(x: 0.92, y: 0.84)
-
-    func path(in rect: CGRect) -> Path {
-        let drawRect = rect.insetBy(dx: Self.horizontalInset, dy: Self.verticalInset)
-        var path = Path()
-        path.move(to: Self.transformed(Self.start, in: drawRect))
-        path.addCurve(
-            to: Self.transformed(Self.mid, in: drawRect),
-            control1: Self.transformed(Self.firstControl, in: drawRect),
-            control2: Self.transformed(Self.secondControl, in: drawRect)
-        )
-        path.addCurve(
-            to: Self.transformed(Self.end, in: drawRect),
-            control1: Self.transformed(Self.thirdControl, in: drawRect),
-            control2: Self.transformed(Self.fourthControl, in: drawRect)
-        )
-        return path
-    }
-
-    static func point(in rect: CGRect, progress: CGFloat) -> CGPoint {
-        let clamped = min(max(progress, 0), 1)
-        let normalized: CGPoint
-        if clamped <= 0.5 {
-            normalized = cubicPoint(
-                p0: Self.start,
-                p1: Self.firstControl,
-                p2: Self.secondControl,
-                p3: Self.mid,
-                t: clamped / 0.5
-            )
-        } else {
-            normalized = cubicPoint(
-                p0: Self.mid,
-                p1: Self.thirdControl,
-                p2: Self.fourthControl,
-                p3: Self.end,
-                t: (clamped - 0.5) / 0.5
-            )
-        }
-        return transformed(normalized, in: rect)
-    }
-
-    private static func transformed(_ normalized: CGPoint, in rect: CGRect) -> CGPoint {
-        CGPoint(
-            x: rect.minX + rect.width * normalized.x,
-            y: rect.minY + rect.height * normalized.y
-        )
-    }
-
-    private static func cubicPoint(
-        p0: CGPoint,
-        p1: CGPoint,
-        p2: CGPoint,
-        p3: CGPoint,
-        t: CGFloat
-    ) -> CGPoint {
-        let u = 1 - t
-        let tt = t * t
-        let uu = u * u
-        let uuu = uu * u
-        let ttt = tt * t
-        return CGPoint(
-            x: (uuu * p0.x) + (3 * uu * t * p1.x) + (3 * u * tt * p2.x) + (ttt * p3.x),
-            y: (uuu * p0.y) + (3 * uu * t * p1.y) + (3 * u * tt * p2.y) + (ttt * p3.y)
-        )
-    }
-}
-
-private actor DailyReminderService {
-    static let shared = DailyReminderService()
-
-    private let center = UNUserNotificationCenter.current()
-    private let requestIdentifier = "croissante.daily.learning.reminder"
-
-    func configure(
-        enabled: Bool,
-        hour: Int,
-        minute: Int,
-        title: String,
-        body: String
-    ) async -> Bool {
-        guard enabled else {
-            cancel()
-            return true
-        }
-
-        let status = await notificationAuthorizationStatus()
-        switch status {
-        case .authorized, .provisional, .ephemeral:
-            return await schedule(hour: hour, minute: minute, title: title, body: body)
-        case .notDetermined:
-            let granted = await requestAuthorization()
-            guard granted else { return false }
-            return await schedule(hour: hour, minute: minute, title: title, body: body)
-        case .denied:
-            return false
-        @unknown default:
-            return false
-        }
-    }
-
-    private func schedule(hour: Int, minute: Int, title: String, body: String) async -> Bool {
-        let clampedHour = min(max(hour, 0), 23)
-        let clampedMinute = min(max(minute, 0), 59)
-
-        cancel()
-
-        var dateComponents = DateComponents()
-        dateComponents.hour = clampedHour
-        dateComponents.minute = clampedMinute
-
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-
-        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-        let request = UNNotificationRequest(identifier: requestIdentifier, content: content, trigger: trigger)
-
-        return await add(request)
-    }
-
-    private func cancel() {
-        center.removePendingNotificationRequests(withIdentifiers: [requestIdentifier])
-        center.removeDeliveredNotifications(withIdentifiers: [requestIdentifier])
-    }
-
-    private func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
-        await withCheckedContinuation { continuation in
-            center.getNotificationSettings { settings in
-                continuation.resume(returning: settings.authorizationStatus)
-            }
-        }
-    }
-
-    private func requestAuthorization() async -> Bool {
-        await withCheckedContinuation { continuation in
-            center.requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
-                continuation.resume(returning: granted)
-            }
-        }
-    }
-
-    private func add(_ request: UNNotificationRequest) async -> Bool {
-        await withCheckedContinuation { continuation in
-            center.add(request) { error in
-                continuation.resume(returning: error == nil)
-            }
-        }
-    }
-}
-
 private struct SettingsActionButtonsRow: View {
     let labels: [String]
     let onTap: (Int) -> Void
@@ -4726,7 +3853,7 @@ private struct TipSupportSheetView: View {
                 tipRow(
                     imageAssetName: "TipCroissantTwo",
                     title: appState.localized("Buy him two croissants", "请他吃两个可颂", "उसे दो क्रोइसां खिलाएं"),
-                    price: "$6.99",
+                    price: "$9.90",
                     showsDivider: true
                 ) {
                     onSelect(1)

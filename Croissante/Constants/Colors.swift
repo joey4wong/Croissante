@@ -38,6 +38,8 @@ struct AppColors {
     
     static let checkinHeatmapBg = Color(red: 0.96, green: 0.96, blue: 0.97)
     static let checkinHeatmapLightBg = Color(red: 0.91, green: 0.92, blue: 0.93)
+    static let porcelainBackground = Color(red: 234.0 / 255.0, green: 234.0 / 255.0, blue: 234.0 / 255.0)
+    static let porcelainCard = Color.white
 
     // MARK: - Nocturne Dark Theme (Cinematic)
 
@@ -114,6 +116,12 @@ extension AppColors {
                 startPoint: .top,
                 endPoint: .bottom
             )
+        case .porcelain:
+            return LinearGradient(
+                colors: [porcelainBackground, porcelainBackground],
+                startPoint: .top,
+                endPoint: .bottom
+            )
         default:
             return appBackgroundGradient(isDarkMode: isDarkMode)
         }
@@ -132,12 +140,18 @@ extension AppColors {
         )
     }
 
-    static func elevatedSurfaceFill(isDarkMode: Bool) -> Color {
-        isDarkMode ? nocturneSurface : Color(red: 0.965, green: 0.966, blue: 0.972)
+    static func elevatedSurfaceFill(themeMode: ThemeMode = .system, isDarkMode: Bool) -> Color {
+        if themeMode == .porcelain {
+            return porcelainCard
+        }
+        return isDarkMode ? nocturneSurface : Color(red: 0.965, green: 0.966, blue: 0.972)
     }
 
-    static func elevatedSurfaceBorder(isDarkMode: Bool) -> Color {
-        isDarkMode ? nocturneBorder : Color.white.opacity(0.72)
+    static func elevatedSurfaceBorder(themeMode: ThemeMode = .system, isDarkMode: Bool) -> Color {
+        if themeMode == .porcelain {
+            return Color.black.opacity(0.08)
+        }
+        return isDarkMode ? nocturneBorder : Color.white.opacity(0.72)
     }
 
     static func primaryText(isDarkMode: Bool) -> Color {
