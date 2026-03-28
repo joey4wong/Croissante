@@ -1194,13 +1194,13 @@ private struct DiscoverCard: View {
                             let dx = v.translation.width
                             let dy = v.translation.height
                             if dx < -swipeThreshold {
-                                let swipedWordId = displayedWord.id
+                                let swipedWordId = word.id
                                 FeedbackService.swipeForgot()
                                 completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
                                     onSwipeForgot(swipedWordId)
                                 }
                             } else if dx > swipeThreshold {
-                                let swipedWordId = displayedWord.id
+                                let swipedWordId = word.id
                                 FeedbackService.swipeMastered()
                                 completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
                                     onSwipeMastered(swipedWordId)
@@ -1209,7 +1209,7 @@ private struct DiscoverCard: View {
                                 FeedbackService.swipeBlurry()
                                 completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
                             } else if dy > swipeThreshold && allowsBlurrySwipe {
-                                let swipedWordId = displayedWord.id
+                                let swipedWordId = word.id
                                 FeedbackService.swipeBlurry()
                                 completeSwipe(to: CGSize(width: 0, height: 400)) {
                                     onSwipeBlurry(swipedWordId)
@@ -4830,20 +4830,20 @@ private struct MemberUnlockPaywallView: View {
         var priceText: String {
             switch self {
             case .monthly:
-                return "$1.99/month"
+                return "$1.99 / Month"
             case .yearly:
-                return "$19.9/year"
+                return "$19.9 / Year"
             case .lifetime:
-                return "$39.9 lifetime"
+                return "$39.9 / Lifetime"
             }
         }
 
         var detailText: String {
             switch self {
             case .monthly:
-                return "3 days free, then $1.99/month"
+                return "3 days free, then $1.99 / Month"
             case .yearly:
-                return "3 days free, then $19.9/year"
+                return "3 days free, then $19.9 / Year"
             case .lifetime:
                 return "One-time payment, lifetime access"
             }
@@ -4852,11 +4852,11 @@ private struct MemberUnlockPaywallView: View {
         var pickerTitle: String {
             switch self {
             case .monthly:
-                return "$1.99/month"
+                return "$1.99 / Month"
             case .yearly:
-                return "$19.9/year"
+                return "$19.9 / Year"
             case .lifetime:
-                return "$39.9 lifetime"
+                return "$39.9 / Lifetime"
             }
         }
     }

@@ -420,9 +420,7 @@ public final class SRSManager: ObservableObject {
         masteredWordIds.remove(wordId)
         forgotWordIds.remove(wordId)
         dailyMasteredDeckWordIds.remove(wordId)
-        if !replaceSetbackWordInTodayDeckIfPossible(wordId, now: now) {
-            enqueueWordForReview(wordId)
-        }
+        enqueueWordForReview(wordId)
         refillInfiniteQueueIfNeeded(now: now)
         saveLearningState()
     }
@@ -444,9 +442,7 @@ public final class SRSManager: ObservableObject {
         masteredWordIds.remove(wordId)
         blurryWordIds.remove(wordId)
         dailyMasteredDeckWordIds.remove(wordId)
-        if !replaceSetbackWordInTodayDeckIfPossible(wordId, now: now) {
-            enqueueWordForReview(wordId)
-        }
+        enqueueWordForReview(wordId)
         refillInfiniteQueueIfNeeded(now: now)
 
         // 向外部模块广播“忘记”事件，便于同步错题本。
@@ -756,31 +752,6 @@ public final class SRSManager: ObservableObject {
         guard dailyDeckWordIds.contains(wordId) else { return }
         guard !dailyMasteredDeckWordIds.contains(wordId) else { return }
         learningQueueIds.append(wordId)
-    }
-
-    @discardableResult
-    private func replaceSetbackWordInTodayDeckIfPossible(_ wordId: String, now: Date) -> Bool {
-        // 小目标（例如 5 词）下，优先把“模糊/忘记”卡替换成新可发卡，避免首页反复循环同几张。
-        guard !isInfinitePracticeActive else { return false }
-        guard dailyDeckWordIds.contains(wordId) else { return false }
-
-        let originalDeckWordIds = dailyDeckWordIds
-        let originalQueueIds = learningQueueIds
-
-        dailyDeckWordIds.removeAll { $0 == wordId }
-        removeWordFromLearningQueue(wordId)
-        extendTodayDeckIfNeeded(now: now)
-
-        // 若无法补齐，回退到旧行为（回流当前卡），避免影响今日目标结构。
-        guard dailyDeckWordIds.count == originalDeckWordIds.count else {
-            dailyDeckWordIds = originalDeckWordIds
-            learningQueueIds = originalQueueIds
-            sanitizeDeckState()
-            return false
-        }
-
-        sanitizeDeckState()
-        return true
     }
 
     private func rebuildLearningQueueFromDeck() {
