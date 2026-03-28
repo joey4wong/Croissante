@@ -36,7 +36,7 @@ public struct ContentView: View {
     public init() {}
 
     private var discoverWords: [SimpleWord] {
-        srsManager.getLearningQueueWords()
+        srsManager.getLearningQueueWordsSnapshot()
     }
 
     private var isDarkMode: Bool {
@@ -127,8 +127,10 @@ public struct ContentView: View {
             )
         )
         .onChange(of: appState.level) { _, newLevel in
-            srsManager.setTargetLevel(newLevel)
-            advanceDiscover()
+            DispatchQueue.main.async {
+                srsManager.setTargetLevel(newLevel)
+                advanceDiscover()
+            }
         }
         .onChange(of: appState.spotlightSelectedWordId) { _, wordId in
             guard let wordId, let word = appState.words.first(where: { $0.id == wordId }) else { return }
@@ -427,6 +429,10 @@ private struct DiscoverScreen: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var srsManager: SRSManager
     @State private var hasSeenCardsInSession = false
+    @State private var galaxyWords: [SimpleWord] = []
+    @State private var galaxyRevealOrigin: CGPoint = .zero
+    @State private var isGalaxyVisible = false
+    @State private var galaxyPinchLatched = false
 
     private var word: SimpleWord? {
         guard !words.isEmpty else { return nil }
@@ -441,66 +447,90 @@ private struct DiscoverScreen: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if !appState.hasCompletedInitialResourceLoad {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .scaleEffect(1.08)
+                Group {
+                    if !appState.hasCompletedInitialResourceLoad {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(1.08)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    } else if let word {
+                        DiscoverCard(
+                            word: word,
+                            screenWidth: geo.size.width,
+                            cardHeight: geo.size.height * 0.35,
+                            isActiveTab: isActiveTab && !isGalaxyVisible,
+                            onSwipeForgot: onSwipeForgot,
+                            onSwipeMastered: onSwipeMastered,
+                            onSwipeBlurry: onSwipeBlurry
+                        )
                         .frame(width: geo.size.width, height: geo.size.height)
-                } else if let word {
-                    DiscoverCard(
-                        word: word,
-                        screenWidth: geo.size.width,
-                        cardHeight: geo.size.height * 0.35,
-                        isActiveTab: isActiveTab,
-                        onSwipeForgot: onSwipeForgot,
-                        onSwipeMastered: onSwipeMastered,
-                        onSwipeBlurry: onSwipeBlurry
-                    )
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2 + 12)
-                } else if shouldShowCompletionCelebration {
-                    DeckCompletionCelebrationView(
-                        showContinueInfiniteButton: srsManager.canStartInfinitePractice,
-                        onContinueInfinite: {
-                            srsManager.startInfinitePractice()
+                        .position(x: geo.size.width / 2, y: geo.size.height / 2 + 12)
+                    } else if shouldShowCompletionCelebration {
+                        DeckCompletionCelebrationView(
+                            showContinueInfiniteButton: srsManager.canStartInfinitePractice,
+                            onContinueInfinite: {
+                                srsManager.startInfinitePractice()
+                            }
+                        )
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    } else {
+                        Group {
+                            if srsManager.todayStudyState == .completed {
+                                DiscoverEmptyStateView(
+                                    title: appState.localized("Today's goal complete", "今日目标已完成", "आज का लक्ष्य पूरा"),
+                                    subtitle: appState.localized(
+                                        "You've finished your learning goal for today.",
+                                        "你今天的学习目标已经完成。",
+                                        "आपने आज का सीखने का लक्ष्य पूरा कर लिया है।"
+                                    )
+                                )
+                            } else {
+                                DiscoverEmptyStateView(
+                                    title: appState.localized(
+                                        "No eligible cards at this level",
+                                        "当前等级暂无可发卡",
+                                        "इस स्तर पर अभी कोई कार्ड उपलब्ध नहीं"
+                                    ),
+                                    subtitle: appState.localized(
+                                        "Switch level or come back when reviews are due.",
+                                        "可以切换等级，或等待到期复习后再来。",
+                                        "लेवल बदलें या समीक्षा समय आने पर वापस आएं।"
+                                    )
+                                )
+                            }
                         }
-                    )
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                } else {
-                    Group {
-                        if srsManager.todayStudyState == .completed {
-                            DiscoverEmptyStateView(
-                                title: appState.localized("Today's goal complete", "今日目标已完成", "आज का लक्ष्य पूरा"),
-                                subtitle: appState.localized(
-                                    "You've finished your learning goal for today.",
-                                    "你今天的学习目标已经完成。",
-                                    "आपने आज का सीखने का लक्ष्य पूरा कर लिया है।"
-                                )
-                            )
-                        } else {
-                            DiscoverEmptyStateView(
-                                title: appState.localized(
-                                    "No eligible cards at this level",
-                                    "当前等级暂无可发卡",
-                                    "इस स्तर पर अभी कोई कार्ड उपलब्ध नहीं"
-                                ),
-                                subtitle: appState.localized(
-                                    "Switch level or come back when reviews are due.",
-                                    "可以切换等级，或等待到期复习后再来。",
-                                    "लेवल बदलें या समीक्षा समय आने पर वापस आएं।"
-                                )
-                            )
-                        }
                     }
-                    .frame(width: geo.size.width, height: geo.size.height)
+                }
+                .opacity(isGalaxyVisible ? 0 : 1)
+                .allowsHitTesting(!isGalaxyVisible)
+
+                if isGalaxyVisible, !galaxyWords.isEmpty {
+                    WordGalaxyOverlay(
+                        words: galaxyWords,
+                        revealOrigin: galaxyRevealOrigin,
+                        onDismiss: dismissGalaxy
+                    )
+                    .transition(.identity)
                 }
             }
             .animation(.easeInOut(duration: 0.26), value: words.isEmpty)
+            #if os(iOS)
+            .background(
+                ExplorePinchGestureBridge(isEnabled: isActiveTab && word != nil && !isGalaxyVisible) { event in
+                    handleGalaxyPinch(event, containerFrame: geo.frame(in: .global))
+                }
+                .frame(width: 0, height: 0)
+            )
+            #endif
         }
         .padding(.horizontal, 20)
         .onAppear {
-            srsManager.refreshForCurrentDayIfNeeded()
+            DispatchQueue.main.async {
+                srsManager.refreshForCurrentDayIfNeeded()
+                srsManager.ensureLearningQueueReady()
+            }
             if !words.isEmpty {
                 hasSeenCardsInSession = true
             }
@@ -517,7 +547,14 @@ private struct DiscoverScreen: View {
         }
         .onChange(of: appState.hasCompletedInitialResourceLoad) { _, loaded in
             guard loaded else { return }
-            srsManager.refreshForCurrentDayIfNeeded()
+            DispatchQueue.main.async {
+                srsManager.refreshForCurrentDayIfNeeded()
+                srsManager.ensureLearningQueueReady()
+            }
+        }
+        .onChange(of: isActiveTab) { _, active in
+            guard !active, isGalaxyVisible else { return }
+            dismissGalaxy()
         }
     }
 
@@ -534,7 +571,403 @@ private struct DiscoverScreen: View {
         WidgetDataService.writeWidgetPool(pool, language: appState.language, level: level)
         WidgetCenter.shared.reloadAllTimelines()
     }
+
+    private func dismissGalaxy() {
+        isGalaxyVisible = false
+        galaxyPinchLatched = false
+        galaxyWords = []
+    }
+
+    #if os(iOS)
+    private func handleGalaxyPinch(_ event: ExplorePinchEvent, containerFrame: CGRect) {
+        switch event.state {
+        case .began:
+            galaxyPinchLatched = false
+        case .changed:
+            guard !galaxyPinchLatched,
+                  !isGalaxyVisible,
+                  appState.hasCompletedInitialResourceLoad,
+                  isActiveTab,
+                  let word,
+                  containerFrame.contains(event.location) else {
+                return
+            }
+
+            let compression = max(0, 1 - event.scale)
+            guard compression >= 0.16 else { return }
+
+            let localPoint = CGPoint(
+                x: event.location.x - containerFrame.minX,
+                y: event.location.y - containerFrame.minY
+            )
+            let previewWords = srsManager.getUpcomingPreviewWords(limit: 25, excludingCurrentWordId: word.id)
+            guard !previewWords.isEmpty else { return }
+
+            galaxyPinchLatched = true
+            galaxyWords = previewWords
+            galaxyRevealOrigin = CGPoint(
+                x: min(max(localPoint.x, 0), containerFrame.width),
+                y: min(max(localPoint.y, 0), containerFrame.height)
+            )
+            FeedbackService.dropletTick(steps: 2)
+            isGalaxyVisible = true
+        case .ended, .cancelled, .failed:
+            galaxyPinchLatched = false
+        default:
+            break
+        }
+    }
+    #endif
 }
+
+private struct WordGalaxyOverlay: View {
+    let words: [SimpleWord]
+    let revealOrigin: CGPoint
+    let onDismiss: () -> Void
+
+    @State private var revealProgress: CGFloat = 0
+    @State private var animationStart = Date()
+    @State private var isDismissing = false
+    @State private var canDismissByTap = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
+            let startVector = CGSize(
+                width: revealOrigin.x - center.x,
+                height: revealOrigin.y - center.y
+            )
+
+            ZStack {
+                Color.clear
+                    .ignoresSafeArea()
+
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    let elapsed = context.date.timeIntervalSince(animationStart)
+                    let projectedCards = projectedCards(
+                        for: words,
+                        size: geo.size,
+                        elapsed: elapsed,
+                        startVector: startVector
+                    )
+
+                    ZStack {
+                        ForEach(projectedCards) { card in
+                            GalaxyWordCard(word: card.word)
+                                .scaleEffect(card.scale)
+                                .rotation3DEffect(.degrees(card.pitch), axis: (x: 1, y: 0, z: 0), perspective: 0.92)
+                                .rotation3DEffect(.degrees(card.yaw), axis: (x: 0, y: 1, z: 0), perspective: 0.92)
+                                .rotationEffect(.degrees(card.roll))
+                                .offset(card.offset)
+                                .opacity(card.opacity)
+                                .blur(radius: card.blur)
+                                .zIndex(card.depth)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard canDismissByTap else { return }
+                dismiss()
+            }
+            .onAppear {
+                animationStart = Date()
+                canDismissByTap = false
+                withAnimation(.spring(response: 0.88, dampingFraction: 0.84)) {
+                    revealProgress = 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
+                    guard !isDismissing else { return }
+                    canDismissByTap = true
+                }
+            }
+        }
+    }
+
+    private func dismiss() {
+        guard !isDismissing else { return }
+        isDismissing = true
+        withAnimation(.easeInOut(duration: 0.24)) {
+            revealProgress = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+            onDismiss()
+        }
+    }
+
+    private func projectedCards(
+        for words: [SimpleWord],
+        size: CGSize,
+        elapsed: TimeInterval,
+        startVector: CGSize
+    ) -> [ProjectedGalaxyCard] {
+        guard !words.isEmpty else { return [] }
+
+        let orbitRotation = elapsed * 0.34
+        let startX = Double(startVector.width)
+        let startY = Double(startVector.height)
+        let progress = max(0.0001, Double(revealProgress))
+        let count = max(1, words.count)
+        let baseRadius = Double(min(size.width, size.height)) * 0.35
+        let radiusX = baseRadius
+        let radiusY = baseRadius * 0.25
+        let depthRadius = baseRadius * 0.42
+
+        return words.enumerated().map { index, word in
+            let normalizedIndex = Double(index) / Double(count)
+            let angle = normalizedIndex * Double.pi * 2 - orbitRotation
+
+            var x = cos(angle) * radiusX
+            var y = sin(angle) * radiusY
+            var z = sin(angle) * depthRadius
+
+            (x, y, z) = rotateX(x: x, y: y, z: z, angle: -Double.pi / 6)
+            (x, y, z) = rotateZ(x: x, y: y, z: z, angle: -Double.pi / 6)
+
+            let perspective = 1080.0
+            let depthDenominator = max(320.0, perspective - z)
+            let depthScale = perspective / depthDenominator
+
+            let targetX = x * depthScale
+            let targetY = y * depthScale
+
+            let currentX = startX * (1 - progress) + targetX * progress
+            let currentY = startY * (1 - progress) + targetY * progress
+            let cardScale = max(0.64, min(1.04, depthScale * 0.80)) * (0.70 + progress * 0.30)
+            let opacity = min(1, max(0.36, 0.48 + progress * 0.52 - max(0, -z) / 1600))
+            let blur = max(0, (0.90 - depthScale) * 2.0)
+            let yaw = max(-15, min(15, -cos(angle) * 11))
+            let pitch = max(-9, min(9, sin(angle) * 7))
+            let roll = sin(angle) * 1.6
+
+            return ProjectedGalaxyCard(
+                id: word.id,
+                word: word,
+                offset: CGSize(width: CGFloat(currentX), height: CGFloat(currentY)),
+                scale: CGFloat(cardScale),
+                opacity: opacity,
+                blur: CGFloat(blur),
+                yaw: yaw,
+                pitch: pitch,
+                roll: roll,
+                depth: z
+            )
+        }
+        .sorted { $0.depth < $1.depth }
+    }
+
+    private func rotateY(x: Double, y: Double, z: Double, angle: Double) -> (Double, Double, Double) {
+        let cosAngle = cos(angle)
+        let sinAngle = sin(angle)
+        let rotatedX = x * cosAngle - z * sinAngle
+        let rotatedZ = x * sinAngle + z * cosAngle
+        return (rotatedX, y, rotatedZ)
+    }
+
+    private func rotateX(x: Double, y: Double, z: Double, angle: Double) -> (Double, Double, Double) {
+        let cosAngle = cos(angle)
+        let sinAngle = sin(angle)
+        let rotatedY = y * cosAngle - z * sinAngle
+        let rotatedZ = y * sinAngle + z * cosAngle
+        return (x, rotatedY, rotatedZ)
+    }
+
+    private func rotateZ(x: Double, y: Double, z: Double, angle: Double) -> (Double, Double, Double) {
+        let cosAngle = cos(angle)
+        let sinAngle = sin(angle)
+        let rotatedX = x * cosAngle - y * sinAngle
+        let rotatedY = x * sinAngle + y * cosAngle
+        return (rotatedX, rotatedY, z)
+    }
+}
+
+private struct ProjectedGalaxyCard: Identifiable {
+    let id: String
+    let word: SimpleWord
+    let offset: CGSize
+    let scale: CGFloat
+    let opacity: Double
+    let blur: CGFloat
+    let yaw: Double
+    let pitch: Double
+    let roll: Double
+    let depth: Double
+}
+
+private struct GalaxyWordCard: View {
+    let word: SimpleWord
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var title: String {
+        let display = word.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
+        return display.isEmpty ? word.word : display
+    }
+
+    private var surfaceGradient: LinearGradient {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [Color.white.opacity(0.20), Color.white.opacity(0.12), Color.white.opacity(0.06)]
+                : [Color.white.opacity(0.94), Color.white.opacity(0.84), Color.white.opacity(0.70)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var primaryTextColor: Color {
+        colorScheme == .dark ? .white : Color.black.opacity(0.76)
+    }
+
+    private var secondaryTextColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.66) : Color.black.opacity(0.46)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(primaryTextColor)
+                .lineLimit(2)
+                .minimumScaleFactor(0.55)
+
+            HStack(spacing: 8) {
+                Text(word.level)
+                Text(word.tag)
+            }
+            .font(.system(size: 9, weight: .medium, design: .rounded))
+            .foregroundStyle(secondaryTextColor)
+            .textCase(.uppercase)
+        }
+        .frame(width: 106, height: 70, alignment: .topLeading)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(surfaceGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.12), radius: 9, x: 0, y: 5)
+    }
+}
+
+#if os(iOS)
+private struct ExplorePinchEvent {
+    let scale: CGFloat
+    let location: CGPoint
+    let state: UIGestureRecognizer.State
+}
+
+private struct ExplorePinchGestureBridge: UIViewRepresentable {
+    let isEnabled: Bool
+    let onEvent: (ExplorePinchEvent) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEvent: onEvent)
+    }
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.coordinator = context.coordinator
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: ProbeView, context: Context) {
+        context.coordinator.onEvent = onEvent
+        context.coordinator.update(from: uiView, isEnabled: isEnabled)
+    }
+
+    final class ProbeView: UIView {
+        weak var coordinator: Coordinator?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            coordinator?.refresh(from: self)
+        }
+
+        override func willMove(toWindow newWindow: UIWindow?) {
+            if newWindow == nil {
+                coordinator?.detach()
+            }
+            super.willMove(toWindow: newWindow)
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            coordinator?.refresh(from: self)
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onEvent: (ExplorePinchEvent) -> Void
+        private var isEnabled = false
+        private weak var attachedView: UIView?
+        private weak var pinchRecognizer: UIPinchGestureRecognizer?
+
+        init(onEvent: @escaping (ExplorePinchEvent) -> Void) {
+            self.onEvent = onEvent
+        }
+
+        func refresh(from view: UIView) {
+            update(from: view, isEnabled: isEnabled)
+        }
+
+        func update(from view: UIView, isEnabled: Bool) {
+            self.isEnabled = isEnabled
+
+            guard isEnabled, let targetView = view.window else {
+                detach()
+                return
+            }
+
+            guard attachedView !== targetView else { return }
+
+            detach()
+
+            let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delegate = self
+            targetView.addGestureRecognizer(recognizer)
+
+            pinchRecognizer = recognizer
+            attachedView = targetView
+        }
+
+        func detach() {
+            if let pinchRecognizer {
+                pinchRecognizer.view?.removeGestureRecognizer(pinchRecognizer)
+            }
+            pinchRecognizer = nil
+            attachedView = nil
+        }
+
+        @objc
+        private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+            guard isEnabled else { return }
+
+            onEvent(
+                ExplorePinchEvent(
+                    scale: recognizer.scale,
+                    location: recognizer.location(in: recognizer.view),
+                    state: recognizer.state
+                )
+            )
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+    }
+}
+#endif
 
 struct SearchSelectedWordCardView: View {
     let word: SimpleWord

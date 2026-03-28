@@ -766,9 +766,9 @@ public final class SRSManager: ObservableObject {
         sanitizeDeckState(preferredQueueIds: [wordId] + learningQueueIds)
     }
     
-    public func getLearningQueueWords() -> [SimpleWord] {
+    public func ensureLearningQueueReady() {
         refillInfiniteQueueIfNeeded(now: Date())
-        guard let appState = appState else { return [] }
+        guard let appState = appState else { return }
         let resolved = learningQueueIds.compactMap { appState.getWordById($0) }
         if resolved.isEmpty,
            !isInfinitePracticeActive,
@@ -780,9 +780,58 @@ public final class SRSManager: ObservableObject {
                 repaired = learningQueueIds.compactMap { appState.getWordById($0) }
             }
             saveLearningState()
-            return repaired
         }
-        return resolved
+    }
+
+    public func getLearningQueueWordsSnapshot() -> [SimpleWord] {
+        guard let appState = appState else { return [] }
+        return learningQueueIds.compactMap { appState.getWordById($0) }
+    }
+
+    public func getLearningQueueWords() -> [SimpleWord] {
+        ensureLearningQueueReady()
+        return getLearningQueueWordsSnapshot()
+    }
+
+    public func getUpcomingPreviewWords(limit: Int = 25, excludingCurrentWordId currentWordId: String? = nil) -> [SimpleWord] {
+        guard limit > 0 else { return [] }
+
+        let now = Date()
+        refillInfiniteQueueIfNeeded(now: now)
+        guard let appState else { return [] }
+
+        var orderedIds: [String] = []
+        orderedIds.reserveCapacity(limit)
+        var seenIds: Set<String> = []
+        var blockedIds = Set(dailyMasteredDeckWordIds)
+        if let currentWordId, !currentWordId.isEmpty {
+            blockedIds.insert(currentWordId)
+        }
+
+        func appendIds<S: Sequence>(_ ids: S) where S.Element == String {
+            for id in ids {
+                guard !blockedIds.contains(id) else { continue }
+                guard seenIds.insert(id).inserted else { continue }
+                guard appState.getWordById(id) != nil else { continue }
+                orderedIds.append(id)
+                if orderedIds.count >= limit { return }
+            }
+        }
+
+        appendIds(learningQueueIds)
+
+        if orderedIds.count < limit {
+            let unresolvedDeckIds = dailyDeckWordIds.filter { !dailyMasteredDeckWordIds.contains($0) }
+            appendIds(unresolvedDeckIds)
+        }
+
+        if orderedIds.count < limit {
+            let excludedIds = blockedIds.union(seenIds).union(Set(dailyDeckWordIds))
+            let continuationWords = buildPreviewContinuation(from: appState.words, now: now, excluding: excludedIds)
+            appendIds(continuationWords.map(\.id))
+        }
+
+        return orderedIds.prefix(limit).compactMap { appState.getWordById($0) }
     }
     
     func getDailyDeckWords() -> [SimpleWord] {
@@ -928,6 +977,37 @@ public final class SRSManager: ObservableObject {
         return Array(result.prefix(batchSize))
     }
 
+    private func buildPreviewContinuation(from allWords: [SimpleWord], now: Date, excluding excludedIds: Set<String>) -> [SimpleWord] {
+        let filteredWords = wordsForTargetLevel(from: allWords).filter { !excludedIds.contains($0.id) }
+        guard !filteredWords.isEmpty else { return [] }
+
+        let dueReviewWords = dueReviewWords(in: filteredWords, now: now)
+        let dueReviewIDs = Set(dueReviewWords.map(\.id))
+        let newWords = stablePreviewOrder(
+            filteredWords.filter { learningRecords[$0.id] == nil },
+            salt: "new"
+        )
+        let reinforcementWords = stablePreviewOrder(
+            filteredWords.filter { learningRecords[$0.id] != nil && !dueReviewIDs.contains($0.id) },
+            salt: "reinforcement"
+        )
+
+        var result: [SimpleWord] = []
+        result.reserveCapacity(filteredWords.count)
+        var seenIds: Set<String> = []
+
+        func appendUnique(_ words: [SimpleWord]) {
+            for word in words where seenIds.insert(word.id).inserted {
+                result.append(word)
+            }
+        }
+
+        appendUnique(dueReviewWords)
+        appendUnique(newWords)
+        appendUnique(reinforcementWords)
+        return result
+    }
+
     private func wordsForTargetLevel(from allWords: [SimpleWord]) -> [SimpleWord] {
         if targetLevel == "All" {
             return allWords
@@ -968,6 +1048,27 @@ public final class SRSManager: ObservableObject {
                 if lhsDate == rhsDate { return lhs.id < rhs.id }
                 return lhsDate < rhsDate
             }
+    }
+
+    private func stablePreviewOrder(_ words: [SimpleWord], salt: String) -> [SimpleWord] {
+        let dayKey = todayKey()
+        return words.sorted { lhs, rhs in
+            let lhsRank = stablePreviewRank(for: lhs.id, salt: salt, dayKey: dayKey)
+            let rhsRank = stablePreviewRank(for: rhs.id, salt: salt, dayKey: dayKey)
+            if lhsRank == rhsRank {
+                return lhs.id < rhs.id
+            }
+            return lhsRank < rhsRank
+        }
+    }
+
+    private func stablePreviewRank(for id: String, salt: String, dayKey: String) -> UInt64 {
+        var hash: UInt64 = 1469598103934665603
+        for byte in "\(dayKey)|\(salt)|\(id)".utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        return hash
     }
 
     private func sanitizeDeckState(preferredQueueIds: [String]? = nil) {
