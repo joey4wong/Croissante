@@ -18,13 +18,36 @@ enum FeedbackService {
     private static var gearTickTask: Task<Void, Never>?
     private static let gearTickIntervalNanoseconds: UInt64 = 18_000_000
     private static let maxQueuedGearTicks = 20
-    private static var dropletPlayer = DropletSoundPlayer()
+    private static var didConfigureAudioSession = false
+    private static var dropletPlayer: DropletSoundPlayer?
     private static var lastDropletTime: CFAbsoluteTime = 0
     private static let dropletInterval: CFTimeInterval = 0.055
     #endif
 
+    #if os(iOS)
+    private static func configureAudioSessionIfNeeded() {
+        guard !didConfigureAudioSession else { return }
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+            didConfigureAudioSession = true
+        } catch {}
+    }
+
+    private static func ensureDropletPlayer() -> DropletSoundPlayer? {
+        if let dropletPlayer {
+            return dropletPlayer
+        }
+        let newPlayer = DropletSoundPlayer()
+        dropletPlayer = newPlayer
+        return newPlayer
+    }
+    #endif
+
     static func prepareInteractive() {
         #if os(iOS)
+        configureAudioSessionIfNeeded()
+        _ = ensureDropletPlayer()
         selectionGenerator.prepare()
         lightImpactGenerator.prepare()
         mediumImpactGenerator.prepare()
@@ -35,6 +58,7 @@ enum FeedbackService {
 
     static func gearTick(steps: Int = 1) {
         #if os(iOS)
+        configureAudioSessionIfNeeded()
         let incomingSteps = max(1, steps)
         queuedGearTicks = min(maxQueuedGearTicks, queuedGearTicks + incomingSteps)
 
@@ -59,6 +83,7 @@ enum FeedbackService {
 
     static func dropletTick(steps: Int = 1) {
         #if os(iOS)
+        configureAudioSessionIfNeeded()
         let now = CFAbsoluteTimeGetCurrent()
         guard now - lastDropletTime >= dropletInterval else { return }
         lastDropletTime = now
@@ -69,7 +94,7 @@ enum FeedbackService {
 
         lightImpactGenerator.impactOccurred(intensity: impactIntensity)
         lightImpactGenerator.prepare()
-        if let dropletPlayer {
+        if let dropletPlayer = ensureDropletPlayer() {
             dropletPlayer.play(volume: soundVolume)
         } else {
             AudioServicesPlaySystemSound(1104)
@@ -150,7 +175,6 @@ private final class DropletSoundPlayer {
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.outputVolume = 0.85
-        try? engine.start()
     }
 
     func play(volume: Float) {

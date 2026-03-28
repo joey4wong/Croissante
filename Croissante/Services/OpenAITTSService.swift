@@ -71,7 +71,7 @@ public class OpenAITTSService {
     private func setupAudioSession() {
         #if os(iOS)
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {}
         #endif
