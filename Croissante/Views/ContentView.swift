@@ -662,29 +662,19 @@ private struct WordGalaxyOverlay: View {
                     ZStack {
                         ForEach(projectedCards) { card in
                             GalaxyWordCard(word: card.word)
-                                .scaleEffect(card.scale)
                                 .rotation3DEffect(
-                                    .degrees(card.yawAngle),
+                                    .degrees(card.cardTiltY),
                                     axis: (x: 0, y: 1, z: 0),
                                     perspective: 0
                                 )
-                                .rotation3DEffect(
-                                    .degrees(card.pitchAngle),
-                                    axis: (x: 1, y: 0, z: 0),
-                                    perspective: 0
-                                )
+                                .scaleEffect(card.scale)
                                 .offset(card.offset)
                                 .opacity(card.opacity)
                                 .blur(radius: card.blur)
-                                .zIndex(card.zOrder)
+                                .zIndex(card.depth)
                         }
                     }
-                    .rotation3DEffect(
-                        .degrees(-27),
-                        axis: (x: 1, y: 0, z: 0),
-                        perspective: 0
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(width: geo.size.width, height: geo.size.height)
                 }
             }
             .contentShape(Rectangle())
@@ -732,6 +722,14 @@ private struct WordGalaxyOverlay: View {
         }
     }
 
+    // --- Fixed Parameters (tuned from HTML prototype) ---
+    private let majorRadius: CGFloat = 200
+    private let minorRadius: CGFloat = 200
+    private let ringTiltX: Double = -16       // 俯视角度（负值=俯视）
+    private let ringTiltZ: Double = 17        // S 形扭转
+    private let orbitSpeed: Double = 48       // 旋转速度
+    private let cameraDistance: Double = 1100
+
     private func projectedCards(
         for words: [SimpleWord],
         size: CGSize,
@@ -740,76 +738,81 @@ private struct WordGalaxyOverlay: View {
     ) -> [ProjectedGalaxyCard] {
         guard !words.isEmpty else { return [] }
 
-        let orbitRotation = elapsed * 0.24 + orbitDragOffset
         let startX = Double(startVector.width)
         let startY = Double(startVector.height)
         let progress = max(0.0001, Double(revealProgress))
-        let count = max(1, words.count)
+        let count = words.count
 
-        let radiusX = Double(size.width) * 0.33
-        let radiusY = radiusX * 0.56
-        let depthRadius = radiusX * 0.46
-        let roll = 30.0 * Double.pi / 180.0
-        let focalLength = Double(max(size.width, size.height)) * 1.55
-        let maxDepth = max(0.0001, depthRadius)
-        let cosRoll = cos(roll)
-        let sinRoll = sin(roll)
+        // 逆时针旋转（负号）— 与参考代码完全一致
+        let orbitRad = -(elapsed * orbitSpeed + orbitDragOffset * orbitSpeed) * .pi / 180.0
 
-        return words.enumerated().map { index, word in
-            let normalizedIndex = Double(index) / Double(count)
-            let baseAngle = normalizedIndex * Double.pi * 2 - orbitRotation
-            let angle = baseAngle - 0.07 * sin(2 * baseAngle)
-            let laneJitter = sin(Double(index) * 1.73) * 0.018
-            let radiusFactor = 1.0 + laneJitter
+        // Ring rotation: Rz · Rx — 完整矩阵
+        let rxRad = ringTiltX * .pi / 180.0
+        let rzRad = ringTiltZ * .pi / 180.0
+        let cosRx = cos(rxRad), sinRx = sin(rxRad)
+        let cosRz = cos(rzRad), sinRz = sin(rzRad)
 
+        //  Rz · Rx =
+        //  | cosRz   -sinRz·cosRx    sinRz·sinRx |
+        //  | sinRz    cosRz·cosRx   -cosRz·sinRx |
+        //  |   0         sinRx          cosRx     |
+        let m00 = cosRz
+        let m02 = sinRz * sinRx
+        let m10 = sinRz
+        let m12 = -cosRz * sinRx
+        let m20 = 0.0
+        let m22 = cosRx
+
+        var results: [ProjectedGalaxyCard] = []
+
+        for (index, word) in words.enumerated() {
+            let angle = orbitRad + (Double(index) / Double(count)) * 2.0 * .pi
             let cosA = cos(angle)
             let sinA = sin(angle)
 
-            let x = cosA * radiusX * radiusFactor
-            let y = sinA * radiusY * radiusFactor
-            let z = sinA * depthRadius * radiusFactor
+            // 椭圆上的位置（局部 XZ 平面，Y=0）
+            let lx = cosA * Double(majorRadius)
+            let lz = sinA * Double(minorRadius)
 
-            let xr = x * cosRoll - y * sinRoll
-            let yr = x * sinRoll + y * cosRoll
+            // 应用环旋转矩阵 → 世界坐标（localY = 0，省略 m01/m11/m21 项）
+            let wx = m00 * lx + m02 * lz
+            let wy = m10 * lx + m12 * lz
+            let wz = m20 * lx + m22 * lz
 
-            let perspectiveScale = focalLength / max(260.0, focalLength - z)
+            // 透视投影
+            let depthScale = cameraDistance / (cameraDistance + wz)
+            let screenX = wx * depthScale
+            let screenY = wy * depthScale
 
-            let targetX = xr * perspectiveScale
-            let targetY = yr * perspectiveScale - Double(size.height) * 0.055
-            let currentX = startX * (1 - progress) + targetX * progress
-            let currentY = startY * (1 - progress) + targetY * progress
+            // 卡片朝向：薄边指向轨道中心
+            // 卡片面法线需要垂直于半径方向（即与轨道相切）
+            // 在局部轨道平面中，tiltY = -θ 使 face normal ⊥ radius
+            let cardTiltY = -angle * (180.0 / .pi)
 
-            let depthProgress = max(0.0, min(1.0, (z + maxDepth) / (2 * maxDepth)))
-
-            let tangentX = -sinA * radiusX * radiusFactor
-            let tangentY = cosA * radiusY * radiusFactor
-            let tangentZ = cosA * depthRadius * radiusFactor
-            let tangentXR = tangentX * cosRoll - tangentY * sinRoll
-            let tangentXZ = max(0.0001, sqrt((tangentXR * tangentXR) + (tangentZ * tangentZ)))
-            let yawBase = asin(max(-1.0, min(1.0, tangentXR / tangentXZ))) * 180.0 / Double.pi
-            let yawAngle = yawBase * 0.88
-            let pitchAngle = 0.0
-
-            let targetScale = (0.62 + 0.30 * depthProgress) * pow(perspectiveScale, 0.52)
+            // 视觉属性
+            let targetScale = 0.5 + 0.5 * depthScale
             let scale = targetScale * progress + (1 - progress) * 0.3
-            let targetOpacity = 0.62 + 0.34 * depthProgress
+            let targetOpacity = min(1.0, 0.25 + 0.75 * depthScale)
             let opacity = targetOpacity * progress + (1 - progress) * 0.2
-            let blur = max(0.0, (1.0 - depthProgress) * 0.05)
-            let zOrder = z + Double(index) * 0.0001
+            let blur = max(0.0, (1.0 - depthScale) * 3.0)
 
-            return ProjectedGalaxyCard(
+            // reveal 动画插值
+            let currentX = startX * (1 - progress) + screenX * progress
+            let currentY = startY * (1 - progress) + screenY * progress
+
+            results.append(ProjectedGalaxyCard(
                 id: "\(word.id)-\(index)",
                 word: word,
                 offset: CGSize(width: CGFloat(currentX), height: CGFloat(currentY)),
                 scale: CGFloat(scale),
                 opacity: opacity,
                 blur: CGFloat(blur),
-                zOrder: zOrder,
-                yawAngle: yawAngle,
-                pitchAngle: pitchAngle
-            )
+                depth: wz,
+                cardTiltY: cardTiltY
+            ))
         }
-        .sorted { $0.zOrder < $1.zOrder }
+
+        return results
     }
 }
 
@@ -820,9 +823,8 @@ private struct ProjectedGalaxyCard: Identifiable {
     let scale: CGFloat
     let opacity: Double
     let blur: CGFloat
-    let zOrder: Double
-    let yawAngle: Double
-    let pitchAngle: Double
+    let depth: Double
+    let cardTiltY: Double
 }
 
 private struct GalaxyWordCard: View {
