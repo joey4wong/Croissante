@@ -3,7 +3,15 @@ import AVFoundation
 
 @MainActor
 public class OpenAITTSService {
-    static let shared = OpenAITTSService()
+    private static var sharedInstance: OpenAITTSService?
+    private static var shared: OpenAITTSService {
+        if let existing = sharedInstance {
+            return existing
+        }
+        let created = OpenAITTSService()
+        sharedInstance = created
+        return created
+    }
     
     private var apiKey: String {
         (Bundle.main.object(forInfoDictionaryKey: "OpenAIAPIKey") as? String)?
@@ -249,6 +257,7 @@ extension OpenAITTSService {
     
     @MainActor
     static func stopPlayback() {
-        shared.stop()
+        guard let sharedInstance else { return }
+        sharedInstance.stop()
     }
 }

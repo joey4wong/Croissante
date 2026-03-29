@@ -32,7 +32,6 @@ public struct ContentView: View {
     @State private var lastContentTab: MainTab = .explore
     @State private var settingsGearSpinToken = 0
     @State private var spotlightWord: SimpleWord?
-    @State private var isGalaxyVisibleInExplore = false
 
     public init() {}
 
@@ -55,7 +54,6 @@ public struct ContentView: View {
                 words: discoverWords,
                 queueIndex: $discoverQueueIndex,
                 isActiveTab: selectedTab == .explore,
-                onGalaxyVisibilityChanged: { isGalaxyVisibleInExplore = $0 },
                 onSwipeForgot: { srsManager.markWordForgot($0); advanceDiscover() },
                 onSwipeMastered: { srsManager.markWordMastered($0); advanceDiscover() },
                 onSwipeBlurry: { srsManager.markWordBlurry($0); advanceDiscover() }
@@ -100,8 +98,7 @@ public struct ContentView: View {
         .background(
             SettingsTabGearAnimationBridge(
                 settingsIndex: 2,
-                spinToken: settingsGearSpinToken,
-                isTabBarHidden: isGalaxyVisibleInExplore
+                spinToken: settingsGearSpinToken
             )
                 .frame(width: 0, height: 0)
         )
@@ -113,9 +110,6 @@ public struct ContentView: View {
         .onChange(of: selectedTab) { _, newTab in
             guard newTab == .search else {
                 lastContentTab = newTab
-                if newTab != .explore {
-                    isGalaxyVisibleInExplore = false
-                }
                 if newTab == .settings {
                     settingsGearSpinToken += 1
                 }
@@ -195,7 +189,6 @@ private struct SearchPresentationModifier: ViewModifier {
 private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
     let settingsIndex: Int
     let spinToken: Int
-    let isTabBarHidden: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(settingsIndex: settingsIndex)
@@ -209,7 +202,7 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ProbeView, context: Context) {
-        context.coordinator.update(from: uiView, spinToken: spinToken, isTabBarHidden: isTabBarHidden)
+        context.coordinator.update(from: uiView, spinToken: spinToken)
     }
 
     @MainActor
@@ -234,20 +227,17 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
         private weak var tapRecognizer: UITapGestureRecognizer?
         private var currentSpinToken = 0
         private var lastAppliedSpinToken = 0
-        private var currentTabBarHidden = false
-        private var lastAppliedTabBarHidden: Bool?
 
         init(settingsIndex: Int) {
             self.settingsIndex = settingsIndex
         }
 
         func refresh(from view: UIView) {
-            update(from: view, spinToken: currentSpinToken, isTabBarHidden: currentTabBarHidden)
+            update(from: view, spinToken: currentSpinToken)
         }
 
-        func update(from view: UIView, spinToken: Int, isTabBarHidden: Bool) {
+        func update(from view: UIView, spinToken: Int) {
             currentSpinToken = spinToken
-            currentTabBarHidden = isTabBarHidden
 
             guard let tabBar = locateTabBar(from: view) else {
                 detach()
@@ -263,8 +253,6 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
                 tabBar.addGestureRecognizer(recognizer)
                 tapRecognizer = recognizer
             }
-
-            applyTabBarHiddenIfNeeded(hidden: isTabBarHidden, in: tabBar)
 
             guard spinToken != lastAppliedSpinToken else { return }
             lastAppliedSpinToken = spinToken
@@ -312,16 +300,6 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
             }
             tapRecognizer = nil
             tabBar = nil
-            lastAppliedTabBarHidden = nil
-        }
-
-        private func applyTabBarHiddenIfNeeded(hidden: Bool, in tabBar: UITabBar) {
-            guard let tabBarController = locateTabBarController(from: tabBar) else { return }
-            if lastAppliedTabBarHidden == hidden, tabBarController.isTabBarHidden == hidden {
-                return
-            }
-            tabBarController.setTabBarHidden(hidden, animated: true)
-            lastAppliedTabBarHidden = hidden
         }
 
         private func tabIndex(at point: CGPoint, in tabBar: UITabBar) -> Int? {
@@ -360,22 +338,11 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
 
         private func preferredTabBar(in root: UIView) -> UITabBar? {
             let candidates = findTabBars(in: root)
-                .filter { $0.bounds.width > 0 && $0.bounds.height > 0 }
+                .filter { !$0.isHidden && $0.alpha > 0.01 && $0.bounds.width > 0 && $0.bounds.height > 0 }
 
             return candidates.max { lhs, rhs in
                 lhs.convert(lhs.bounds, to: nil).maxY < rhs.convert(rhs.bounds, to: nil).maxY
             }
-        }
-
-        private func locateTabBarController(from tabBar: UITabBar) -> UITabBarController? {
-            var responder: UIResponder? = tabBar
-            while let current = responder {
-                if let tabBarController = current as? UITabBarController {
-                    return tabBarController
-                }
-                responder = current.next
-            }
-            return nil
         }
 
         private func findTabBars(in view: UIView) -> [UITabBar] {
@@ -456,7 +423,6 @@ private struct DiscoverScreen: View {
     let words: [SimpleWord]
     @Binding var queueIndex: Int
     let isActiveTab: Bool
-    let onGalaxyVisibilityChanged: (Bool) -> Void
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
@@ -467,8 +433,6 @@ private struct DiscoverScreen: View {
     @State private var galaxyRevealOrigin: CGPoint = .zero
     @State private var isGalaxyVisible = false
     @State private var galaxyPinchLatched = false
-    private let galaxyTargetCount = 22
-    private let galaxyActivationCompression: CGFloat = 0.16
 
     private var word: SimpleWord? {
         guard !words.isEmpty else { return nil }
@@ -499,7 +463,6 @@ private struct DiscoverScreen: View {
                             onSwipeMastered: onSwipeMastered,
                             onSwipeBlurry: onSwipeBlurry
                         )
-                        .id(word.id)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .position(x: geo.size.width / 2, y: geo.size.height / 2 + 12)
                     } else if shouldShowCompletionCelebration {
@@ -547,7 +510,7 @@ private struct DiscoverScreen: View {
                     WordGalaxyOverlay(
                         words: galaxyWords,
                         revealOrigin: galaxyRevealOrigin,
-                        onDismiss: { dismissGalaxy(selectedWord: $0) }
+                        onDismiss: dismissGalaxy
                     )
                     .transition(.identity)
                 }
@@ -609,42 +572,8 @@ private struct DiscoverScreen: View {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    private func buildGalaxyWords(excluding currentWordId: String) -> [SimpleWord] {
-        let level = appState.level
-        let levelWords = level == "All"
-            ? appState.words
-            : appState.words.filter { $0.level == level }
-        let candidates = levelWords.filter { $0.id != currentWordId }
-        guard !candidates.isEmpty else { return [] }
-        if candidates.count >= galaxyTargetCount {
-            return Array(candidates.shuffled().prefix(galaxyTargetCount))
-        }
-        var result: [SimpleWord] = []
-        result.reserveCapacity(galaxyTargetCount)
-        while result.count < galaxyTargetCount {
-            result += candidates.shuffled()
-        }
-        return Array(result.prefix(galaxyTargetCount))
-    }
-
-    private func clampedLocalPoint(from globalPoint: CGPoint, in containerFrame: CGRect) -> CGPoint {
-        let localPoint = CGPoint(
-            x: globalPoint.x - containerFrame.minX,
-            y: globalPoint.y - containerFrame.minY
-        )
-        return CGPoint(
-            x: min(max(localPoint.x, 0), containerFrame.width),
-            y: min(max(localPoint.y, 0), containerFrame.height)
-        )
-    }
-
-    private func dismissGalaxy(selectedWord: SimpleWord? = nil) {
-        if let selectedWord {
-            srsManager.promoteWordToLearningQueueFront(selectedWord.id)
-            queueIndex = 0
-        }
+    private func dismissGalaxy() {
         isGalaxyVisible = false
-        onGalaxyVisibilityChanged(false)
         galaxyPinchLatched = false
         galaxyWords = []
     }
@@ -665,15 +594,27 @@ private struct DiscoverScreen: View {
             }
 
             let compression = max(0, 1 - event.scale)
-            guard compression >= galaxyActivationCompression else { return }
-            let generatedWords = buildGalaxyWords(excluding: word.id)
-            guard !generatedWords.isEmpty else { return }
+            guard compression >= 0.16 else { return }
+
+            let localPoint = CGPoint(
+                x: event.location.x - containerFrame.minX,
+                y: event.location.y - containerFrame.minY
+            )
+            let previewWords = srsManager.getUpcomingPreviewWords(limit: 25, excludingCurrentWordId: word.id)
+            guard !previewWords.isEmpty else { return }
+            let targetCount = 25
+            var filled = previewWords
+            while filled.count < targetCount {
+                filled += previewWords
+            }
 
             galaxyPinchLatched = true
-            galaxyWords = generatedWords
-            galaxyRevealOrigin = clampedLocalPoint(from: event.location, in: containerFrame)
+            galaxyWords = Array(filled.prefix(targetCount))
+            galaxyRevealOrigin = CGPoint(
+                x: min(max(localPoint.x, 0), containerFrame.width),
+                y: min(max(localPoint.y, 0), containerFrame.height)
+            )
             isGalaxyVisible = true
-            onGalaxyVisibilityChanged(true)
         case .ended, .cancelled, .failed:
             galaxyPinchLatched = false
         default:
@@ -686,7 +627,7 @@ private struct DiscoverScreen: View {
 private struct WordGalaxyOverlay: View {
     let words: [SimpleWord]
     let revealOrigin: CGPoint
-    let onDismiss: (SimpleWord?) -> Void
+    let onDismiss: () -> Void
 
     @State private var revealProgress: CGFloat = 0
     @State private var animationStart = Date()
@@ -694,13 +635,14 @@ private struct WordGalaxyOverlay: View {
     @State private var canDismissByTap = false
     @State private var orbitDragOffset = 0.0
     @State private var previousDragTranslationX: CGFloat = 0
-    @State private var touchDownDate: Date? = nil  // 手指按下时刻，用于冻结自动旋转
+    @State private var isDraggingOrbit = false
+    @State private var lastGearTickOffset = 0.0
 
     private let orbitRadius: Double = 135
-    private let ringTiltX: Double = -18
+    private let ringTiltX: Double = -30
     private let ringTiltZ: Double = 17
     private let orbitSpeed: Double = 55
-    private let cameraDistance: Double = 750
+    private let cameraDistance: Double = 1100
 
     var body: some View {
         GeometryReader { geo in
@@ -711,8 +653,7 @@ private struct WordGalaxyOverlay: View {
             )
 
             TimelineView(.animation) { context in
-                // 手指按下时冻结自动旋转，抬起后无缝续上
-                let elapsed = (touchDownDate ?? context.date).timeIntervalSince(animationStart)
+                let elapsed = context.date.timeIntervalSince(animationStart)
                 let cards = projectedCards(
                     size: geo.size,
                     elapsed: elapsed,
@@ -727,7 +668,6 @@ private struct WordGalaxyOverlay: View {
                                 axis: (x: 0, y: 1, z: 0),
                                 perspective: 0
                             )
-                            .rotationEffect(.degrees(15))
                             .scaleEffect(card.scale)
                             .offset(card.offset)
                             .opacity(card.opacity)
@@ -738,44 +678,31 @@ private struct WordGalaxyOverlay: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
             .contentShape(Rectangle())
-            .gesture(
+            .onTapGesture {
+                guard canDismissByTap else { return }
+                dismiss()
+            }
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        if touchDownDate == nil {
-                            touchDownDate = Date()
+                        if !isDraggingOrbit {
+                            isDraggingOrbit = true
+                            lastGearTickOffset = orbitDragOffset
                         }
                         let delta = value.translation.width - previousDragTranslationX
                         previousDragTranslationX = value.translation.width
                         orbitDragOffset += Double(delta) / 80.0
+
+                        let cardInterval = 1.0 / Double(max(1, words.count))
+                        let passedCards = Int(abs(orbitDragOffset - lastGearTickOffset) / cardInterval)
+                        if passedCards > 0 {
+                            FeedbackService.gearTick(steps: passedCards)
+                            lastGearTickOffset += Double(passedCards) * cardInterval * (orbitDragOffset > lastGearTickOffset ? 1 : -1)
+                        }
                     }
-                    .onEnded { value in
-                        let totalDrag = abs(value.translation.width) + abs(value.translation.height)
-                        let projectedDeltaX = value.predictedEndTranslation.width - value.translation.width
-                        let projectedDeltaY = value.predictedEndTranslation.height - value.translation.height
-                        let projectedDrag = abs(projectedDeltaX) + abs(projectedDeltaY)
-                        let isTapDismiss = totalDrag < 10 && projectedDrag < 12 && canDismissByTap
-                        if isTapDismiss {
-                            let elapsed = (touchDownDate ?? Date()).timeIntervalSince(animationStart)
-                            let cards = projectedCards(
-                                size: geo.size,
-                                elapsed: elapsed,
-                                startVector: startVector
-                            )
-                            let selectedWord = hitTestCard(
-                                at: value.location,
-                                in: geo.size,
-                                cards: cards
-                            )?.word
-                            dismiss(selectedWord: selectedWord)
-                        } else {
-                            applyInertia(using: value)
-                        }
+                    .onEnded { _ in
+                        isDraggingOrbit = false
                         previousDragTranslationX = 0
-                        if let td = touchDownDate {
-                            let pauseDuration = Date().timeIntervalSince(td)
-                            animationStart = animationStart.addingTimeInterval(pauseDuration)
-                            touchDownDate = nil
-                        }
                     }
             )
             .onAppear {
@@ -792,48 +719,15 @@ private struct WordGalaxyOverlay: View {
         }
     }
 
-    private func dismiss(selectedWord: SimpleWord?) {
+    private func dismiss() {
         guard !isDismissing else { return }
         isDismissing = true
         withAnimation(.easeInOut(duration: 0.24)) {
             revealProgress = 0
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            onDismiss(selectedWord)
-            }
-    }
-
-    private func applyInertia(using value: DragGesture.Value) {
-        let projectedDeltaX = value.predictedEndTranslation.width - value.translation.width
-        let velocityTurns = Double(projectedDeltaX) / 220.0
-        let distanceTurns = Double(value.translation.width) / 900.0
-        let inertiaTurns = min(max(velocityTurns + distanceTurns, -4.5), 4.5)
-        guard abs(inertiaTurns) >= 0.05 else { return }
-
-        let duration = min(1.8, max(0.45, 0.55 + abs(inertiaTurns) * 0.25))
-        withAnimation(.timingCurve(0.15, 0.90, 0.22, 1.00, duration: duration)) {
-            orbitDragOffset += inertiaTurns
+            onDismiss()
         }
-    }
-
-    private func hitTestCard(
-        at location: CGPoint,
-        in size: CGSize,
-        cards: [ProjectedGalaxyCard]
-    ) -> ProjectedGalaxyCard? {
-        cards
-            .sorted { $0.depth > $1.depth }
-            .first { card in
-                let scale = CGFloat(card.scale)
-                let side = 68.0 * scale * 1.12
-                let frame = CGRect(
-                    x: size.width / 2 + card.offset.width - side / 2,
-                    y: size.height / 2 + card.offset.height - side / 2,
-                    width: side,
-                    height: side
-                )
-                return frame.contains(location)
-            }
     }
 
     private func projectedCards(
@@ -873,19 +767,14 @@ private struct WordGalaxyOverlay: View {
             let wy = m10 * lx + m12 * lz
             let wz = m22 * lz
 
-            // 透视投影（位置）
             let depthScale = cameraDistance / (cameraDistance + wz)
             let screenX = wx * depthScale
             let screenY = wy * depthScale
 
-            // 卡片朝向：完整轨道角度，允许侧面变薄和背面镜像形成扇形效果
             let cardTiltY = -angle * (180.0 / .pi)
 
-            // 直接用 depthScale 驱动视觉属性（与参考模板一致，天然近大远小）
-            let targetScale = 0.5 + 0.5 * depthScale
-            let scale = targetScale * progress + (1 - progress) * 0.3
-            let targetOpacity = min(1.0, 0.25 + 0.75 * depthScale)
-            let opacity = targetOpacity * progress + (1 - progress) * 0.2
+            let scale = (0.5 + 0.5 * depthScale) * progress + (1 - progress) * 0.3
+            let opacity = min(1.0, 0.25 + 0.75 * depthScale) * progress + (1 - progress) * 0.2
             let blur = max(0.0, (1.0 - depthScale) * 3.0)
 
             results.append(ProjectedGalaxyCard(
@@ -943,8 +832,9 @@ private struct GalaxyWordCard: View {
             .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.66) : Color.black.opacity(0.46))
             .textCase(.uppercase)
         }
-        .frame(width: 54, height: 54, alignment: .topLeading)
-        .padding(7)
+        .frame(width: 54, height: 74, alignment: .topLeading)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(colorScheme == .dark
@@ -1025,7 +915,7 @@ private struct ExplorePinchGestureBridge: UIViewRepresentable {
         func update(from view: UIView, isEnabled: Bool) {
             self.isEnabled = isEnabled
 
-            guard isEnabled, let targetView = resolveTargetView(from: view) else {
+            guard isEnabled, let targetView = view.window else {
                 detach()
                 return
             }
@@ -1043,15 +933,6 @@ private struct ExplorePinchGestureBridge: UIViewRepresentable {
             attachedView = targetView
         }
 
-        private func resolveTargetView(from view: UIView) -> UIView? {
-            if let superview = view.superview,
-               superview.bounds.width > 0,
-               superview.bounds.height > 0 {
-                return superview
-            }
-            return view.window
-        }
-
         func detach() {
             if let pinchRecognizer {
                 pinchRecognizer.view?.removeGestureRecognizer(pinchRecognizer)
@@ -1063,16 +944,11 @@ private struct ExplorePinchGestureBridge: UIViewRepresentable {
         @objc
         private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
             guard isEnabled else { return }
-            guard let gestureView = recognizer.view else { return }
-            let locationInGestureView = recognizer.location(in: gestureView)
-            let locationInGlobal = gestureView.window.map {
-                gestureView.convert(locationInGestureView, to: $0)
-            } ?? locationInGestureView
 
             onEvent(
                 ExplorePinchEvent(
                     scale: recognizer.scale,
-                    location: locationInGlobal,
+                    location: recognizer.location(in: recognizer.view),
                     state: recognizer.state
                 )
             )
@@ -2248,8 +2124,10 @@ private struct ProgressWordRow: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .simultaneousGesture(
-            SpatialTapGesture(coordinateSpace: .named(progressRevealCoordinateSpace))
+            DragGesture(minimumDistance: 0, coordinateSpace: .named(progressRevealCoordinateSpace))
                 .onEnded { value in
+                    let distance = hypot(value.translation.width, value.translation.height)
+                    guard distance < 8 else { return }
                     onTap(value.location)
                 }
         )

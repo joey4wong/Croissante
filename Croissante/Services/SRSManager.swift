@@ -793,6 +793,33 @@ public final class SRSManager: ObservableObject {
         return getLearningQueueWordsSnapshot()
     }
 
+    public func promoteWordToLearningQueueFront(_ wordId: String) {
+        guard !wordId.isEmpty else { return }
+        guard let appState, appState.getWordById(wordId) != nil else { return }
+        ensureLearningQueueReady()
+
+        if !isInfinitePracticeActive {
+            ensureWordInDailyDeckFront(wordId)
+        }
+
+        sanitizeDeckState(preferredQueueIds: [wordId] + learningQueueIds)
+        saveLearningState()
+    }
+
+    private func ensureWordInDailyDeckFront(_ wordId: String) {
+        dailyMasteredDeckWordIds.remove(wordId)
+        guard !dailyDeckWordIds.contains(wordId) else { return }
+        dailyDeckWordIds.insert(wordId, at: 0)
+        trimDailyDeckOverflowIfNeeded()
+    }
+
+    private func trimDailyDeckOverflowIfNeeded() {
+        while dailyDeckWordIds.count > dailyDeckLimit, let removedId = dailyDeckWordIds.popLast() {
+            dailyMasteredDeckWordIds.remove(removedId)
+            learningQueueIds.removeAll { $0 == removedId }
+        }
+    }
+
     public func getUpcomingPreviewWords(limit: Int = 25, excludingCurrentWordId currentWordId: String? = nil) -> [SimpleWord] {
         guard limit > 0 else { return [] }
 

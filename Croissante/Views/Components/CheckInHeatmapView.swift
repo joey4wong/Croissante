@@ -5,61 +5,28 @@ struct CheckInHeatmapView: View {
     @EnvironmentObject private var srsManager: SRSManager
     @State private var autoReturnTask: Task<Void, Never>?
     @State private var initialCenterTask: Task<Void, Never>?
-    @State private var hasCenteredOnAppear = false
+    @State private var lastViewportWidth: CGFloat = 0
     @State private var lastTickTranslationX: CGFloat = 0
     @State private var todayDotBlink = false
 
     private let calendar: Calendar
-    private let today: Date
-    private let displayYear: Int
 
     private let cellSize: CGFloat = 15
     private let cellSpacing: CGFloat = 4
+    private let horizontalPanelPadding: CGFloat = 10
     private let gearTickStep: CGFloat = 14
     private let monthHeaderHeight: CGFloat = 20
-    private let weeks: [WeekColumn]
-    private let monthMarkers: [MonthMarker]
 
-    init(referenceDate: Date = Date(), calendar: Calendar = .current) {
+    init(calendar: Calendar = .current) {
         var configuredCalendar = calendar
         configuredCalendar.locale = Locale(identifier: "en_US_POSIX")
         configuredCalendar.firstWeekday = 1 // GitHub style: Sunday-first columns
 
         self.calendar = configuredCalendar
-        self.today = configuredCalendar.startOfDay(for: referenceDate)
-
-        let year = configuredCalendar.component(.year, from: self.today)
-        self.displayYear = year
-
-        let startOfYear = configuredCalendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? self.today
-        let endOfYear = configuredCalendar.date(from: DateComponents(year: year, month: 12, day: 31)) ?? self.today
-        let firstWeekStart = configuredCalendar.dateInterval(of: .weekOfYear, for: startOfYear)?.start ?? startOfYear
-        let lastWeekStart = configuredCalendar.dateInterval(of: .weekOfYear, for: endOfYear)?.start ?? endOfYear
-
-        let generatedWeeks = Self.buildWeeks(
-            calendar: configuredCalendar,
-            firstWeekStart: firstWeekStart,
-            lastWeekStart: lastWeekStart
-        )
-        self.weeks = generatedWeeks
-        self.monthMarkers = Self.buildMonthMarkers(
-            year: year,
-            firstWeekStart: firstWeekStart,
-            weeksCount: generatedWeeks.count,
-            calendar: configuredCalendar
-        )
     }
 
-    private var gridWidth: CGFloat {
-        CGFloat(weeks.count) * cellSize + CGFloat(max(0, weeks.count - 1)) * cellSpacing
-    }
-    
-    private var todayWeekIndex: Int? {
-        weeks.first { week in
-            week.days.contains { day in
-                calendar.isDate(day, inSameDayAs: today)
-            }
-        }?.index
+    private var today: Date {
+        calendar.startOfDay(for: Date())
     }
 
     private var monthTextColor: Color {
@@ -103,52 +70,67 @@ struct CheckInHeatmapView: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 8) {
-                    monthHeader
-                    contributionGrid
+        let layout = makeYearLayout()
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        Color.clear.frame(width: sideInset(for: geometry.size.width))
+                        VStack(alignment: .leading, spacing: 8) {
+                            monthHeader(layout: layout)
+                            contributionGrid(layout: layout)
+                        }
+                        .padding(.vertical, 2)
+                        Color.clear.frame(width: sideInset(for: geometry.size.width))
+                    }
                 }
-                .padding(.vertical, 2)
-            }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 4)
-                    .onChanged { value in
-                        cancelAutoReturn()
-                        triggerGearTickIfNeeded(for: value.translation)
-                    }
-                    .onEnded { value in
-                        lastTickTranslationX = 0
-                        guard abs(value.translation.width) > abs(value.translation.height),
-                              abs(value.translation.width) > 8 else { return }
-                        scheduleAutoReturn(using: proxy)
-                    }
-            )
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(panelBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(panelBorderColor, lineWidth: 1)
-            )
-            .onAppear {
-                FeedbackService.prepareInteractive()
-                if !hasCenteredOnAppear {
-                    hasCenteredOnAppear = true
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 4)
+                        .onChanged { value in
+                            cancelAutoReturn()
+                            triggerGearTickIfNeeded(for: value.translation)
+                        }
+                        .onEnded { value in
+                            lastTickTranslationX = 0
+                            guard abs(value.translation.width) > abs(value.translation.height),
+                                  abs(value.translation.width) > 8 else { return }
+                            scheduleAutoReturn(using: proxy)
+                        }
+                )
+                .padding(.horizontal, horizontalPanelPadding)
+                .padding(.vertical, 8)
+                .background(panelBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(panelBorderColor, lineWidth: 1)
+                )
+                .onAppear {
+                    FeedbackService.prepareInteractive()
+                    lastViewportWidth = geometry.size.width
+                    scheduleInitialCenter(using: proxy)
+                    updateTodayDotBlinking()
+                }
+                .onChange(of: shouldBlinkTodayDot) { _, _ in
+                    updateTodayDotBlinking()
+                }
+                .onChange(of: geometry.size.width) { _, newWidth in
+                    guard abs(newWidth - lastViewportWidth) > 0.5 else { return }
+                    lastViewportWidth = newWidth
                     scheduleInitialCenter(using: proxy)
                 }
-                updateTodayDotBlinking()
-            }
-            .onChange(of: shouldBlinkTodayDot) { _, _ in
-                updateTodayDotBlinking()
-            }
-            .onDisappear {
-                cancelAutoReturn()
-                cancelInitialCenter()
-                hasCenteredOnAppear = false
-                stopTodayDotBlinking()
+                .onDisappear {
+                    cancelAutoReturn()
+                    cancelInitialCenter()
+                    lastViewportWidth = 0
+                    stopTodayDotBlinking()
+                }
             }
         }
+    }
+
+    private func sideInset(for containerWidth: CGFloat) -> CGFloat {
+        let visibleWidth = max(0, containerWidth - (horizontalPanelPadding * 2))
+        return max(0, (visibleWidth - cellSize) / 2)
     }
 
     private func triggerGearTickIfNeeded(for translation: CGSize) {
@@ -193,13 +175,16 @@ struct CheckInHeatmapView: View {
 
     private func scheduleAutoReturn(using proxy: ScrollViewProxy) {
         cancelAutoReturn()
-        guard let todayWeekIndex else { return }
+        let layout = makeYearLayout()
+        guard let todayWeekIndex = todayWeekIndex(in: layout) else { return }
+        let todayId = dayID(today)
 
         autoReturnTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
+            let anchor = scrollAnchor(for: todayWeekIndex, weeksCount: layout.weeks.count)
             withAnimation(.easeInOut(duration: 0.30)) {
-                proxy.scrollTo(todayWeekIndex, anchor: .center)
+                proxy.scrollTo(todayId, anchor: anchor)
             }
         }
     }
@@ -211,7 +196,8 @@ struct CheckInHeatmapView: View {
 
     private func scheduleInitialCenter(using proxy: ScrollViewProxy) {
         cancelInitialCenter()
-        guard todayWeekIndex != nil else { return }
+        let layout = makeYearLayout()
+        guard todayWeekIndex(in: layout) != nil else { return }
 
         initialCenterTask = Task { @MainActor in
             centerOnToday(using: proxy, animated: false)
@@ -224,26 +210,47 @@ struct CheckInHeatmapView: View {
     }
 
     private func centerOnToday(using proxy: ScrollViewProxy, animated: Bool) {
-        guard let todayWeekIndex else { return }
+        let layout = makeYearLayout()
+        guard let todayWeekIndex = todayWeekIndex(in: layout) else { return }
+        let todayId = dayID(today)
+        let anchor = scrollAnchor(for: todayWeekIndex, weeksCount: layout.weeks.count)
         if animated {
             withAnimation(.easeInOut(duration: 0.30)) {
-                proxy.scrollTo(todayWeekIndex, anchor: .center)
+                proxy.scrollTo(todayId, anchor: anchor)
             }
         } else {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                proxy.scrollTo(todayWeekIndex, anchor: .center)
+                proxy.scrollTo(todayId, anchor: anchor)
             }
         }
     }
 
-    private var monthHeader: some View {
+    private func scrollAnchor(for weekIndex: Int, weeksCount: Int) -> UnitPoint {
+        let visibleWidth = max(0, lastViewportWidth - (horizontalPanelPadding * 2))
+        let weekSpan = cellSize + cellSpacing
+        guard visibleWidth > 0, weekSpan > 0 else { return .center }
+
+        let visibleWeeks = max(1, Int((visibleWidth + cellSpacing) / weekSpan))
+        guard weeksCount > visibleWeeks else { return .center }
+
+        let edgeThreshold = max(1, visibleWeeks / 2)
+        if weekIndex <= edgeThreshold {
+            return .leading
+        }
+        if weekIndex >= (weeksCount - 1 - edgeThreshold) {
+            return .trailing
+        }
+        return .center
+    }
+
+    private func monthHeader(layout: YearLayout) -> some View {
         ZStack(alignment: .leading) {
             Color.clear
-                .frame(width: gridWidth, height: monthHeaderHeight)
+                .frame(width: gridWidth(for: layout.weeks), height: monthHeaderHeight)
 
-            ForEach(monthMarkers) { marker in
+            ForEach(layout.monthMarkers) { marker in
                 Text(marker.title)
                     .font(.system(size: 12, weight: .medium, design: .default))
                     .foregroundStyle(monthTextColor)
@@ -252,12 +259,13 @@ struct CheckInHeatmapView: View {
         }
     }
 
-    private var contributionGrid: some View {
+    private func contributionGrid(layout: YearLayout) -> some View {
         HStack(alignment: .top, spacing: cellSpacing) {
-            ForEach(weeks) { week in
+            ForEach(layout.weeks) { week in
                 VStack(spacing: cellSpacing) {
                     ForEach(week.days, id: \.self) { day in
-                        dayCell(for: day)
+                        dayCell(for: day, displayYear: layout.displayYear)
+                            .id(dayID(day))
                     }
                 }
                 .id(week.index)
@@ -265,7 +273,7 @@ struct CheckInHeatmapView: View {
         }
     }
 
-    private func dayCell(for date: Date) -> AnyView {
+    private func dayCell(for date: Date, displayYear: Int) -> AnyView {
         let isInDisplayYear = calendar.component(.year, from: date) == displayYear
         if !isInDisplayYear {
             return AnyView(
@@ -372,6 +380,42 @@ struct CheckInHeatmapView: View {
         )
     }
 
+    private func makeYearLayout() -> YearLayout {
+        let displayYear = calendar.component(.year, from: today)
+        let startOfYear = calendar.date(from: DateComponents(year: displayYear, month: 1, day: 1)) ?? today
+        let endOfYear = calendar.date(from: DateComponents(year: displayYear, month: 12, day: 31)) ?? today
+        let firstWeekStart = calendar.dateInterval(of: .weekOfYear, for: startOfYear)?.start ?? startOfYear
+        let lastWeekStart = calendar.dateInterval(of: .weekOfYear, for: endOfYear)?.start ?? endOfYear
+        let weeks = Self.buildWeeks(
+            calendar: calendar,
+            firstWeekStart: firstWeekStart,
+            lastWeekStart: lastWeekStart
+        )
+        let monthMarkers = Self.buildMonthMarkers(
+            year: displayYear,
+            firstWeekStart: firstWeekStart,
+            weeksCount: weeks.count,
+            calendar: calendar
+        )
+        return YearLayout(displayYear: displayYear, weeks: weeks, monthMarkers: monthMarkers)
+    }
+
+    private func gridWidth(for weeks: [WeekColumn]) -> CGFloat {
+        CGFloat(weeks.count) * cellSize + CGFloat(max(0, weeks.count - 1)) * cellSpacing
+    }
+
+    private func todayWeekIndex(in layout: YearLayout) -> Int? {
+        layout.weeks.first { week in
+            week.days.contains { day in
+                calendar.isDate(day, inSameDayAs: today)
+            }
+        }?.index
+    }
+
+    private func dayID(_ date: Date) -> Int {
+        Int(calendar.startOfDay(for: date).timeIntervalSince1970)
+    }
+
     private static let monthFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -413,6 +457,12 @@ struct CheckInHeatmapView: View {
 
         return markers
     }
+}
+
+private struct YearLayout {
+    let displayYear: Int
+    let weeks: [WeekColumn]
+    let monthMarkers: [MonthMarker]
 }
 
 private struct WeekColumn: Identifiable {
