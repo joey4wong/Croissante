@@ -727,13 +727,12 @@ private struct WordGalaxyOverlay: View {
     @State private var spinDuration: Double = 0.68
 
     private let orbitRadius: Double = 135
-    private let ringTiltX: Double = 18
+    private let ringTiltX: Double = -18
     private let ringTiltZ: Double = 17
     private let orbitSpeed: Double = 55
     private let cameraDistance: Double = 750
     private let galaxyScaleRange: ClosedRange<CGFloat> = 0.45...1.90
     private let selectedCardDetachPhase: Double = 0.78
-    private let frontFacingAngle: Double = -.pi / 2.0
 
     var body: some View {
         GeometryReader { geo in
@@ -898,7 +897,7 @@ private struct WordGalaxyOverlay: View {
             .offset(state.offset)
             .opacity(state.opacity * visibility)
             .blur(radius: state.blur)
-            .zIndex(-card.depth)
+            .zIndex(card.depth)
     }
 
     private func renderedSelectedGalaxyCard(
@@ -953,18 +952,22 @@ private struct WordGalaxyOverlay: View {
         selectedWord = hitCard.word
         canDismissByTap = false
 
+        // 当前轨道角
         let count = Double(words.count)
-        let currentOrbitRad = (elapsed + orbitDragOffset) * orbitSpeed * .pi / 180.0
+        let currentOrbitRad = -(elapsed + orbitDragOffset) * orbitSpeed * .pi / 180.0
         let cardAngle = currentOrbitRad + (Double(hitCard.cardIndex) / count) * 2.0 * .pi
 
-        let targetAngle = frontFacingAngle
+        // 目标角度：wz 最小 → sinA = +1 → angle = +π/2（正前方，最靠近用户）
+        let targetAngle = Double.pi / 2.0
         var deltaAngle = targetAngle - cardAngle
 
+        // 取最短路径（±π 以内）
         deltaAngle = deltaAngle.truncatingRemainder(dividingBy: 2.0 * .pi)
         if deltaAngle > .pi { deltaAngle -= 2.0 * .pi }
         if deltaAngle < -.pi { deltaAngle += 2.0 * .pi }
 
-        let deltaDragOffset = deltaAngle * 180.0 / (orbitSpeed * .pi)
+        // deltaAngle → orbitDragOffset 增量
+        let deltaDragOffset = -deltaAngle * 180.0 / (orbitSpeed * .pi)
         let detachT = selectedCardDetachPhase
         let velocitySample = min(0.02, detachT)
         let previousT = max(0.0, detachT - velocitySample)
@@ -1169,21 +1172,13 @@ private struct WordGalaxyOverlay: View {
         start + (end - start) * progress
     }
 
-    private func wrappedAngleDelta(_ angle: Double, relativeTo reference: Double) -> Double {
-        var delta = angle - reference
-        delta = delta.truncatingRemainder(dividingBy: 2.0 * .pi)
-        if delta > .pi { delta -= 2.0 * .pi }
-        if delta < -.pi { delta += 2.0 * .pi }
-        return delta
-    }
-
     private func hitTestCard(
         at location: CGPoint,
         in size: CGSize,
         cards: [ProjectedGalaxyCard]
     ) -> ProjectedGalaxyCard? {
         cards
-            .sorted { $0.depth < $1.depth }
+            .sorted { $0.depth > $1.depth }
             .first { card in
                 let scale = CGFloat(card.scale) * galaxyScale
                 let side = 68.0 * scale * 1.12
@@ -1210,7 +1205,7 @@ private struct WordGalaxyOverlay: View {
         let progress = max(0.0001, Double(revealProgress))
         let count = words.count
 
-        let orbitRad = (elapsed + orbitDragOffset + extraDragOffset) * orbitSpeed * .pi / 180.0
+        let orbitRad = -(elapsed + orbitDragOffset + extraDragOffset) * orbitSpeed * .pi / 180.0
 
         // Rz · Rx rotation matrix (localY = 0, so m01/m11/m21 terms drop out)
         let rxRad = ringTiltX * .pi / 180.0
@@ -1241,7 +1236,7 @@ private struct WordGalaxyOverlay: View {
             let screenY = wy * depthScale
 
             // 卡片朝向：完整轨道角度，允许侧面变薄和背面镜像形成扇形效果
-            let cardTiltY = -asin(sin(angle)) * 180.0 / .pi
+            let cardTiltY = -angle * (180.0 / .pi)
 
             // 直接用 depthScale 驱动视觉属性（与参考模板一致，天然近大远小）
             let targetScale = 0.5 + 0.5 * depthScale

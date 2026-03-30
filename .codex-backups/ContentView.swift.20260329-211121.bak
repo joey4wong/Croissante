@@ -467,11 +467,8 @@ private struct DiscoverScreen: View {
     @State private var galaxyRevealOrigin: CGPoint = .zero
     @State private var isGalaxyVisible = false
     @State private var galaxyPinchLatched = false
-    @State private var pendingGalaxySelectedWord: SimpleWord? = nil
-    @State private var pendingGalaxySelectionTask: Task<Void, Never>? = nil
     private let galaxyTargetCount = 22
     private let galaxyActivationCompression: CGFloat = 0.16
-    private let galaxySelectionCommitDelay: UInt64 = 220_000_000
 
     private var word: SimpleWord? {
         guard !words.isEmpty else { return nil }
@@ -485,7 +482,6 @@ private struct DiscoverScreen: View {
 
     var body: some View {
         GeometryReader { geo in
-            let visibleWord = pendingGalaxySelectedWord ?? word
             ZStack {
                 Group {
                     if !appState.hasCompletedInitialResourceLoad {
@@ -493,18 +489,17 @@ private struct DiscoverScreen: View {
                             .progressViewStyle(.circular)
                             .scaleEffect(1.08)
                             .frame(width: geo.size.width, height: geo.size.height)
-                    } else if let visibleWord {
+                    } else if let word {
                         DiscoverCard(
-                            word: visibleWord,
+                            word: word,
                             screenWidth: geo.size.width,
-                            cardWidth: geo.size.width,
-                            cardHeight: max(geo.size.width - 48, 0),
+                            cardHeight: geo.size.height * 0.35,
                             isActiveTab: isActiveTab && !isGalaxyVisible,
                             onSwipeForgot: onSwipeForgot,
                             onSwipeMastered: onSwipeMastered,
                             onSwipeBlurry: onSwipeBlurry
                         )
-                        .id(visibleWord.id)
+                        .id(word.id)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .position(x: geo.size.width / 2, y: geo.size.height / 2 + 12)
                     } else if shouldShowCompletionCelebration {
@@ -547,7 +542,6 @@ private struct DiscoverScreen: View {
                 }
                 .opacity(isGalaxyVisible ? 0 : 1)
                 .allowsHitTesting(!isGalaxyVisible)
-                .animation(.easeOut(duration: 0.16), value: isGalaxyVisible)
 
                 if isGalaxyVisible, !galaxyWords.isEmpty {
                     WordGalaxyOverlay(
@@ -582,9 +576,6 @@ private struct DiscoverScreen: View {
         .onChange(of: words.map(\.id)) { _, ids in
             if !ids.isEmpty {
                 hasSeenCardsInSession = true
-            }
-            if let pendingGalaxySelectedWord, word?.id == pendingGalaxySelectedWord.id {
-                self.pendingGalaxySelectedWord = nil
             }
             writeWidgetData()
         }
@@ -648,18 +639,9 @@ private struct DiscoverScreen: View {
     }
 
     private func dismissGalaxy(selectedWord: SimpleWord? = nil) {
-        pendingGalaxySelectionTask?.cancel()
-        pendingGalaxySelectionTask = nil
         if let selectedWord {
-            pendingGalaxySelectedWord = selectedWord
-            let selectedWordId = selectedWord.id
-            pendingGalaxySelectionTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: galaxySelectionCommitDelay)
-                guard !Task.isCancelled else { return }
-                srsManager.promoteWordToLearningQueueFront(selectedWordId)
-                queueIndex = 0
-                pendingGalaxySelectionTask = nil
-            }
+            srsManager.promoteWordToLearningQueueFront(selectedWord.id)
+            queueIndex = 0
         }
         isGalaxyVisible = false
         onGalaxyVisibilityChanged(false)
@@ -720,20 +702,17 @@ private struct WordGalaxyOverlay: View {
     @State private var selectedCardIndex: Int? = nil
     @State private var selectedWord: SimpleWord? = nil
     @State private var popOutProgress: CGFloat = 0
-    @State private var selectedCardAnimation: SelectedGalaxyCardAnimation? = nil
     @State private var isSpinningToCard = false
     @State private var spinStartTime: Date? = nil
     @State private var spinDragDelta: Double = 0
-    @State private var spinDuration: Double = 0.68
+    @State private var spinDuration: Double = 0.6
 
     private let orbitRadius: Double = 135
-    private let ringTiltX: Double = 18
+    private let ringTiltX: Double = -18
     private let ringTiltZ: Double = 17
     private let orbitSpeed: Double = 55
     private let cameraDistance: Double = 750
     private let galaxyScaleRange: ClosedRange<CGFloat> = 0.45...1.90
-    private let selectedCardDetachPhase: Double = 0.78
-    private let frontFacingAngle: Double = -.pi / 2.0
 
     var body: some View {
         GeometryReader { geo in
@@ -783,7 +762,8 @@ private struct WordGalaxyOverlay: View {
                                 cards: cards
                             ) {
                                 spinToCardAndPopOut(
-                                    hitCard: hitCard,
+                                    cardIndex: hitCard.cardIndex,
+                                    word: hitCard.word,
                                     elapsed: elapsed,
                                     geoSize: geo.size,
                                     startVector: startVector
@@ -822,7 +802,6 @@ private struct WordGalaxyOverlay: View {
                 selectedCardIndex = nil
                 selectedWord = nil
                 popOutProgress = 0
-                selectedCardAnimation = nil
                 isSpinningToCard = false
                 spinStartTime = nil
                 spinDragDelta = 0
@@ -849,193 +828,96 @@ private struct WordGalaxyOverlay: View {
             guard let st = spinStartTime else { return 0 }
             return min(1.0, context.date.timeIntervalSince(st) / spinDuration)
         }()
-        let spinEased = smoothStep(spinT)
+        let spinEased = spinT * spinT * (3 - 2 * spinT)
         let spinExtra = spinDragDelta * spinEased
         let cards = projectedCards(size: geo.size, elapsed: elapsed, startVector: startVector, extraDragOffset: spinExtra)
-        let selectedRollProgress = selectedCardAnimation == nil ? 0 : smoothStep(min(1.0, spinT / selectedCardDetachPhase))
-        let extractionPhase = selectedCardAnimation == nil ? 0 : min(1.0, max(0.0, (spinT - selectedCardDetachPhase) / (1.0 - selectedCardDetachPhase)))
-        let extractionProgress = smoothStep(extractionPhase)
-        let selectedDetached = selectedCardAnimation != nil && spinT >= selectedCardDetachPhase
-        let orbitCards = selectedDetached ? cards.filter { $0.cardIndex != selectedCardIndex } : cards
-        let orbitFade = selectedDetached ? max(0.0, 1.0 - extractionProgress) : 1.0
 
         ZStack {
-            ForEach(orbitCards) { card in
-                renderedGalaxyCard(
-                    card,
-                    visibility: orbitFade,
-                    selectedRollProgress: card.cardIndex == selectedCardIndex ? selectedRollProgress : 0
-                )
-            }
-            if selectedDetached, let selectedCardAnimation {
-                renderedSelectedGalaxyCard(
-                    selectedCardAnimation,
-                    progress: extractionPhase
-                )
+            ForEach(cards) { card in
+                renderedGalaxyCard(card, spinProgress: spinEased)
             }
         }
         .frame(width: geo.size.width, height: geo.size.height)
+        .onChange(of: spinT >= 1.0) { _, reached in
+            if reached { commitSpinAndPopOut() }
+        }
     }
 
-    private func renderedGalaxyCard(
-        _ card: ProjectedGalaxyCard,
-        visibility: Double = 1,
-        selectedRollProgress: Double = 0
-    ) -> some View {
-        let state = selectedGalaxyCardState(
-            for: card,
-            selectedRollProgress: selectedRollProgress
+    private func renderedGalaxyCard(_ card: ProjectedGalaxyCard, spinProgress: Double = 0) -> some View {
+        let isSelected = selectedCardIndex == card.cardIndex
+        let scaledCardScale = CGFloat(card.scale) * galaxyScale
+        // 选中卡用 naturalScale（不受 revealProgress 影响），防止 dismiss 时缩小
+        let baseForSelected = CGFloat(card.naturalScale) * galaxyScale
+        let scaledOffset = CGSize(
+            width: card.offset.width * galaxyScale,
+            height: card.offset.height * galaxyScale
         )
 
-        return GalaxyWordCard(word: card.word, isExpanded: state.isExpanded)
+        let popCurve = spinProgress * spinProgress * spinProgress // easeIn³
+        let popScale = isSelected ? baseForSelected * (1 + 5 * popCurve) : scaledCardScale
+
+        return GalaxyWordCard(word: card.word)
             .rotation3DEffect(
-                .degrees(state.tiltY),
+                .degrees(card.cardTiltY),
                 axis: (x: 0, y: 1, z: 0),
                 perspective: 0
             )
-            .rotationEffect(.degrees(state.tiltZ))
-            .scaleEffect(state.scale)
-            .offset(state.offset)
-            .opacity(state.opacity * visibility)
-            .blur(radius: state.blur)
-            .zIndex(-card.depth)
-    }
-
-    private func renderedSelectedGalaxyCard(
-        _ animation: SelectedGalaxyCardAnimation,
-        progress: Double
-    ) -> some View {
-        let offset = CGSize(
-            width: hermite(
-                animation.startOffset.width,
-                animation.endOffset.width,
-                animation.startVelocityOffset.width,
-                0,
-                progress
-            ),
-            height: hermite(
-                animation.startOffset.height,
-                animation.endOffset.height,
-                animation.startVelocityOffset.height,
-                0,
-                progress
-            )
-        )
-        let scale = hermite(animation.startScale, animation.endScale, animation.startVelocityScale, 0, progress)
-        let tiltY = hermite(animation.startTiltY, animation.endTiltY, animation.startVelocityTiltY, 0, progress)
-        let tiltZ = hermite(animation.startTiltZ, animation.endTiltZ, animation.startVelocityTiltZ, 0, progress)
-        let opacity = hermite(animation.startOpacity, animation.endOpacity, animation.startVelocityOpacity, 0, progress)
-        let blur = hermite(animation.startBlur, animation.endBlur, animation.startVelocityBlur, 0, progress)
-
-        return GalaxyWordCard(word: animation.word, isExpanded: true)
-            .rotation3DEffect(
-                .degrees(tiltY),
-                axis: (x: 0, y: 1, z: 0),
-                perspective: 0
-            )
-            .rotationEffect(.degrees(tiltZ))
-            .scaleEffect(scale)
-            .offset(offset)
-            .opacity(opacity)
-            .blur(radius: blur)
-            .zIndex(9999)
+            .rotationEffect(.degrees(15))
+            .scaleEffect(popScale)
+            .offset(scaledOffset)
+            .opacity(card.opacity)
+            .blur(radius: CGFloat(card.blur))
+            .zIndex(isSelected ? 9999.0 : card.depth)
     }
 
     private func spinToCardAndPopOut(
-        hitCard: ProjectedGalaxyCard,
+        cardIndex: Int,
+        word: SimpleWord,
         elapsed: Double,
         geoSize: CGSize,
         startVector: CGSize
     ) {
         guard !isDismissing, !isSpinningToCard else { return }
         isSpinningToCard = true
-        selectedCardIndex = hitCard.cardIndex
-        selectedWord = hitCard.word
+        selectedCardIndex = cardIndex
+        selectedWord = word
         canDismissByTap = false
 
+        // 当前轨道角
         let count = Double(words.count)
-        let currentOrbitRad = (elapsed + orbitDragOffset) * orbitSpeed * .pi / 180.0
-        let cardAngle = currentOrbitRad + (Double(hitCard.cardIndex) / count) * 2.0 * .pi
+        let currentOrbitRad = -(elapsed + orbitDragOffset) * orbitSpeed * .pi / 180.0
+        let cardAngle = currentOrbitRad + (Double(cardIndex) / count) * 2.0 * .pi
 
-        let targetAngle = frontFacingAngle
+        // 目标角度：wz 最小 → sinA = +1 → angle = +π/2（正前方，最靠近用户）
+        let targetAngle = Double.pi / 2.0
         var deltaAngle = targetAngle - cardAngle
 
+        // 取最短路径（±π 以内）
         deltaAngle = deltaAngle.truncatingRemainder(dividingBy: 2.0 * .pi)
         if deltaAngle > .pi { deltaAngle -= 2.0 * .pi }
         if deltaAngle < -.pi { deltaAngle += 2.0 * .pi }
 
-        let deltaDragOffset = deltaAngle * 180.0 / (orbitSpeed * .pi)
-        let detachT = selectedCardDetachPhase
-        let velocitySample = min(0.02, detachT)
-        let previousT = max(0.0, detachT - velocitySample)
-        let detachCards = projectedCards(
-            size: geoSize,
-            elapsed: elapsed,
-            startVector: startVector,
-            extraDragOffset: deltaDragOffset * smoothStep(detachT)
-        )
-        let previousCards = projectedCards(
-            size: geoSize,
-            elapsed: elapsed,
-            startVector: startVector,
-            extraDragOffset: deltaDragOffset * smoothStep(previousT)
-        )
-        let detachCard = detachCards.first { $0.cardIndex == hitCard.cardIndex } ?? hitCard
-        let previousCard = previousCards.first { $0.cardIndex == hitCard.cardIndex } ?? hitCard
-        let detachState = selectedGalaxyCardState(
-            for: detachCard,
-            selectedRollProgress: smoothStep(min(1.0, detachT / selectedCardDetachPhase))
-        )
-        let previousState = selectedGalaxyCardState(
-            for: previousCard,
-            selectedRollProgress: smoothStep(min(1.0, previousT / selectedCardDetachPhase))
-        )
-        let extractionSpan = max(0.0001, 1.0 - selectedCardDetachPhase)
-        let derivativeScale = extractionSpan / max(0.0001, detachT - previousT)
-        selectedCardAnimation = SelectedGalaxyCardAnimation(
-            word: hitCard.word,
-            startOffset: detachState.offset,
-            startVelocityOffset: CGSize(
-                width: (detachState.offset.width - previousState.offset.width) * derivativeScale,
-                height: (detachState.offset.height - previousState.offset.height) * derivativeScale
-            ),
-            startScale: detachState.scale,
-            startVelocityScale: (detachState.scale - previousState.scale) * derivativeScale,
-            startTiltY: detachState.tiltY,
-            startVelocityTiltY: (detachState.tiltY - previousState.tiltY) * Double(derivativeScale),
-            startTiltZ: detachState.tiltZ,
-            startVelocityTiltZ: (detachState.tiltZ - previousState.tiltZ) * Double(derivativeScale),
-            startOpacity: detachState.opacity,
-            startVelocityOpacity: (detachState.opacity - previousState.opacity) * Double(derivativeScale),
-            startBlur: detachState.blur,
-            startVelocityBlur: (detachState.blur - previousState.blur) * derivativeScale,
-            endOffset: CGSize(width: 0, height: 12),
-            endScale: selectedCardTargetScale(for: geoSize),
-            endTiltY: 0,
-            endTiltZ: 0,
-            endOpacity: 1,
-            endBlur: 0
-        )
+        // deltaAngle → orbitDragOffset 增量
+        let deltaDragOffset = -deltaAngle * 180.0 / (orbitSpeed * .pi)
 
         // 启动手动旋转动画（由 TimelineView 驱动）
         spinDragDelta = deltaDragOffset
         spinStartTime = Date()
-        // 精确在动画结束时触发 dismiss，无异步延迟
-        DispatchQueue.main.asyncAfter(deadline: .now() + spinDuration) {
-            commitSpinAndPopOut()
-        }
     }
 
     private func commitSpinAndPopOut() {
         guard spinStartTime != nil, !isDismissing else { return }
-        isDismissing = true
-        // 不改任何视觉状态，直接通知父级关闭，避免中间帧重渲染造成卡顿
-        onDismiss(selectedWord)
+        // 提交旋转偏移，但保留 spinStartTime 使 spinT 保持 >= 1.0（放大效果不变）
+        orbitDragOffset += spinDragDelta
+        spinDragDelta = 0
+        // spinStartTime 不清零，让 renderedGalaxyCard 继续拿到 spinProgress = 1
+        dismiss(word: selectedWord)
     }
 
     private func dismiss(word: SimpleWord?) {
         guard !isDismissing else { return }
         isDismissing = true
+        // 不立刻重置选中状态，让放大效果随 revealProgress 一起消失
         withAnimation(.easeInOut(duration: 0.24)) {
             revealProgress = 0
         }
@@ -1091,99 +973,13 @@ private struct WordGalaxyOverlay: View {
         }
     }
 
-    private func selectedCardTargetScale(for size: CGSize) -> CGFloat {
-        let targetWidth = max(240, size.width * 0.92)
-        return targetWidth / 66.0
-    }
-
-    private func selectedOrbitScaleMultiplier(for progress: Double) -> CGFloat {
-        1 + CGFloat(progress) * 1.18
-    }
-
-    private func selectedGalaxyCardState(
-        for card: ProjectedGalaxyCard,
-        selectedRollProgress: Double
-    ) -> SelectedGalaxyCardState {
-        let scaledCardScale = CGFloat(card.scale) * galaxyScale
-        let scaledOffset = CGSize(
-            width: card.offset.width * galaxyScale,
-            height: card.offset.height * galaxyScale
-        )
-        let zoomProgress = smoothStep(min(1.0, max(0.0, (selectedRollProgress - 0.16) / 0.84)))
-        let faceProgress = smoothStep(min(1.0, max(0.0, (selectedRollProgress - 0.58) / 0.42)))
-
-        return SelectedGalaxyCardState(
-            offset: scaledOffset,
-            scale: selectedRollProgress > 0 ? scaledCardScale * selectedOrbitScaleMultiplier(for: zoomProgress) : scaledCardScale,
-            tiltY: lerp(card.cardTiltY, 0, faceProgress),
-            tiltZ: lerp(15.0, 4.0, faceProgress),
-            opacity: min(1.0, card.opacity + zoomProgress * 0.18),
-            blur: lerp(CGFloat(card.blur), CGFloat(card.blur) * 0.18, zoomProgress),
-            isExpanded: faceProgress > 0.55
-        )
-    }
-
-    private func smoothStep(_ progress: Double) -> Double {
-        progress * progress * (3 - 2 * progress)
-    }
-
-    private func hermite(
-        _ start: CGFloat,
-        _ end: CGFloat,
-        _ startVelocity: CGFloat,
-        _ endVelocity: CGFloat,
-        _ progress: Double
-    ) -> CGFloat {
-        let t = CGFloat(progress)
-        let t2 = t * t
-        let t3 = t2 * t
-        let h00 = 2 * t3 - 3 * t2 + 1
-        let h10 = t3 - 2 * t2 + t
-        let h01 = -2 * t3 + 3 * t2
-        let h11 = t3 - t2
-        return h00 * start + h10 * startVelocity + h01 * end + h11 * endVelocity
-    }
-
-    private func hermite(
-        _ start: Double,
-        _ end: Double,
-        _ startVelocity: Double,
-        _ endVelocity: Double,
-        _ progress: Double
-    ) -> Double {
-        let t = progress
-        let t2 = t * t
-        let t3 = t2 * t
-        let h00 = 2 * t3 - 3 * t2 + 1
-        let h10 = t3 - 2 * t2 + t
-        let h01 = -2 * t3 + 3 * t2
-        let h11 = t3 - t2
-        return h00 * start + h10 * startVelocity + h01 * end + h11 * endVelocity
-    }
-
-    private func lerp(_ start: CGFloat, _ end: CGFloat, _ progress: Double) -> CGFloat {
-        start + (end - start) * CGFloat(progress)
-    }
-
-    private func lerp(_ start: Double, _ end: Double, _ progress: Double) -> Double {
-        start + (end - start) * progress
-    }
-
-    private func wrappedAngleDelta(_ angle: Double, relativeTo reference: Double) -> Double {
-        var delta = angle - reference
-        delta = delta.truncatingRemainder(dividingBy: 2.0 * .pi)
-        if delta > .pi { delta -= 2.0 * .pi }
-        if delta < -.pi { delta += 2.0 * .pi }
-        return delta
-    }
-
     private func hitTestCard(
         at location: CGPoint,
         in size: CGSize,
         cards: [ProjectedGalaxyCard]
     ) -> ProjectedGalaxyCard? {
         cards
-            .sorted { $0.depth < $1.depth }
+            .sorted { $0.depth > $1.depth }
             .first { card in
                 let scale = CGFloat(card.scale) * galaxyScale
                 let side = 68.0 * scale * 1.12
@@ -1210,7 +1006,7 @@ private struct WordGalaxyOverlay: View {
         let progress = max(0.0001, Double(revealProgress))
         let count = words.count
 
-        let orbitRad = (elapsed + orbitDragOffset + extraDragOffset) * orbitSpeed * .pi / 180.0
+        let orbitRad = -(elapsed + orbitDragOffset + extraDragOffset) * orbitSpeed * .pi / 180.0
 
         // Rz · Rx rotation matrix (localY = 0, so m01/m11/m21 terms drop out)
         let rxRad = ringTiltX * .pi / 180.0
@@ -1241,7 +1037,7 @@ private struct WordGalaxyOverlay: View {
             let screenY = wy * depthScale
 
             // 卡片朝向：完整轨道角度，允许侧面变薄和背面镜像形成扇形效果
-            let cardTiltY = -asin(sin(angle)) * 180.0 / .pi
+            let cardTiltY = -angle * (180.0 / .pi)
 
             // 直接用 depthScale 驱动视觉属性（与参考模板一致，天然近大远小）
             let targetScale = 0.5 + 0.5 * depthScale
@@ -1271,16 +1067,6 @@ private struct WordGalaxyOverlay: View {
     }
 }
 
-private struct SelectedGalaxyCardState {
-    let offset: CGSize
-    let scale: CGFloat
-    let tiltY: Double
-    let tiltZ: Double
-    let opacity: Double
-    let blur: CGFloat
-    let isExpanded: Bool
-}
-
 private struct ProjectedGalaxyCard: Identifiable {
     let id: String
     let word: SimpleWord
@@ -1294,37 +1080,9 @@ private struct ProjectedGalaxyCard: Identifiable {
     let cardTiltY: Double
 }
 
-private struct SelectedGalaxyCardAnimation {
-    let word: SimpleWord
-    let startOffset: CGSize
-    let startVelocityOffset: CGSize
-    let startScale: CGFloat
-    let startVelocityScale: CGFloat
-    let startTiltY: Double
-    let startVelocityTiltY: Double
-    let startTiltZ: Double
-    let startVelocityTiltZ: Double
-    let startOpacity: Double
-    let startVelocityOpacity: Double
-    let startBlur: CGFloat
-    let startVelocityBlur: CGFloat
-    let endOffset: CGSize
-    let endScale: CGFloat
-    let endTiltY: Double
-    let endTiltZ: Double
-    let endOpacity: Double
-    let endBlur: CGFloat
-}
-
 private struct GalaxyWordCard: View {
     let word: SimpleWord
-    let isExpanded: Bool
     @Environment(\.colorScheme) private var colorScheme
-
-    init(word: SimpleWord, isExpanded: Bool = false) {
-        self.word = word
-        self.isExpanded = isExpanded
-    }
 
     private var title: String {
         let display = word.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1332,26 +1090,35 @@ private struct GalaxyWordCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 8, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(colorScheme == .dark ? .white : Color.black.opacity(0.76))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .lineLimit(2)
+                .minimumScaleFactor(0.55)
+
+            HStack(spacing: 6) {
+                Text(word.level)
+                Text(word.tag)
+            }
+            .font(.system(size: 8, weight: .medium, design: .rounded))
+            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.66) : Color.black.opacity(0.46))
+            .textCase(.uppercase)
         }
-        .frame(width: 56, height: 56, alignment: .topLeading)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 5)
+        .frame(width: 54, height: 54, alignment: .topLeading)
+        .padding(7)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(cardFill)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(colorScheme == .dark
+                    ? LinearGradient(colors: [.white.opacity(0.20), .white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    : LinearGradient(colors: [.white.opacity(0.94), .white.opacity(0.70)], startPoint: .topLeading, endPoint: .bottomTrailing))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.30) : Color.black.opacity(0.08), lineWidth: 0.8)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [
@@ -1377,19 +1144,6 @@ private struct GalaxyWordCard: View {
                 )
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 8, y: 4)
-    }
-
-    private var cardFill: some ShapeStyle {
-        if isExpanded {
-            return AnyShapeStyle(colorScheme == .dark
-                ? Color(red: 0.10, green: 0.12, blue: 0.16)
-                : Color.white)
-        }
-        return AnyShapeStyle(
-            colorScheme == .dark
-                ? LinearGradient(colors: [.white.opacity(0.20), .white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                : LinearGradient(colors: [.white.opacity(0.94), .white.opacity(0.70)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        )
     }
 }
 
@@ -1783,7 +1537,6 @@ private struct PartyPopperSymbolView: View {
 private struct DiscoverCard: View {
     let word: SimpleWord
     let screenWidth: CGFloat
-    let cardWidth: CGFloat?
     let cardHeight: CGFloat?
     let isActiveTab: Bool
     let resetTransformAfterSwipe: Bool
@@ -1807,7 +1560,6 @@ private struct DiscoverCard: View {
     init(
         word: SimpleWord,
         screenWidth: CGFloat,
-        cardWidth: CGFloat? = nil,
         cardHeight: CGFloat? = nil,
         isActiveTab: Bool,
         resetTransformAfterSwipe: Bool = true,
@@ -1820,7 +1572,6 @@ private struct DiscoverCard: View {
     ) {
         self.word = word
         self.screenWidth = screenWidth
-        self.cardWidth = cardWidth
         self.cardHeight = cardHeight
         self.isActiveTab = isActiveTab
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
@@ -2147,7 +1898,7 @@ private struct DiscoverCard: View {
             cardContent
                 .padding(.horizontal, 26)
                 .padding(.vertical, 24)
-                .frame(width: cardWidth, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .top)
                 .overlay(alignment: .bottomTrailing) {
                     bottomMetaBar
                         .padding(.trailing, 12)
