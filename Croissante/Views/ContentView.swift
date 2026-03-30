@@ -730,6 +730,7 @@ private struct WordGalaxyOverlay: View {
     private let ringTiltZ: Double = 17
     private let orbitSpeed: Double = 55
     private let cameraDistance: Double = 750
+    private let pileAngle: Double = .pi   // 入场时所有牌的起始角度（正西）
     private let galaxyScaleRange: ClosedRange<CGFloat> = 0.45...1.90
     private let frontFacingAngle: Double = -.pi / 2.0
 
@@ -823,7 +824,7 @@ private struct WordGalaxyOverlay: View {
                 isSpinningToCard = false
                 spinStartTime = nil
                 spinDragDelta = 0
-                withAnimation(.spring(response: 0.88, dampingFraction: 0.84)) {
+                withAnimation(.spring(response: 0.50, dampingFraction: 0.70)) {
                     revealProgress = 1
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
@@ -1119,8 +1120,6 @@ private struct WordGalaxyOverlay: View {
     ) -> [ProjectedGalaxyCard] {
         guard !words.isEmpty else { return [] }
 
-        let startX = Double(startVector.width)
-        let startY = Double(startVector.height)
         let progress = max(0.0001, Double(revealProgress))
         let count = words.count
 
@@ -1139,7 +1138,10 @@ private struct WordGalaxyOverlay: View {
         results.reserveCapacity(count)
 
         for (index, word) in words.enumerated() {
-            let angle = orbitRad + (Double(index) / Double(count)) * 2.0 * .pi
+            // 入场动画：所有牌从 pileAngle（正西）展开到自然轨道角度
+            // revealProgress 由 spring 驱动，会轻微过冲再弹回，形成弹性感
+            let naturalAngle = orbitRad + (Double(index) / Double(count)) * 2.0 * .pi
+            let angle = pileAngle + (naturalAngle - pileAngle) * progress
             let cosA = cos(angle), sinA = sin(angle)
 
             let lx = cosA * orbitRadius
@@ -1159,19 +1161,17 @@ private struct WordGalaxyOverlay: View {
 
             // 直接用 depthScale 驱动视觉属性（与参考模板一致，天然近大远小）
             let targetScale = 0.5 + 0.5 * depthScale
-            let scale = targetScale * progress + (1 - progress) * 0.3
+            let clampedProgress = min(1.0, max(0.0, progress))
+            let scale = targetScale * clampedProgress + (1 - clampedProgress) * 0.3
             let targetOpacity = min(1.0, 0.25 + 0.75 * depthScale)
-            let opacity = targetOpacity * progress + (1 - progress) * 0.2
+            let opacity = targetOpacity * clampedProgress + (1 - clampedProgress) * 0.2
             let blur = max(0.0, (1.0 - depthScale) * 3.0)
 
             results.append(ProjectedGalaxyCard(
                 id: "\(word.id)-\(index)",
                 word: word,
                 cardIndex: index,
-                offset: CGSize(
-                    width: startX * (1 - progress) + screenX * progress,
-                    height: startY * (1 - progress) + screenY * progress
-                ),
+                offset: CGSize(width: screenX, height: screenY),
                 scale: scale,
                 opacity: opacity,
                 blur: blur,
