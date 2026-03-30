@@ -42,6 +42,7 @@ enum FeedbackService {
         dropletPlayer = newPlayer
         return newPlayer
     }
+
     #endif
 
     static func prepareInteractive() {
@@ -99,6 +100,17 @@ enum FeedbackService {
         } else {
             AudioServicesPlaySystemSound(1104)
         }
+        #endif
+    }
+
+    static func wheelSpinTick(deltaX: CGFloat) {
+        #if os(iOS)
+        _ = deltaX
+        #endif
+    }
+
+    static func wheelSpinEnded() {
+        #if os(iOS)
         #endif
     }
 
@@ -187,4 +199,5 @@ private final class DropletSoundPlayer {
         player.play()
     }
 }
+
 #endif
