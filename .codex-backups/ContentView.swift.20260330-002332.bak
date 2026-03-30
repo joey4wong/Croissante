@@ -731,6 +731,7 @@ private struct WordGalaxyOverlay: View {
     private let orbitSpeed: Double = 55
     private let cameraDistance: Double = 750
     private let galaxyScaleRange: ClosedRange<CGFloat> = 0.45...1.90
+    private let selectedCardDetachPhase: Double = 0.78
     private let frontFacingAngle: Double = -.pi / 2.0
 
     var body: some View {
@@ -847,32 +848,29 @@ private struct WordGalaxyOverlay: View {
             guard let st = spinStartTime else { return 0 }
             return min(1.0, context.date.timeIntervalSince(st) / spinDuration)
         }()
-        let spinEased = smoothStep(spinT)
-        let spinExtra = spinDragDelta * spinEased
-        let cards = projectedCards(size: geo.size, elapsed: elapsed, startVector: startVector, extraDragOffset: spinExtra)
-        let selectedRollProgress = selectedCardAnimation == nil ? 0 : spinT
-        let orbitCards = selectedCardAnimation == nil ? cards : cards.filter { $0.cardIndex != selectedCardIndex }
+        let extractionPhase = selectedCardAnimation == nil ? 0 : min(1.0, max(0.0, (spinT - selectedCardDetachPhase) / (1.0 - selectedCardDetachPhase)))
+        if let selectedCardAnimation, spinT >= selectedCardDetachPhase {
+            renderedSelectedGalaxyCard(
+                selectedCardAnimation,
+                progress: extractionPhase
+            )
+            .frame(width: geo.size.width, height: geo.size.height)
+        } else {
+            let spinEased = smoothStep(spinT)
+            let spinExtra = spinDragDelta * spinEased
+            let cards = projectedCards(size: geo.size, elapsed: elapsed, startVector: startVector, extraDragOffset: spinExtra)
+            let selectedRollProgress = selectedCardAnimation == nil ? 0 : smoothStep(min(1.0, spinT / selectedCardDetachPhase))
 
-        ZStack {
-            ForEach(orbitCards) { card in
-                renderedGalaxyCard(
-                    card,
-                    selectedRollProgress: 0
-                )
+            ZStack {
+                ForEach(cards) { card in
+                    renderedGalaxyCard(
+                        card,
+                        selectedRollProgress: card.cardIndex == selectedCardIndex ? selectedRollProgress : 0
+                    )
+                }
             }
-            if
-                let selectedCardAnimation,
-                let selectedCardIndex,
-                let selectedCard = cards.first(where: { $0.cardIndex == selectedCardIndex })
-            {
-                renderedSelectedGalaxyCard(
-                    selectedCardAnimation,
-                    currentCard: selectedCard,
-                    progress: selectedRollProgress
-                )
-            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
-        .frame(width: geo.size.width, height: geo.size.height)
     }
 
     private func renderedGalaxyCard(
@@ -900,29 +898,34 @@ private struct WordGalaxyOverlay: View {
 
     private func renderedSelectedGalaxyCard(
         _ animation: SelectedGalaxyCardAnimation,
-        currentCard: ProjectedGalaxyCard,
         progress: Double
     ) -> some View {
-        let orbitState = selectedGalaxyCardState(
-            for: currentCard,
-            selectedRollProgress: progress
-        )
-        let liftProgress = progress * progress * progress * progress
         let offset = CGSize(
-            width: lerp(orbitState.offset.width, 0, liftProgress),
-            height: lerp(orbitState.offset.height, 12, liftProgress)
+            width: hermite(
+                animation.startOffset.width,
+                animation.endOffset.width,
+                animation.startVelocityOffset.width,
+                0,
+                progress
+            ),
+            height: hermite(
+                animation.startOffset.height,
+                animation.endOffset.height,
+                animation.startVelocityOffset.height,
+                0,
+                progress
+            )
         )
-        let scale = lerp(66.0 * orbitState.scale / animation.cardWidth, 1, liftProgress)
-        let tiltY = lerp(orbitState.tiltY, 0, liftProgress)
-        let tiltZ = lerp(orbitState.tiltZ, 0, liftProgress)
-        let opacity = lerp(orbitState.opacity, 1, liftProgress)
-        let blur = lerp(orbitState.blur, 0, liftProgress)
+        let scale = hermite(animation.startScale, animation.endScale, animation.startVelocityScale, 0, progress)
+        let tiltY = hermite(animation.startTiltY, animation.endTiltY, animation.startVelocityTiltY, 0, progress)
+        let tiltZ = hermite(animation.startTiltZ, animation.endTiltZ, animation.startVelocityTiltZ, 0, progress)
+        let opacity = hermite(animation.startOpacity, animation.endOpacity, animation.startVelocityOpacity, 0, progress)
+        let blur = hermite(animation.startBlur, animation.endBlur, animation.startVelocityBlur, 0, progress)
 
         return TransitionDiscoverCard(
             word: animation.word,
             cardWidth: animation.cardWidth,
-            cardHeight: animation.cardHeight,
-            contentRevealProgress: progress
+            cardHeight: animation.cardHeight
         )
             .frame(width: animation.cardWidth, height: animation.cardWidth)
             .allowsHitTesting(false)
@@ -964,12 +967,60 @@ private struct WordGalaxyOverlay: View {
         if deltaAngle < -.pi { deltaAngle += 2.0 * .pi }
 
         let deltaDragOffset = deltaAngle * 180.0 / (orbitSpeed * .pi)
+        let detachT = selectedCardDetachPhase
+        let velocitySample = min(0.02, detachT)
+        let previousT = max(0.0, detachT - velocitySample)
+        let detachCards = projectedCards(
+            size: geoSize,
+            elapsed: elapsed,
+            startVector: startVector,
+            extraDragOffset: deltaDragOffset * smoothStep(detachT)
+        )
+        let previousCards = projectedCards(
+            size: geoSize,
+            elapsed: elapsed,
+            startVector: startVector,
+            extraDragOffset: deltaDragOffset * smoothStep(previousT)
+        )
+        let detachCard = detachCards.first { $0.cardIndex == hitCard.cardIndex } ?? hitCard
+        let previousCard = previousCards.first { $0.cardIndex == hitCard.cardIndex } ?? hitCard
+        let detachState = selectedGalaxyCardState(
+            for: detachCard,
+            selectedRollProgress: smoothStep(min(1.0, detachT / selectedCardDetachPhase))
+        )
+        let previousState = selectedGalaxyCardState(
+            for: previousCard,
+            selectedRollProgress: smoothStep(min(1.0, previousT / selectedCardDetachPhase))
+        )
         let targetCardWidth = selectedCardTargetWidth(for: geoSize)
         let targetCardHeight = selectedCardTargetHeight(for: geoSize)
+        let extractionSpan = max(0.0001, 1.0 - selectedCardDetachPhase)
+        let derivativeScale = extractionSpan / max(0.0001, detachT - previousT)
         selectedCardAnimation = SelectedGalaxyCardAnimation(
             word: hitCard.word,
             cardWidth: targetCardWidth,
-            cardHeight: targetCardHeight
+            cardHeight: targetCardHeight,
+            startOffset: detachState.offset,
+            startVelocityOffset: CGSize(
+                width: (detachState.offset.width - previousState.offset.width) * derivativeScale,
+                height: (detachState.offset.height - previousState.offset.height) * derivativeScale
+            ),
+            startScale: 66.0 * detachState.scale / targetCardWidth,
+            startVelocityScale: 66.0 * (detachState.scale - previousState.scale) * derivativeScale / targetCardWidth,
+            startTiltY: detachState.tiltY,
+            startVelocityTiltY: (detachState.tiltY - previousState.tiltY) * Double(derivativeScale),
+            startTiltZ: detachState.tiltZ,
+            startVelocityTiltZ: (detachState.tiltZ - previousState.tiltZ) * Double(derivativeScale),
+            startOpacity: detachState.opacity,
+            startVelocityOpacity: (detachState.opacity - previousState.opacity) * Double(derivativeScale),
+            startBlur: detachState.blur,
+            startVelocityBlur: (detachState.blur - previousState.blur) * derivativeScale,
+            endOffset: CGSize(width: 0, height: 12),
+            endScale: 1,
+            endTiltY: 0,
+            endTiltZ: 0,
+            endOpacity: 1,
+            endBlur: 0
         )
 
         // 启动手动旋转动画（由 TimelineView 驱动）
@@ -1256,12 +1307,29 @@ private struct SelectedGalaxyCardAnimation {
     let word: SimpleWord
     let cardWidth: CGFloat
     let cardHeight: CGFloat
+    let startOffset: CGSize
+    let startVelocityOffset: CGSize
+    let startScale: CGFloat
+    let startVelocityScale: CGFloat
+    let startTiltY: Double
+    let startVelocityTiltY: Double
+    let startTiltZ: Double
+    let startVelocityTiltZ: Double
+    let startOpacity: Double
+    let startVelocityOpacity: Double
+    let startBlur: CGFloat
+    let startVelocityBlur: CGFloat
+    let endOffset: CGSize
+    let endScale: CGFloat
+    let endTiltY: Double
+    let endTiltZ: Double
+    let endOpacity: Double
+    let endBlur: CGFloat
 }
 
 private struct GalaxyWordCard: View {
     let word: SimpleWord
     let isExpanded: Bool
-    @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
 
     init(word: SimpleWord, isExpanded: Bool = false) {
@@ -1269,110 +1337,70 @@ private struct GalaxyWordCard: View {
         self.isExpanded = isExpanded
     }
 
-    private enum CardFontWeight {
-        case regular
-        case medium
-        case semibold
-        case bold
-    }
-
     private var title: String {
         let display = word.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
         return display.isEmpty ? word.word : display
     }
 
-    private var isDarkMode: Bool {
-        colorScheme == .dark
-    }
-
-    private var cardSurfaceColor: Color {
-        AppColors.elevatedSurfaceFill(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var cardBorderColor: Color {
-        AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var dividerColor: Color {
-        isDarkMode ? AppColors.nocturneBorderSoft : Color.black.opacity(0.14)
-    }
-
-    private var accentBorder: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.28, green: 0.95, blue: 0.56).opacity(isDarkMode ? 0.82 : 0.62),
-                Color(red: 0.16, green: 0.78, blue: 0.46).opacity(isDarkMode ? 0.72 : 0.52)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private func cardFont(size: CGFloat, weight: CardFontWeight = .regular) -> Font {
-        switch appState.cardFontStyle {
-        case .sfPro:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .default)
-        case .sfRounded:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
-        case .avenirNext:
-            return .custom(avenirNextFontName(for: weight), size: size)
-        }
-    }
-
-    private func systemFontWeight(for weight: CardFontWeight) -> Font.Weight {
-        switch weight {
-        case .regular: return .regular
-        case .medium: return .medium
-        case .semibold: return .semibold
-        case .bold: return .bold
-        }
-    }
-
-    private func avenirNextFontName(for weight: CardFontWeight) -> String {
-        switch weight {
-        case .regular: return "AvenirNext-Regular"
-        case .medium: return "AvenirNext-Medium"
-        case .semibold: return "AvenirNext-DemiBold"
-        case .bold: return "AvenirNext-Bold"
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Color.clear
-                .frame(height: isExpanded ? 5 : 6)
             Text(title)
-                .font(cardFont(size: isExpanded ? 10 : 9.5, weight: .bold))
-                .tracking(0.12)
-                .foregroundStyle(isDarkMode ? Color.white.opacity(0.90) : Color.black.opacity(0.82))
+                .font(.system(size: 8, weight: .semibold, design: .rounded))
+                .foregroundStyle(colorScheme == .dark ? .white : Color.black.opacity(0.76))
                 .lineLimit(1)
-                .minimumScaleFactor(0.42)
-                .allowsTightening(true)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, 2)
-            Rectangle()
-                .fill(dividerColor)
-                .frame(height: 0.8)
-                .padding(.top, isExpanded ? 4 : 3)
-                .opacity(isExpanded ? 0.55 : 0.18)
-            Spacer(minLength: 0)
+                .minimumScaleFactor(0.6)
         }
         .frame(width: 56, height: 56, alignment: .topLeading)
         .padding(.horizontal, 5)
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(cardSurfaceColor)
+                .fill(cardFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(cardBorderColor, lineWidth: 0.8)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.30) : Color.black.opacity(0.08), lineWidth: 0.8)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(accentBorder, lineWidth: isExpanded ? 1.2 : 1.05)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.28, green: 0.95, blue: 0.56).opacity(colorScheme == .dark ? 0.82 : 0.62),
+                            Color(red: 0.16, green: 0.78, blue: 0.46).opacity(colorScheme == .dark ? 0.72 : 0.52)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.1
+                )
+                .shadow(
+                    color: Color(red: 0.24, green: 0.92, blue: 0.58).opacity(colorScheme == .dark ? 0.18 : 0.10),
+                    radius: 2.2,
+                    x: 0,
+                    y: 0
+                )
+                .shadow(
+                    color: Color(red: 0.15, green: 0.80, blue: 0.46).opacity(colorScheme == .dark ? 0.08 : 0.05),
+                    radius: 3.2,
+                    x: 0,
+                    y: 0
+                )
         )
-        .shadow(color: .black.opacity(isDarkMode ? 0.14 : 0.05), radius: 3, y: 1.5)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 8, y: 4)
+    }
+
+    private var cardFill: some ShapeStyle {
+        if isExpanded {
+            return AnyShapeStyle(colorScheme == .dark
+                ? Color(red: 0.10, green: 0.12, blue: 0.16)
+                : Color.white)
+        }
+        return AnyShapeStyle(
+            colorScheme == .dark
+                ? LinearGradient(colors: [.white.opacity(0.20), .white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                : LinearGradient(colors: [.white.opacity(0.94), .white.opacity(0.70)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
     }
 }
 
@@ -2340,7 +2368,6 @@ private struct TransitionDiscoverCard: View {
     let word: SimpleWord
     let cardWidth: CGFloat
     let cardHeight: CGFloat
-    let contentRevealProgress: Double
 
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
@@ -2374,17 +2401,6 @@ private struct TransitionDiscoverCard: View {
         isDarkMode
             ? Color(red: 0.31, green: 1.00, blue: 0.66)
             : Color(red: 0.51, green: 0.86, blue: 0.75)
-    }
-
-    private var accentBorder: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.28, green: 0.95, blue: 0.56).opacity(isDarkMode ? 0.82 : 0.62),
-                Color(red: 0.16, green: 0.78, blue: 0.46).opacity(isDarkMode ? 0.72 : 0.52)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 
     private var levelTextColor: Color {
@@ -2450,11 +2466,6 @@ private struct TransitionDiscoverCard: View {
         case .semibold: return "AvenirNext-DemiBold"
         case .bold: return "AvenirNext-Bold"
         }
-    }
-
-    private var detailProgress: Double {
-        let t = min(1.0, max(0.0, (contentRevealProgress - 0.38) / 0.62))
-        return t * t * (3 - 2 * t)
     }
 
     private var nounFlags: Set<String> {
@@ -2526,7 +2537,6 @@ private struct TransitionDiscoverCard: View {
             .frame(width: cardWidth, alignment: .top)
             .overlay(alignment: .topTrailing) {
                 nounCornerBadge
-                    .opacity(detailProgress)
             }
             .background(cardSurfaceColor, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay(
@@ -2535,8 +2545,9 @@ private struct TransitionDiscoverCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(accentBorder, lineWidth: 1.2)
+                    .stroke(cardGlowColor.opacity(isDarkMode ? 0.36 : 0.24), lineWidth: 1.2)
             )
+            .shadow(color: cardGlowColor.opacity(isDarkMode ? 0.16 : 0.10), radius: isDarkMode ? 10 : 14, x: 0, y: 0)
             .shadow(color: .black.opacity(isDarkMode ? 0.14 : 0.05), radius: 10, x: 0, y: 4)
     }
 
@@ -2549,7 +2560,6 @@ private struct TransitionDiscoverCard: View {
                         Text(word.auxiliary)
                     }
                 }
-                .opacity(detailProgress)
                 Text(word.displayWord)
                     .font(cardFont(size: titleBaseFontSize, weight: .bold))
                     .tracking(0.2)
@@ -2569,7 +2579,6 @@ private struct TransitionDiscoverCard: View {
                 .fill(dividerColor)
                 .frame(height: 1)
                 .padding(.bottom, 20)
-                .opacity(0.18 + detailProgress * 0.82)
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
@@ -2615,7 +2624,6 @@ private struct TransitionDiscoverCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .opacity(detailProgress)
         }
         .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
     }
