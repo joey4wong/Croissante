@@ -43,21 +43,21 @@ struct AppColors {
 
     // MARK: - Nocturne Dark Theme (Cinematic)
 
-    static let nocturneBackgroundTop = Color(red: 0.11, green: 0.10, blue: 0.11)
-    static let nocturneBackgroundMid = Color(red: 0.08, green: 0.08, blue: 0.09)
-    static let nocturneBackgroundBottom = Color(red: 0.05, green: 0.05, blue: 0.06)
+    static let nocturneBackgroundTop = Color(red: 0.20, green: 0.18, blue: 0.17)
+    static let nocturneBackgroundMid = Color(red: 0.12, green: 0.11, blue: 0.11)
+    static let nocturneBackgroundBottom = Color(red: 0.07, green: 0.06, blue: 0.07)
 
-    static let nocturneSurface = Color(red: 0.15, green: 0.14, blue: 0.15)
-    static let nocturneSurfaceElevated = Color(red: 0.18, green: 0.17, blue: 0.19)
-    static let nocturneBorder = Color.white.opacity(0.14)
-    static let nocturneBorderSoft = Color.white.opacity(0.08)
+    static let nocturneSurface = Color(red: 0.17, green: 0.15, blue: 0.14)
+    static let nocturneSurfaceElevated = Color(red: 0.20, green: 0.17, blue: 0.16)
+    static let nocturneBorder = Color.white.opacity(0.18)
+    static let nocturneBorderSoft = Color.white.opacity(0.09)
 
     static let nocturneTextPrimary = Color.white.opacity(0.92)
     static let nocturneTextSecondary = Color.white.opacity(0.64)
     static let nocturneTextTertiary = Color.white.opacity(0.48)
 
-    static let nocturneWarmGlow = Color(red: 0.93, green: 0.54, blue: 0.33)
-    static let nocturneCoolGlow = Color(red: 0.48, green: 0.66, blue: 1.00)
+    static let nocturneWarmGlow = Color(red: 0.84, green: 0.58, blue: 0.41)
+    static let nocturneCoolGlow = Color(red: 0.76, green: 0.82, blue: 0.92)
     static let iosSystemBlueDark = Color(red: 0.04, green: 0.52, blue: 1.00)
     static let iosSystemBlueLight = Color(red: 0.00, green: 0.48, blue: 1.00)
 }
@@ -96,27 +96,17 @@ extension Color {
 // MARK: - Semantic Theme Tokens
 
 extension AppColors {
+    static func usesPorcelainStyle(themeMode: ThemeMode, isDarkMode: Bool) -> Bool {
+        themeMode == .light || (themeMode == .system && !isDarkMode)
+    }
+
+    static func usesDarkGlassStyle(themeMode: ThemeMode, isDarkMode: Bool) -> Bool {
+        !usesPorcelainStyle(themeMode: themeMode, isDarkMode: isDarkMode) && isDarkMode
+    }
+
     static func appBackgroundGradient(themeMode: ThemeMode, isDarkMode: Bool) -> LinearGradient {
         switch themeMode {
-        case .paper:
-            return LinearGradient(
-                colors: [
-                    Color(red: 0.985, green: 0.955, blue: 0.900),
-                    Color(red: 0.955, green: 0.905, blue: 0.810)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        case .graphite:
-            return LinearGradient(
-                colors: [
-                    Color(red: 0.06, green: 0.07, blue: 0.09),
-                    Color(red: 0.09, green: 0.11, blue: 0.14)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        case .porcelain:
+        case _ where usesPorcelainStyle(themeMode: themeMode, isDarkMode: isDarkMode):
             return LinearGradient(
                 colors: [porcelainBackground, porcelainBackground],
                 startPoint: .top,
@@ -141,17 +131,81 @@ extension AppColors {
     }
 
     static func elevatedSurfaceFill(themeMode: ThemeMode = .system, isDarkMode: Bool) -> Color {
-        if themeMode == .porcelain {
+        if usesPorcelainStyle(themeMode: themeMode, isDarkMode: isDarkMode) {
             return porcelainCard
         }
-        return isDarkMode ? nocturneSurface : Color(red: 0.965, green: 0.966, blue: 0.972)
+        return isDarkMode ? nocturneSurface.opacity(0.72) : Color(red: 0.965, green: 0.966, blue: 0.972)
     }
 
     static func elevatedSurfaceBorder(themeMode: ThemeMode = .system, isDarkMode: Bool) -> Color {
-        if themeMode == .porcelain {
+        if usesPorcelainStyle(themeMode: themeMode, isDarkMode: isDarkMode) {
             return Color.black.opacity(0.08)
         }
         return isDarkMode ? nocturneBorder : Color.white.opacity(0.72)
+    }
+
+    static func elevatedSurfaceBaseStyle(themeMode: ThemeMode = .system, isDarkMode: Bool, elevated: Bool = false) -> AnyShapeStyle {
+        if usesPorcelainStyle(themeMode: themeMode, isDarkMode: isDarkMode) {
+            return AnyShapeStyle(porcelainCard)
+        }
+        if isDarkMode {
+            return AnyShapeStyle(elevated ? .thinMaterial : .ultraThinMaterial)
+        }
+        return AnyShapeStyle(Color(red: 0.965, green: 0.966, blue: 0.972))
+    }
+
+    static func elevatedSurfaceTint(themeMode: ThemeMode = .system, isDarkMode: Bool, elevated: Bool = false) -> Color {
+        if usesPorcelainStyle(themeMode: themeMode, isDarkMode: isDarkMode) {
+            return porcelainCard
+        }
+        if isDarkMode {
+            return (elevated ? nocturneSurfaceElevated : nocturneSurface).opacity(elevated ? 0.58 : 0.66)
+        }
+        return Color(red: 0.965, green: 0.966, blue: 0.972).opacity(0.94)
+    }
+
+    static func elevatedSurfaceInnerBorder(themeMode: ThemeMode = .system, isDarkMode: Bool, elevated: Bool = false) -> Color {
+        if usesPorcelainStyle(themeMode: themeMode, isDarkMode: isDarkMode) {
+            return Color.white.opacity(0.55)
+        }
+        if isDarkMode {
+            return Color.white.opacity(elevated ? 0.08 : 0.06)
+        }
+        return Color.white.opacity(0.82)
+    }
+
+    static func elevatedSurfaceGlowStyle(themeMode: ThemeMode = .system, isDarkMode: Bool, elevated: Bool = false) -> AnyShapeStyle {
+        guard usesDarkGlassStyle(themeMode: themeMode, isDarkMode: isDarkMode) else {
+            return AnyShapeStyle(Color.clear)
+        }
+        return AnyShapeStyle(
+            LinearGradient(
+                colors: [
+                    nocturneWarmGlow.opacity(elevated ? 0.17 : 0.12),
+                    Color(red: 0.91, green: 0.87, blue: 0.83).opacity(elevated ? 0.07 : 0.05),
+                    Color.clear
+                ],
+                startPoint: .bottomLeading,
+                endPoint: .topTrailing
+            )
+        )
+    }
+
+    static func elevatedSurfaceHighlightStyle(themeMode: ThemeMode = .system, isDarkMode: Bool, elevated: Bool = false) -> AnyShapeStyle {
+        guard usesDarkGlassStyle(themeMode: themeMode, isDarkMode: isDarkMode) else {
+            return AnyShapeStyle(Color.clear)
+        }
+        return AnyShapeStyle(
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(elevated ? 0.16 : 0.13),
+                    Color.white.opacity(0.03),
+                    Color.clear
+                ],
+                startPoint: .topLeading,
+                endPoint: UnitPoint(x: 0.75, y: 0.65)
+            )
+        )
     }
 
     static func primaryText(isDarkMode: Bool) -> Color {
@@ -168,5 +222,87 @@ extension AppColors {
 
     static func iosSystemBlue(isDarkMode: Bool) -> Color {
         isDarkMode ? iosSystemBlueDark : iosSystemBlueLight
+    }
+}
+
+struct ThemedBackgroundView: View {
+    let themeMode: ThemeMode
+    let isDarkMode: Bool
+    var showWallpaper: Bool = false
+
+    var body: some View {
+        ZStack {
+            AppColors.appBackgroundGradient(themeMode: themeMode, isDarkMode: isDarkMode)
+                .ignoresSafeArea()
+            if AppColors.usesDarkGlassStyle(themeMode: themeMode, isDarkMode: isDarkMode) {
+                GeometryReader { proxy in
+                    ZStack {
+                        ambientGlow(
+                            color: AppColors.nocturneWarmGlow.opacity(0.24),
+                            width: proxy.size.width * 1.02,
+                            height: proxy.size.height * 0.44,
+                            x: proxy.size.width * 0.16,
+                            y: proxy.size.height * 0.86,
+                            blur: 86
+                        )
+                        ambientGlow(
+                            color: Color(red: 0.96, green: 0.91, blue: 0.87).opacity(0.16),
+                            width: proxy.size.width * 0.78,
+                            height: proxy.size.height * 0.34,
+                            x: proxy.size.width * 0.92,
+                            y: proxy.size.height * 0.18,
+                            blur: 72
+                        )
+                        ambientGlow(
+                            color: Color(red: 0.49, green: 0.31, blue: 0.24).opacity(0.10),
+                            width: proxy.size.width * 0.72,
+                            height: proxy.size.height * 0.26,
+                            x: proxy.size.width * 0.18,
+                            y: proxy.size.height * 0.34,
+                            blur: 60
+                        )
+                    }
+                    .ignoresSafeArea()
+                }
+                .allowsHitTesting(false)
+            }
+            if showWallpaper {
+                Image("HomeWallpaperDefault")
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
+            }
+        }
+    }
+
+    private func ambientGlow(color: Color, width: CGFloat, height: CGFloat, x: CGFloat, y: CGFloat, blur: CGFloat) -> some View {
+        Ellipse()
+            .fill(color)
+            .frame(width: width, height: height)
+            .position(x: x, y: y)
+            .blur(radius: blur)
+    }
+}
+
+extension InsettableShape {
+    func themedGlassSurface(themeMode: ThemeMode = .system, isDarkMode: Bool, elevated: Bool = false) -> some View {
+        self
+            .fill(AppColors.elevatedSurfaceBaseStyle(themeMode: themeMode, isDarkMode: isDarkMode, elevated: elevated))
+            .overlay {
+                self.fill(AppColors.elevatedSurfaceTint(themeMode: themeMode, isDarkMode: isDarkMode, elevated: elevated))
+            }
+            .overlay {
+                self.fill(AppColors.elevatedSurfaceGlowStyle(themeMode: themeMode, isDarkMode: isDarkMode, elevated: elevated))
+            }
+            .overlay {
+                self.fill(AppColors.elevatedSurfaceHighlightStyle(themeMode: themeMode, isDarkMode: isDarkMode, elevated: elevated))
+            }
+            .overlay {
+                self.stroke(AppColors.elevatedSurfaceBorder(themeMode: themeMode, isDarkMode: isDarkMode), lineWidth: 1)
+            }
+            .overlay {
+                self.inset(by: 1)
+                    .stroke(AppColors.elevatedSurfaceInnerBorder(themeMode: themeMode, isDarkMode: isDarkMode, elevated: elevated), lineWidth: 0.8)
+            }
     }
 }

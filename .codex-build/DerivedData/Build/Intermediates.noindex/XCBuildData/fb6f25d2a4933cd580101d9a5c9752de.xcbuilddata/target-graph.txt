@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'Croissante' in project 'Croissante'
+➜ Explicit dependency on target 'CroissanteWidgetExtension' in project 'Croissante'
+Target 'CroissanteWidgetExtension' in project 'Croissante' (no dependencies)

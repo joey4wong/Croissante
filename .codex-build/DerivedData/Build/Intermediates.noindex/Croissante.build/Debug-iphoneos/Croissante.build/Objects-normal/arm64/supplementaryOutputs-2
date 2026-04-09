@@ -1,0 +1,23 @@
+{
+  "/Users/jw/Documents/Croissante/Croissante/Models/LearningRecord.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/LearningRecord.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/LearningRecord.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/LearningRecord.dia",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/LearningRecord.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/LearningRecord.swiftdeps"
+  },
+  "/Users/jw/Documents/Croissante/Croissante/Models/SimpleWord.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/SimpleWord.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/SimpleWord.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/SimpleWord.dia",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/SimpleWord.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/SimpleWord.swiftdeps"
+  },
+  "/Users/jw/Documents/Croissante/Croissante/Services/AppIconManager.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AppIconManager.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AppIconManager.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AppIconManager.dia",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AppIconManager.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AppIconManager.swiftdeps"
+  }
+}

@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Products/Debug-iphoneos/Croissante.app/Croissante'
+relocations:     []
+...

@@ -2,11 +2,9 @@ import SwiftUI
 
 public enum ThemeMode: Int, Codable {
     case system = 0
-    case light = 1
+    case steppe = 1
     case dark = 2
-    case paper = 3
-    case graphite = 4
-    case porcelain = 5
+    case light = 5
 }
 
 public enum CardFontStyle: String, Codable {
@@ -142,9 +140,15 @@ struct WordSearchIndex: Sendable {
     }
 }
 
-fileprivate struct LoadedResources: Sendable {
+fileprivate struct CoreLoadedResources: Sendable {
     let words: [SimpleWord]
+    let wordByIdMap: [String: SimpleWord]
+    let wordSiblingMap: [String: [String]]
+}
+
+fileprivate struct DeferredLoadedResources: Sendable {
     let conjugationData: ConjugationData
+    let wordSearchIndex: WordSearchIndex
 }
 
 @MainActor
@@ -229,6 +233,7 @@ public final class AppState: ObservableObject {
     private var wordByIdMap: [String: SimpleWord] = [:]
     private var wordSiblingMap: [String: [String]] = [:]
     private var conjugationData: ConjugationData = .empty
+    private var pendingSpotlightIndexTask: Task<Void, Never>? = nil
     
     private let userDefaults = UserDefaults.standard
     private let fallbackWords: [SimpleWord] = [
@@ -282,11 +287,23 @@ public final class AppState: ObservableObject {
 
         let bundlePath = resourceBundlePath
         Task { [bundlePath, fallbackWords = fallbackWords] in
-            let resources = await Self.loadResources(bundlePath: bundlePath, fallbackWords: fallbackWords)
-            applyLoadedResources(resources)
+            let coreResources = await Self.loadCoreResources(bundlePath: bundlePath, fallbackWords: fallbackWords)
+            applyLoadedCoreResources(coreResources)
+            conjugationData = .empty
+            conjugationFormsByLemma = [:]
+            wordSearchIndex = .empty
             hasCompletedInitialResourceLoad = true
+
+            let deferredResources = await Self.loadDeferredResources(
+                bundlePath: bundlePath,
+                words: coreResources.words
+            )
+            applyDeferredResources(deferredResources)
             if spotlightEnabled {
-                SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma, spotlightEnabled: true)
+                scheduleSpotlightIndexing(
+                    words: coreResources.words,
+                    conjugationFormsByLemma: deferredResources.conjugationData.formsByLemma
+                )
             }
         }
     }
@@ -337,9 +354,13 @@ public final class AppState: ObservableObject {
     
     private func loadUserPreferences() {
         // Theme Mode
-        if let rawValue = userDefaults.value(forKey: Keys.themeMode) as? Int,
-           let mode = ThemeMode(rawValue: rawValue) {
-            themeMode = mode
+        if let rawValue = userDefaults.value(forKey: Keys.themeMode) as? Int {
+            if let mode = ThemeMode(rawValue: rawValue) {
+                themeMode = mode
+            } else {
+                themeMode = .system
+                userDefaults.set(ThemeMode.system.rawValue, forKey: Keys.themeMode)
+            }
         }
 
         if let savedCardFontStyle = userDefaults.string(forKey: Keys.cardFontStyle),
@@ -454,28 +475,47 @@ public final class AppState: ObservableObject {
     
     // MARK: - Data Loading
     
-    private func applyLoadedResources(_ resources: LoadedResources) {
+    private func applyLoadedCoreResources(_ resources: CoreLoadedResources) {
         words = resources.words
+        wordByIdMap = resources.wordByIdMap
+        wordSiblingMap = resources.wordSiblingMap
+    }
+
+    private func applyDeferredResources(_ resources: DeferredLoadedResources) {
         conjugationData = resources.conjugationData
         conjugationFormsByLemma = resources.conjugationData.formsByLemma
-        buildWordLinks(words)
-        rebuildSearchIndex()
+        wordSearchIndex = resources.wordSearchIndex
     }
 
     private func rebuildSearchIndex() {
         wordSearchIndex = WordSearchIndex.build(words: words, conjugationData: conjugationData)
     }
 
-    nonisolated private static func loadResources(bundlePath: String, fallbackWords: [SimpleWord]) async -> LoadedResources {
+    nonisolated private static func loadCoreResources(bundlePath: String, fallbackWords: [SimpleWord]) async -> CoreLoadedResources {
         await Task.detached(priority: .userInitiated) {
             let preferredSources = ["Croisssante-Words", "words"]
             let words = preferredSources
                 .compactMap { loadJSONResource($0, as: [SimpleWord].self, bundlePath: bundlePath) }
                 .first ?? fallbackWords
-            let conjugationMap = loadJSONResource("conjugation", as: [String: String].self, bundlePath: bundlePath) ?? [:]
-            return LoadedResources(
+            let wordLinks = buildWordLinks(words)
+            return CoreLoadedResources(
                 words: words,
-                conjugationData: ConjugationData.build(from: conjugationMap)
+                wordByIdMap: wordLinks.byIdMap,
+                wordSiblingMap: wordLinks.siblingMap
+            )
+        }.value
+    }
+
+    nonisolated private static func loadDeferredResources(
+        bundlePath: String,
+        words: [SimpleWord]
+    ) async -> DeferredLoadedResources {
+        await Task.detached(priority: .utility) {
+            let conjugationMap = loadJSONResource("conjugation", as: [String: String].self, bundlePath: bundlePath) ?? [:]
+            let conjugationData = ConjugationData.build(from: conjugationMap)
+            return DeferredLoadedResources(
+                conjugationData: conjugationData,
+                wordSearchIndex: WordSearchIndex.build(words: words, conjugationData: conjugationData)
             )
         }.value
     }
@@ -502,19 +542,9 @@ public final class AppState: ObservableObject {
     // MARK: - Word Management
     
     private func buildWordLinks(_ words: [SimpleWord]) {
-        var siblingMap: [String: [String]] = [:]
-        var byIdMap: [String: SimpleWord] = [:]
-        
-        for word in words {
-            let key = normalizeText(word.word.isEmpty ? word.displayWord : word.word)
-            if !key.isEmpty {
-                siblingMap[key, default: []].append(word.id)
-            }
-            byIdMap[word.id] = word
-        }
-        
-        wordSiblingMap = siblingMap
-        wordByIdMap = byIdMap
+        let links = Self.buildWordLinks(words)
+        wordSiblingMap = links.siblingMap
+        wordByIdMap = links.byIdMap
     }
     
     public func getWordById(_ id: String) -> SimpleWord? {
@@ -549,5 +579,29 @@ public final class AppState: ObservableObject {
 
     private func normalizeText(_ text: String) -> String {
         SearchTextNormalizer.normalize(text)
+    }
+
+    nonisolated private static func buildWordLinks(_ words: [SimpleWord]) -> (siblingMap: [String: [String]], byIdMap: [String: SimpleWord]) {
+        var siblingMap: [String: [String]] = [:]
+        var byIdMap: [String: SimpleWord] = [:]
+
+        for word in words {
+            let key = SearchTextNormalizer.normalize(word.word.isEmpty ? word.displayWord : word.word)
+            if !key.isEmpty {
+                siblingMap[key, default: []].append(word.id)
+            }
+            byIdMap[word.id] = word
+        }
+
+        return (siblingMap, byIdMap)
+    }
+
+    private func scheduleSpotlightIndexing(words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) {
+        pendingSpotlightIndexTask?.cancel()
+        pendingSpotlightIndexTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled, spotlightEnabled else { return }
+            SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma, spotlightEnabled: true)
+        }
     }
 }

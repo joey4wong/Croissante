@@ -1,0 +1,2 @@
+ M .claude/worktrees/unruffled-brattain
+?? .codex-backups/20260330-005556-pre-galaxy-coremotion/

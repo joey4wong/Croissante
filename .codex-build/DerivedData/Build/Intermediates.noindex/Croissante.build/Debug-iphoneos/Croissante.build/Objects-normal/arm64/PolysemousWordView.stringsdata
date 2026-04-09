@@ -1,0 +1,48 @@
+{
+  "source": "/Users/jw/Documents/Croissante/Croissante/Views/Components/PolysemousWordView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "多义词 • 第 %lld / %lld 个释义",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 34
+        }
+      },
+      {
+        "comment": "",
+        "key": "示例",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 101
+        }
+      },
+      {
+        "comment": "",
+        "key": "其他释义",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 132
+        }
+      },
+      {
+        "comment": "",
+        "key": "#%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 241
+        }
+      },
+      {
+        "comment": "",
+        "key": "示例",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 410
+        }
+      }
+    ]
+  },
+  "version": 1
+}

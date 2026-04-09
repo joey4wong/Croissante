@@ -5,10 +5,14 @@ import CoreSpotlight
 @main
 struct CroissanteApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var appState = AppState()
+    @StateObject private var appState: AppState
+    @StateObject private var storeKitManager: StoreKitManager
     @StateObject private var srsManager = SRSManager.shared
 
     init() {
+        let appState = AppState()
+        _appState = StateObject(wrappedValue: appState)
+        _storeKitManager = StateObject(wrappedValue: StoreKitManager(appState: appState))
         configureTabBarAppearance()
     }
 
@@ -16,6 +20,7 @@ struct CroissanteApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .environmentObject(storeKitManager)
                 .environmentObject(srsManager)
                 .preferredColorScheme(preferredColorScheme)
                 .onAppear {
@@ -29,6 +34,9 @@ struct CroissanteApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
                         srsManager.refreshForCurrentDayIfNeeded()
+                        Task {
+                            await storeKitManager.syncMembershipStatus()
+                        }
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
@@ -50,11 +58,9 @@ struct CroissanteApp: App {
     private var preferredColorScheme: ColorScheme? {
         switch appState.themeMode {
         case .system: return nil
-        case .light: return .light
+        case .steppe: return .light
         case .dark: return .dark
-        case .paper: return .light
-        case .graphite: return .dark
-        case .porcelain: return .light
+        case .light: return .light
         }
     }
 

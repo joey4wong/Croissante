@@ -22,10 +22,31 @@ private struct SettingsAvatarBottomPreferenceKey: PreferenceKey {
     }
 }
 
+private enum GestureOnboardingState: String {
+    case pending
+    case seen
+}
+
+private enum GestureOnboardingDefaults {
+    static let stateKey = "gesture_onboarding_state"
+}
+
+enum GestureOnboardingStep: Int, CaseIterable {
+    case swipeRight
+    case swipeLeft
+    case swipeDown
+    case pinch
+
+    var next: Self? {
+        Self(rawValue: rawValue + 1)
+    }
+}
+
 public struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(GestureOnboardingDefaults.stateKey) private var gestureOnboardingStateRaw = ""
     @State private var discoverQueueIndex = 0
     @State private var searchSheetShowing = false
     @State private var selectedTab: MainTab = .explore
@@ -33,8 +54,24 @@ public struct ContentView: View {
     @State private var settingsGearSpinToken = 0
     @State private var spotlightWord: SimpleWord?
     @State private var isGalaxyVisibleInExplore = false
+    @State private var isGestureOnboardingPending = false
+    @State private var gestureOnboardingStep: GestureOnboardingStep = .swipeRight
+    @State private var pendingGalaxyTabBarRevealTask: Task<Void, Never>? = nil
+    private let galaxyTabBarRevealDelay: UInt64 = 180_000_000
 
-    public init() {}
+    public init() {
+        let defaults = UserDefaults.standard
+        let resolvedState: String
+
+        if let savedState = defaults.string(forKey: GestureOnboardingDefaults.stateKey), !savedState.isEmpty {
+            resolvedState = savedState
+        } else {
+            resolvedState = GestureOnboardingState.pending.rawValue
+            defaults.set(resolvedState, forKey: GestureOnboardingDefaults.stateKey)
+        }
+
+        _isGestureOnboardingPending = State(initialValue: resolvedState == GestureOnboardingState.pending.rawValue)
+    }
 
     private var discoverWords: [SimpleWord] {
         srsManager.getLearningQueueWordsSnapshot()
@@ -48,52 +85,96 @@ public struct ContentView: View {
         AppColors.appBackgroundGradient(themeMode: appState.themeMode, isDarkMode: isDarkMode)
     }
 
+    @ViewBuilder
+    private var wallpaperBackground: some View {
+        ThemedBackgroundView(
+            themeMode: appState.themeMode,
+            isDarkMode: isDarkMode,
+            showWallpaper: shouldShowHomeWallpaper
+        )
+    }
+
+    private var shouldShowHomeWallpaper: Bool {
+        appState.themeMode == .steppe
+    }
+
+    private var shouldShowGestureOnboarding: Bool {
+        isGestureOnboardingPending &&
+        selectedTab == .explore &&
+        !discoverWords.isEmpty &&
+        appState.hasCompletedInitialResourceLoad &&
+        !searchSheetShowing &&
+        spotlightWord == nil
+    }
+
     private var exploreView: some View {
-        ZStack {
-            appBackgroundGradient.ignoresSafeArea()
-            DiscoverScreen(
-                words: discoverWords,
-                queueIndex: $discoverQueueIndex,
-                isActiveTab: selectedTab == .explore,
-                onGalaxyVisibilityChanged: { isGalaxyVisibleInExplore = $0 },
-                onSwipeForgot: { srsManager.markWordForgot($0); advanceDiscover() },
-                onSwipeMastered: { srsManager.markWordMastered($0); advanceDiscover() },
-                onSwipeBlurry: { srsManager.markWordBlurry($0); advanceDiscover() }
-            )
-        }
+        DiscoverScreen(
+            words: discoverWords,
+            queueIndex: $discoverQueueIndex,
+            isActiveTab: selectedTab == .explore,
+            gestureOnboardingStep: shouldShowGestureOnboarding ? gestureOnboardingStep : nil,
+            onGalaxyVisibilityChanged: { [self] visible in
+                setExploreGalaxyVisibility(visible)
+                if visible && shouldShowGestureOnboarding && gestureOnboardingStep == .pinch {
+                    finishGestureOnboarding()
+                }
+            },
+            onSwipeForgot: { [self] id in
+                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
+                srsManager.markWordForgot(id); advanceDiscover()
+            },
+            onSwipeMastered: { [self] id in
+                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
+                srsManager.markWordMastered(id); advanceDiscover()
+            },
+            onSwipeBlurry: { [self] id in
+                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
+                srsManager.markWordBlurry(id); advanceDiscover()
+            }
+        )
     }
 
     private var progressView: some View {
-        ZStack {
-            appBackgroundGradient.ignoresSafeArea()
-            ProgressScreen()
-                .environmentObject(appState)
-                .environmentObject(srsManager)
-        }
+        ProgressScreen()
+            .environmentObject(appState)
+            .environmentObject(srsManager)
+            .background {
+                wallpaperBackground
+            }
     }
 
     private var settingsView: some View {
-        ZStack {
-            appBackgroundGradient.ignoresSafeArea()
-            SettingsScreen()
-                .environmentObject(appState)
-        }
+        SettingsScreen()
+            .environmentObject(appState)
+            .background {
+                wallpaperBackground
+            }
     }
 
     public var body: some View {
-        TabView(selection: $selectedTab) {
-            Tab(appState.localized("Explore", "探索", "एक्सप्लोर"), systemImage: "siri", value: .explore) {
-                exploreView
+        ZStack {
+            TabView(selection: $selectedTab) {
+                Tab(appState.localized("Explore", "探索", "एक्सप्लोर"), systemImage: "siri", value: .explore) {
+                    exploreView
+                }
+                Tab(appState.localized("Progress", "进度", "प्रगति"), systemImage: "figure.run.square.stack.fill", value: .progress) {
+                    progressView
+                }
+                Tab(appState.localized("Settings", "设置", "सेटिंग्स"), systemImage: "gear", value: .settings) {
+                    settingsView
+                }
+                Tab(appState.localized("Search", "搜索", "खोज"), systemImage: "magnifyingglass", value: .search, role: .search) {
+                    Color.clear
+                        .ignoresSafeArea()
+                }
             }
-            Tab(appState.localized("Progress", "进度", "प्रगति"), systemImage: "figure.run.square.stack.fill", value: .progress) {
-                progressView
-            }
-            Tab(appState.localized("Settings", "设置", "सेटिंग्स"), systemImage: "gear", value: .settings) {
-                settingsView
-            }
-            Tab(appState.localized("Search", "搜索", "खोज"), systemImage: "magnifyingglass", value: .search, role: .search) {
-                Color.clear
-                    .ignoresSafeArea()
+            if shouldShowGestureOnboarding {
+                GestureOnboardingView(
+                    step: gestureOnboardingStep,
+                    onFinish: finishGestureOnboarding
+                )
+                .transition(.opacity)
+                .zIndex(1)
             }
         }
         #if os(iOS)
@@ -101,7 +182,7 @@ public struct ContentView: View {
             SettingsTabGearAnimationBridge(
                 settingsIndex: 2,
                 spinToken: settingsGearSpinToken,
-                isTabBarHidden: isGalaxyVisibleInExplore
+                isTabBarHidden: isGalaxyVisibleInExplore || shouldShowGestureOnboarding
             )
                 .frame(width: 0, height: 0)
         )
@@ -114,7 +195,7 @@ public struct ContentView: View {
             guard newTab == .search else {
                 lastContentTab = newTab
                 if newTab != .explore {
-                    isGalaxyVisibleInExplore = false
+                    setExploreGalaxyVisibility(false, delayReveal: false)
                 }
                 if newTab == .settings {
                     settingsGearSpinToken += 1
@@ -133,9 +214,14 @@ public struct ContentView: View {
             )
         )
         .onChange(of: appState.level) { _, newLevel in
-            DispatchQueue.main.async {
-                srsManager.setTargetLevel(newLevel)
-                advanceDiscover()
+            srsManager.setTargetLevel(newLevel)
+            advanceDiscover()
+        }
+        .onChange(of: gestureOnboardingStateRaw) { _, newValue in
+            let isPending = newValue == GestureOnboardingState.pending.rawValue
+            isGestureOnboardingPending = isPending
+            if isPending {
+                gestureOnboardingStep = .swipeRight
             }
         }
         .onChange(of: appState.spotlightSelectedWordId) { _, wordId in
@@ -160,6 +246,45 @@ public struct ContentView: View {
 
     private func advanceDiscover() {
         discoverQueueIndex = 0
+    }
+
+    private func advanceGestureOnboarding() {
+        if let next = gestureOnboardingStep.next {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                gestureOnboardingStep = next
+            }
+            return
+        }
+        finishGestureOnboarding()
+    }
+
+    private func finishGestureOnboarding() {
+        gestureOnboardingStateRaw = GestureOnboardingState.seen.rawValue
+        isGestureOnboardingPending = false
+        gestureOnboardingStep = .swipeRight
+    }
+
+    private func setExploreGalaxyVisibility(_ visible: Bool, delayReveal: Bool? = nil) {
+        pendingGalaxyTabBarRevealTask?.cancel()
+        pendingGalaxyTabBarRevealTask = nil
+
+        guard !visible else {
+            isGalaxyVisibleInExplore = true
+            return
+        }
+
+        let shouldDelayReveal = delayReveal ?? (selectedTab == .explore)
+        guard shouldDelayReveal else {
+            isGalaxyVisibleInExplore = false
+            return
+        }
+
+        pendingGalaxyTabBarRevealTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: galaxyTabBarRevealDelay)
+            guard !Task.isCancelled else { return }
+            isGalaxyVisibleInExplore = false
+            pendingGalaxyTabBarRevealTask = nil
+        }
     }
 }
 
@@ -242,6 +367,7 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
         }
 
         func refresh(from view: UIView) {
+            guard tabBar == nil else { return }
             update(from: view, spinToken: currentSpinToken, isTabBarHidden: currentTabBarHidden)
         }
 
@@ -317,10 +443,11 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
 
         private func applyTabBarHiddenIfNeeded(hidden: Bool, in tabBar: UITabBar) {
             guard let tabBarController = locateTabBarController(from: tabBar) else { return }
-            if lastAppliedTabBarHidden == hidden, tabBarController.isTabBarHidden == hidden {
+            if lastAppliedTabBarHidden == hidden {
                 return
             }
-            tabBarController.setTabBarHidden(hidden, animated: true)
+            let animate = lastAppliedTabBarHidden != nil
+            tabBarController.setTabBarHidden(hidden, animated: animate)
             lastAppliedTabBarHidden = hidden
         }
 
@@ -452,26 +579,55 @@ extension SettingsTabGearAnimationBridge.Coordinator: UIGestureRecognizerDelegat
 }
 #endif
 
+private enum DiscoverCardDemoGesture: Equatable {
+    case swipeRight
+    case swipeLeft
+    case swipeDown
+}
+
 private struct DiscoverScreen: View {
     let words: [SimpleWord]
     @Binding var queueIndex: Int
     let isActiveTab: Bool
+    let gestureOnboardingStep: GestureOnboardingStep?
     let onGalaxyVisibilityChanged: (Bool) -> Void
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var srsManager: SRSManager
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hasSeenCardsInSession = false
     @State private var galaxyWords: [SimpleWord] = []
-    @State private var galaxyRevealOrigin: CGPoint = .zero
     @State private var isGalaxyVisible = false
     @State private var galaxyPinchLatched = false
-    @State private var pendingGalaxySelectedWord: SimpleWord? = nil
-    @State private var pendingGalaxySelectionTask: Task<Void, Never>? = nil
+    @State private var activeGalaxyTransition: GalaxySelectedCardTransitionRequest? = nil
+    @State private var transitionPinnedWord: SimpleWord? = nil
+    @State private var pendingGalaxyBackdropDismissTask: Task<Void, Never>? = nil
+    @State private var pendingGalaxyQueueCommitTask: Task<Void, Never>? = nil
+    @State private var pendingWidgetWriteTask: Task<Void, Never>? = nil
+    @State private var pendingInitialDiscoverPreparationTask: Task<Void, Never>? = nil
+    @State private var pendingOnboardingGalaxyRevealTask: Task<Void, Never>? = nil
+    @State private var isPreparingInitialDiscoverContent = true
+    @State private var onboardingGalaxyWords: [SimpleWord] = []
+    @State private var isOnboardingGalaxyVisible = false
+    @State private var animatePinchDemo = false
     private let galaxyTargetCount = 22
     private let galaxyActivationCompression: CGFloat = 0.16
-    private let galaxySelectionCommitDelay: UInt64 = 220_000_000
+    private let galaxyQueueCommitDelay: UInt64 = 90_000_000
+    private let galaxyPersistenceDelay: UInt64 = 420_000_000
+
+    private var isDarkMode: Bool {
+        colorScheme == .dark
+    }
+
+    private var backgroundGradient: LinearGradient {
+        AppColors.appBackgroundGradient(themeMode: appState.themeMode, isDarkMode: isDarkMode)
+    }
+
+    private var shouldShowHomeWallpaper: Bool {
+        appState.themeMode == .steppe
+    }
 
     private var word: SimpleWord? {
         guard !words.isEmpty else { return nil }
@@ -483,128 +639,246 @@ private struct DiscoverScreen: View {
         hasSeenCardsInSession && words.isEmpty && srsManager.hasReachedDailyMasteryGoal
     }
 
+    private var demoGesture: DiscoverCardDemoGesture? {
+        switch gestureOnboardingStep {
+        case .swipeRight:
+            return .swipeRight
+        case .swipeLeft:
+            return .swipeLeft
+        case .swipeDown:
+            return .swipeDown
+        default:
+            return nil
+        }
+    }
+
+    private var isShowingOnboardingGalaxy: Bool {
+        gestureOnboardingStep == .pinch && isOnboardingGalaxyVisible && !onboardingGalaxyWords.isEmpty
+    }
+
+    private var presentedWord: SimpleWord? {
+        guard !isShowingOnboardingGalaxy else { return nil }
+        return activeGalaxyTransition?.word ?? transitionPinnedWord ?? (!isGalaxyVisible ? word : nil)
+    }
+
     var body: some View {
-        GeometryReader { geo in
-            let visibleWord = pendingGalaxySelectedWord ?? word
-            let discoverCardWidth = geo.size.width
-            ZStack {
-                if !isGalaxyVisible {
-                    Group {
-                        if !appState.hasCompletedInitialResourceLoad {
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                                .scaleEffect(1.08)
-                                .frame(width: geo.size.width, height: geo.size.height)
-                        } else if let visibleWord {
-                            DiscoverCard(
-                                word: visibleWord,
-                                screenWidth: geo.size.width,
-                                cardWidth: discoverCardWidth,
-                                cardHeight: max(discoverCardWidth - 48, 0),
-                                isActiveTab: isActiveTab,
-                                onSwipeForgot: onSwipeForgot,
-                                onSwipeMastered: onSwipeMastered,
-                                onSwipeBlurry: onSwipeBlurry
-                            )
-                            .id(visibleWord.id)
+        ZStack {
+            ThemedBackgroundView(
+                themeMode: appState.themeMode,
+                isDarkMode: isDarkMode,
+                showWallpaper: shouldShowHomeWallpaper
+            )
+
+            GeometryReader { geo in
+                ZStack {
+                    if isGalaxyVisible, !galaxyWords.isEmpty {
+                        WordGalaxyOverlay(
+                            words: galaxyWords,
+                            onSelectCard: beginGalaxyTransition,
+                            onDismiss: dismissGalaxyBackdrop
+                        )
+                        .transition(.identity)
+                    }
+
+                    if isShowingOnboardingGalaxy {
+                        WordGalaxyOverlay(
+                            words: onboardingGalaxyWords,
+                            onSelectCard: { _ in },
+                            onDismiss: {}
+                        )
+                        .allowsHitTesting(false)
+                        .transition(.identity)
+                    }
+
+                    if !appState.hasCompletedInitialResourceLoad || isPreparingInitialDiscoverContent {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(1.08)
                             .frame(width: geo.size.width, height: geo.size.height)
-                            .position(x: geo.size.width / 2, y: geo.size.height / 2 + 12)
-                        } else if shouldShowCompletionCelebration {
-                            DeckCompletionCelebrationView(
-                                showContinueInfiniteButton: srsManager.canStartInfinitePractice,
-                                onContinueInfinite: {
-                                    srsManager.startInfinitePractice()
-                                }
-                            )
-                                .frame(width: geo.size.width, height: geo.size.height)
-                                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                        } else {
-                            Group {
-                                if srsManager.todayStudyState == .completed {
-                                    DiscoverEmptyStateView(
-                                        title: appState.localized("Today's goal complete", "今日目标已完成", "आज का लक्ष्य पूरा"),
-                                        subtitle: appState.localized(
-                                            "You've finished your learning goal for today.",
-                                            "你今天的学习目标已经完成。",
-                                            "आपने आज का सीखने का लक्ष्य पूरा कर लिया है।"
-                                        )
-                                    )
-                                } else {
-                                    DiscoverEmptyStateView(
-                                        title: appState.localized(
-                                            "No eligible cards at this level",
-                                            "当前等级暂无可发卡",
-                                            "इस स्तर पर अभी कोई कार्ड उपलब्ध नहीं"
-                                        ),
-                                        subtitle: appState.localized(
-                                            "Switch level or come back when reviews are due.",
-                                            "可以切换等级，或等待到期复习后再来。",
-                                            "लेवल बदलें या समीक्षा समय आने पर वापस आएं।"
-                                        )
-                                    )
-                                }
+                    } else if let presentedWord {
+                        ActiveDiscoverCardHost(
+                            word: presentedWord,
+                            transitionRequest: activeGalaxyTransition,
+                            containerSize: geo.size,
+                            allowsInteractions: (gestureOnboardingStep == nil || gestureOnboardingStep == .swipeRight || gestureOnboardingStep == .swipeLeft || gestureOnboardingStep == .swipeDown) && activeGalaxyTransition == nil && transitionPinnedWord == nil,
+                            isActiveTab: isActiveTab && gestureOnboardingStep == nil,
+                            scriptedGesture: demoGesture,
+                            onSwipeForgot: {
+                                onSwipeForgot($0)
+                                finishGalaxyTransition()
+                            },
+                            onSwipeMastered: {
+                                onSwipeMastered($0)
+                                finishGalaxyTransition()
+                            },
+                            onSwipeBlurry: {
+                                onSwipeBlurry($0)
+                                finishGalaxyTransition()
+                            },
+                            onTransitionComplete: completeGalaxyTransition
+                        )
+                    } else if !isGalaxyVisible, gestureOnboardingStep == nil, shouldShowCompletionCelebration {
+                        DeckCompletionCelebrationView(
+                            showContinueInfiniteButton: srsManager.canStartInfinitePractice,
+                            onContinueInfinite: {
+                                srsManager.startInfinitePractice()
                             }
-                            .frame(width: geo.size.width, height: geo.size.height)
+                        )
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    } else if !isGalaxyVisible, gestureOnboardingStep == nil {
+                        Group {
+                            if srsManager.todayStudyState == .completed {
+                                DiscoverEmptyStateView(
+                                    title: appState.localized("Today's goal complete", "今日目标已完成", "आज का लक्ष्य पूरा"),
+                                    subtitle: appState.localized(
+                                        "You've finished your learning goal for today.",
+                                        "你今天的学习目标已经完成。",
+                                        "आपने आज का सीखने का लक्ष्य पूरा कर लिया है।"
+                                    )
+                                )
+                            } else {
+                                DiscoverEmptyStateView(
+                                    title: appState.localized(
+                                        "No eligible cards at this level",
+                                        "当前等级暂无可发卡",
+                                        "इस स्तर पर अभी कोई कार्ड उपलब्ध नहीं"
+                                    ),
+                                    subtitle: appState.localized(
+                                        "Switch level or come back when reviews are due.",
+                                        "可以切换等级，或等待到期复习后再来。",
+                                        "लेवल बदलें या समीक्षा समय आने पर वापस आएं。"
+                                    )
+                                )
+                            }
                         }
+                        .frame(width: geo.size.width, height: geo.size.height)
                     }
                 }
-
-                if isGalaxyVisible, !galaxyWords.isEmpty {
-                    WordGalaxyOverlay(
-                        words: galaxyWords,
-                        revealOrigin: galaxyRevealOrigin,
-                        onDismiss: { dismissGalaxy(selectedWord: $0) }
-                    )
-                    .transition(.identity)
+                .animation(.easeInOut(duration: 0.26), value: words.isEmpty)
+                #if os(iOS)
+                .background(
+                    ExplorePinchGestureBridge(isEnabled: isActiveTab && word != nil && !isGalaxyVisible && activeGalaxyTransition == nil && (gestureOnboardingStep == nil || gestureOnboardingStep == .pinch)) { event in
+                        handleGalaxyPinch(event, containerFrame: geo.frame(in: .global))
+                    }
+                    .frame(width: 0, height: 0)
+                )
+                #endif
+            }
+            .padding(.horizontal, 20)
+            .overlay(alignment: .center) {
+                if gestureOnboardingStep == .pinch && !isGalaxyVisible {
+                    OnboardingPinchDemoView(animate: animatePinchDemo, isDarkMode: isDarkMode)
+                        .offset(y: 240)
+                        .transition(.opacity)
                 }
             }
-            .animation(.easeInOut(duration: 0.26), value: words.isEmpty)
-            #if os(iOS)
-            .background(
-                ExplorePinchGestureBridge(isEnabled: isActiveTab && word != nil && !isGalaxyVisible) { event in
-                    handleGalaxyPinch(event, containerFrame: geo.frame(in: .global))
-                }
-                .frame(width: 0, height: 0)
-            )
-            #endif
         }
-        .padding(.horizontal, 20)
+        .ignoresSafeArea(.container, edges: .bottom)
         .onAppear {
-            DispatchQueue.main.async {
-                srsManager.refreshForCurrentDayIfNeeded()
-                srsManager.ensureLearningQueueReady()
+            if appState.hasCompletedInitialResourceLoad {
+                prepareInitialDiscoverContent()
+                scheduleWidgetDataWrite()
             }
             if !words.isEmpty {
                 hasSeenCardsInSession = true
             }
-            writeWidgetData()
+            syncGestureOnboardingDemo(for: gestureOnboardingStep)
         }
-        .onChange(of: words.map(\.id)) { _, ids in
+        .onChange(of: words.map(\.id).sorted()) { _, ids in
             if !ids.isEmpty {
                 hasSeenCardsInSession = true
             }
-            if let pendingGalaxySelectedWord, word?.id == pendingGalaxySelectedWord.id {
-                self.pendingGalaxySelectedWord = nil
+            scheduleWidgetDataWrite()
+        }
+        .onChange(of: word?.id) { _, newWordId in
+            if activeGalaxyTransition == nil, transitionPinnedWord?.id == newWordId {
+                transitionPinnedWord = nil
             }
-            writeWidgetData()
+            if gestureOnboardingStep == .pinch, newWordId != nil {
+                syncGestureOnboardingDemo(for: gestureOnboardingStep)
+            }
         }
         .onChange(of: appState.level) { _, _ in
-            writeWidgetData()
+            scheduleWidgetDataWrite()
         }
         .onChange(of: appState.hasCompletedInitialResourceLoad) { _, loaded in
-            guard loaded else { return }
-            DispatchQueue.main.async {
-                srsManager.refreshForCurrentDayIfNeeded()
-                srsManager.ensureLearningQueueReady()
+            guard loaded else {
+                isPreparingInitialDiscoverContent = true
+                return
             }
+            prepareInitialDiscoverContent()
+            scheduleWidgetDataWrite(delayNanoseconds: 500_000_000)
         }
         .onChange(of: isActiveTab) { _, active in
-            guard !active, isGalaxyVisible else { return }
-            dismissGalaxy()
+            guard !active else { return }
+            finishGalaxyTransition()
+            dismissGalaxyBackdrop()
+            transitionPinnedWord = nil
+        }
+        .onChange(of: gestureOnboardingStep) { _, newValue in
+            syncGestureOnboardingDemo(for: newValue)
+        }
+        .onDisappear {
+            pendingOnboardingGalaxyRevealTask?.cancel()
+            pendingOnboardingGalaxyRevealTask = nil
+            if isOnboardingGalaxyVisible {
+                onGalaxyVisibilityChanged(false)
+            }
         }
     }
 
+    private func scheduleWidgetDataWrite(delayNanoseconds: UInt64 = 250_000_000) {
+        pendingWidgetWriteTask?.cancel()
+        pendingWidgetWriteTask = Task { @MainActor in
+            var nextDelay = delayNanoseconds
+            while !Task.isCancelled {
+                if nextDelay > 0 {
+                    try? await Task.sleep(nanoseconds: nextDelay)
+                    guard !Task.isCancelled else { return }
+                    nextDelay = 0
+                }
+                guard appState.hasCompletedInitialResourceLoad else { return }
+                guard !isPreparingInitialDiscoverContent,
+                      !isGalaxyVisible,
+                      activeGalaxyTransition == nil else {
+                    nextDelay = 350_000_000
+                    continue
+                }
+                guard !Task.isCancelled else { return }
+                writeWidgetData()
+                pendingWidgetWriteTask = nil
+                return
+            }
+        }
+    }
+
+    private func prepareInitialDiscoverContent() {
+        isPreparingInitialDiscoverContent = true
+        pendingInitialDiscoverPreparationTask?.cancel()
+        pendingInitialDiscoverPreparationTask = Task { @MainActor in
+            srsManager.prepareDiscoverQueueForDisplay()
+
+            for _ in 0..<4 {
+                if isDiscoverContentReadyForDisplay() {
+                    break
+                }
+                await Task.yield()
+                srsManager.ensureLearningQueueReady()
+            }
+
+            guard !Task.isCancelled else { return }
+            isPreparingInitialDiscoverContent = false
+            pendingInitialDiscoverPreparationTask = nil
+        }
+    }
+
+    private func isDiscoverContentReadyForDisplay() -> Bool {
+        !srsManager.getLearningQueueWordsSnapshot().isEmpty || srsManager.todayStudyState != .inProgress
+    }
+
     private func writeWidgetData() {
+        guard appState.hasCompletedInitialResourceLoad else { return }
         let level = appState.level
         let filtered = level == "All" ? appState.words : appState.words.filter { $0.level == level }
         let pool = filtered.shuffled().prefix(50).map {
@@ -623,7 +897,10 @@ private struct DiscoverScreen: View {
         let levelWords = level == "All"
             ? appState.words
             : appState.words.filter { $0.level == level }
-        let candidates = levelWords.filter { $0.id != currentWordId }
+        let excludedWordIds = srsManager.forgotWordIds
+            .union(srsManager.masteredWordIds)
+            .union(srsManager.blurryWordIds)
+        let candidates = levelWords.filter { $0.id != currentWordId && !excludedWordIds.contains($0.id) }
         guard !candidates.isEmpty else { return [] }
         if candidates.count >= galaxyTargetCount {
             return Array(candidates.shuffled().prefix(galaxyTargetCount))
@@ -636,35 +913,89 @@ private struct DiscoverScreen: View {
         return Array(result.prefix(galaxyTargetCount))
     }
 
-    private func clampedLocalPoint(from globalPoint: CGPoint, in containerFrame: CGRect) -> CGPoint {
-        let localPoint = CGPoint(
-            x: globalPoint.x - containerFrame.minX,
-            y: globalPoint.y - containerFrame.minY
-        )
-        return CGPoint(
-            x: min(max(localPoint.x, 0), containerFrame.width),
-            y: min(max(localPoint.y, 0), containerFrame.height)
-        )
+    private func beginGalaxyTransition(_ request: GalaxySelectedCardTransitionRequest) {
+        cancelPendingGalaxySettleTasks()
+        transitionPinnedWord = request.word
+        activeGalaxyTransition = request
     }
 
-    private func dismissGalaxy(selectedWord: SimpleWord? = nil) {
-        pendingGalaxySelectionTask?.cancel()
-        pendingGalaxySelectionTask = nil
-        if let selectedWord {
-            pendingGalaxySelectedWord = selectedWord
-            let selectedWordId = selectedWord.id
-            pendingGalaxySelectionTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: galaxySelectionCommitDelay)
-                guard !Task.isCancelled else { return }
-                srsManager.promoteWordToLearningQueueFront(selectedWordId)
-                queueIndex = 0
-                pendingGalaxySelectionTask = nil
+    private func completeGalaxyTransition() {
+        let selectedWordId = activeGalaxyTransition?.word.id ?? transitionPinnedWord?.id
+        scheduleGalaxyBackdropDismiss()
+        guard let selectedWordId else { return }
+
+        pendingGalaxyQueueCommitTask?.cancel()
+        pendingGalaxyQueueCommitTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: galaxyQueueCommitDelay)
+            guard !Task.isCancelled else { return }
+            srsManager.promoteWordToLearningQueueFront(selectedWordId, persist: false)
+            queueIndex = 0
+            if word?.id == selectedWordId {
+                transitionPinnedWord = nil
             }
+            srsManager.scheduleLearningStateSave(delayNanoseconds: galaxyPersistenceDelay)
+            pendingGalaxyQueueCommitTask = nil
         }
+    }
+
+    private func finishGalaxyTransition() {
+        cancelPendingGalaxySettleTasks()
+        activeGalaxyTransition = nil
+        if transitionPinnedWord?.id == word?.id || !isGalaxyVisible {
+            transitionPinnedWord = nil
+        }
+    }
+
+    private func scheduleGalaxyBackdropDismiss() {
+        pendingGalaxyBackdropDismissTask?.cancel()
+        pendingGalaxyBackdropDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            dismissGalaxyBackdrop()
+            pendingGalaxyBackdropDismissTask = nil
+        }
+    }
+
+    private func cancelPendingGalaxySettleTasks() {
+        pendingGalaxyBackdropDismissTask?.cancel()
+        pendingGalaxyBackdropDismissTask = nil
+        pendingGalaxyQueueCommitTask?.cancel()
+        pendingGalaxyQueueCommitTask = nil
+    }
+
+    private func dismissGalaxyBackdrop() {
+        activeGalaxyTransition = nil
         isGalaxyVisible = false
         onGalaxyVisibilityChanged(false)
         galaxyPinchLatched = false
         galaxyWords = []
+    }
+
+    private func syncGestureOnboardingDemo(for step: GestureOnboardingStep?) {
+        pendingOnboardingGalaxyRevealTask?.cancel()
+        pendingOnboardingGalaxyRevealTask = nil
+
+        if isOnboardingGalaxyVisible {
+            onGalaxyVisibilityChanged(false)
+        }
+        isOnboardingGalaxyVisible = false
+
+        guard step == .pinch, let word else {
+            onboardingGalaxyWords = []
+            return
+        }
+
+        let generatedWords = buildGalaxyWords(excluding: word.id)
+        if generatedWords.isEmpty {
+            onboardingGalaxyWords = Array(appState.words.filter { $0.id != word.id }.prefix(galaxyTargetCount))
+        } else {
+            onboardingGalaxyWords = generatedWords
+        }
+
+        animatePinchDemo = false
+        withAnimation(.easeInOut(duration: 1.05).repeatForever(autoreverses: true)) {
+            animatePinchDemo = true
+        }
     }
 
     #if os(iOS)
@@ -675,6 +1006,7 @@ private struct DiscoverScreen: View {
         case .changed:
             guard !galaxyPinchLatched,
                   !isGalaxyVisible,
+                  activeGalaxyTransition == nil,
                   appState.hasCompletedInitialResourceLoad,
                   isActiveTab,
                   let word,
@@ -689,7 +1021,6 @@ private struct DiscoverScreen: View {
 
             galaxyPinchLatched = true
             galaxyWords = generatedWords
-            galaxyRevealOrigin = clampedLocalPoint(from: event.location, in: containerFrame)
             isGalaxyVisible = true
             onGalaxyVisibilityChanged(true)
         case .ended, .cancelled, .failed:
@@ -703,9 +1034,11 @@ private struct DiscoverScreen: View {
 
 private struct WordGalaxyOverlay: View {
     let words: [SimpleWord]
-    let revealOrigin: CGPoint
-    let onDismiss: (SimpleWord?) -> Void
+    let onSelectCard: (GalaxySelectedCardTransitionRequest) -> Void
+    let onDismiss: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var revealProgress: CGFloat = 0
     @State private var animationStart = Date()
     @State private var isDismissing = false
@@ -716,39 +1049,40 @@ private struct WordGalaxyOverlay: View {
     @State private var galaxyScale: CGFloat = 1
     @State private var pinchStartScale: CGFloat = 1
     @State private var isPinching = false
-    // 卡牌选中 → 旋转到正前方 → 弹出
     @State private var selectedCardIndex: Int? = nil
-    @State private var selectedWord: SimpleWord? = nil
-    @State private var selectedCardAnimation: SelectedGalaxyCardAnimation? = nil
-    @State private var isSpinningToCard = false
-    @State private var spinStartTime: Date? = nil
+    @State private var selectionAnimationStartTime: Date? = nil
     @State private var spinDragDelta: Double = 0
-    @State private var spinDuration: Double = 0.68
+    @State private var isDealing = true
 
-    private let orbitRadius: Double = 135
-    private let ringTiltX: Double = 18
-    private let ringTiltZ: Double = 17
-    private let orbitSpeed: Double = 55
-    private let cameraDistance: Double = 750
+    private let orbitSpeed: Double = 36
+    private let pileAngle: Double = .pi * 0.65
+    private let dealDuration: Double = 0.56
+    private let dealTapUnlockDelay: Double = 0.36
+    private let dealStaggerPerCard: Double = 0.012
+    private let compressedFanOrbitSteps: Double = 3.0
+    private let compressedFanPower: Double = 0.82
+    private let depthZSwitchProgress: Double = 0.42
     private let galaxyScaleRange: ClosedRange<CGFloat> = 0.45...1.90
     private let frontFacingAngle: Double = -.pi / 2.0
+    private let selectionTransitionDuration: Double = 0.48
+    private let innerDustCount = 9
+    private let innerDustRiseDistance: CGFloat = 88
+    private let innerDustCycleDuration: Double = 6
+
+    private var innerDustColor: Color {
+        Color(red: 0.19, green: 0.73, blue: 0.46)
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
-            let startVector = CGSize(
-                width: revealOrigin.x - center.x,
-                height: revealOrigin.y - center.y
-            )
-
             TimelineView(.animation) { context in
-                galaxyFrame(context: context, geo: geo, startVector: startVector)
+                galaxyFrame(context: context, geo: geo)
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        guard !isPinching, !isSpinningToCard else { return }
+                        guard !isPinching, selectedCardIndex == nil, selectionAnimationStartTime == nil, !isDealing else { return }
                         if touchDownDate == nil {
                             touchDownDate = Date()
                         }
@@ -758,7 +1092,7 @@ private struct WordGalaxyOverlay: View {
                         FeedbackService.wheelSpinTick(deltaX: delta)
                     }
                     .onEnded { value in
-                        guard !isPinching else {
+                        guard !isPinching, !isDealing else {
                             previousDragTranslationX = 0
                             return
                         }
@@ -771,41 +1105,31 @@ private struct WordGalaxyOverlay: View {
                         if isTap {
                             let elapsed = (touchDownDate ?? Date()).timeIntervalSince(animationStart)
                             let cards = projectedCards(
-                                size: geo.size,
-                                elapsed: elapsed,
-                                startVector: startVector
+                                elapsed: elapsed
                             )
                             if let hitCard = hitTestCard(
                                 at: value.location,
                                 in: geo.size,
                                 cards: cards
                             ) {
-                                spinToCardAndPopOut(
-                                    hitCard: hitCard,
-                                    elapsed: elapsed,
-                                    geoSize: geo.size,
-                                    startVector: startVector
-                                )
+                                selectCard(hitCard)
                             } else {
-                                dismiss(word: nil)
+                                dismiss()
                             }
-                        } else {
+                        } else if selectedCardIndex == nil {
                             applyInertia(using: value)
                         }
                         previousDragTranslationX = 0
-                        // 旋转弹出动画期间保持冻结，不恢复自动旋转
-                        if !isSpinningToCard {
-                            if let td = touchDownDate {
-                                let pauseDuration = Date().timeIntervalSince(td)
-                                animationStart = animationStart.addingTimeInterval(pauseDuration)
-                                touchDownDate = nil
-                            }
+                        if selectedCardIndex == nil, let td = touchDownDate {
+                            let pauseDuration = Date().timeIntervalSince(td)
+                            animationStart = animationStart.addingTimeInterval(pauseDuration)
+                            touchDownDate = nil
                         }
                     }
             )
             #if os(iOS)
             .background(
-                ExplorePinchGestureBridge(isEnabled: true) { event in
+                ExplorePinchGestureBridge(isEnabled: selectedCardIndex == nil && selectionAnimationStartTime == nil) { event in
                     handleScalePinch(event)
                 }
                 .frame(width: 0, height: 0)
@@ -818,15 +1142,17 @@ private struct WordGalaxyOverlay: View {
                 pinchStartScale = 1
                 isPinching = false
                 selectedCardIndex = nil
-                selectedWord = nil
-                selectedCardAnimation = nil
-                isSpinningToCard = false
-                spinStartTime = nil
+                selectionAnimationStartTime = nil
                 spinDragDelta = 0
-                withAnimation(.spring(response: 0.88, dampingFraction: 0.84)) {
+                isDealing = true
+                withAnimation(.linear(duration: dealDuration)) {
                     revealProgress = 1
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + dealDuration) {
+                    guard !isDismissing else { return }
+                    isDealing = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + dealTapUnlockDelay) {
                     guard !isDismissing else { return }
                     canDismissByTap = true
                 }
@@ -837,46 +1163,93 @@ private struct WordGalaxyOverlay: View {
     @ViewBuilder
     private func galaxyFrame(
         context: TimelineViewDefaultContext,
-        geo: GeometryProxy,
-        startVector: CGSize
+        geo: GeometryProxy
     ) -> some View {
         let referenceDate = isPinching ? context.date : (touchDownDate ?? context.date)
         let elapsed = referenceDate.timeIntervalSince(animationStart)
         let spinT: Double = {
-            guard let st = spinStartTime else { return 0 }
-            return min(1.0, context.date.timeIntervalSince(st) / spinDuration)
+            guard let selectionAnimationStartTime else { return 0 }
+            return min(1.0, context.date.timeIntervalSince(selectionAnimationStartTime) / selectionTransitionDuration)
         }()
-        let spinEased = smoothStep(spinT)
+        let spinEased = galaxySmoothStep(spinT)
         let spinExtra = spinDragDelta * spinEased
-        let cards = projectedCards(size: geo.size, elapsed: elapsed, startVector: startVector, extraDragOffset: spinExtra)
-        let selectedRollProgress = selectedCardAnimation == nil ? 0 : spinT
-        let orbitCards = selectedCardAnimation == nil ? cards : cards.filter { $0.cardIndex != selectedCardIndex }
+        let selectionProgress: Double = {
+            guard let selectionAnimationStartTime else { return 0 }
+            return min(1.0, context.date.timeIntervalSince(selectionAnimationStartTime) / selectionTransitionDuration)
+        }()
+        let cards = projectedCards(elapsed: elapsed, extraDragOffset: spinExtra)
+        let visibleCards = cards.filter { $0.cardIndex != selectedCardIndex }
+        let galaxyBackdropOpacity = max(0.0, 1.0 - galaxySmoothStep(selectionProgress))
 
         ZStack {
-            ForEach(orbitCards) { card in
-                renderedGalaxyCard(card)
-            }
-            if
-                let selectedCardAnimation,
-                let selectedCardIndex,
-                let selectedCard = cards.first(where: { $0.cardIndex == selectedCardIndex })
-            {
-                renderedSelectedGalaxyCard(
-                    selectedCardAnimation,
-                    currentCard: selectedCard,
-                    progress: selectedRollProgress
-                )
+            if galaxyBackdropOpacity > 0.001 {
+                if !reduceMotion {
+                    innerRingDust(
+                        elapsed: elapsed,
+                        orbitOffset: orbitDragOffset + spinExtra
+                    )
+                        .opacity(galaxyBackdropOpacity)
+                }
+                ForEach(visibleCards) { card in
+                    renderedGalaxyCard(card)
+                        .opacity(galaxyBackdropOpacity)
+                }
             }
         }
         .frame(width: geo.size.width, height: geo.size.height)
     }
 
-    private func renderedGalaxyCard(
-        _ card: ProjectedGalaxyCard
-    ) -> some View {
-        let state = orbitGalaxyCardState(for: card)
+    @ViewBuilder
+    private func innerRingDust(elapsed: TimeInterval, orbitOffset: Double) -> some View {
+        let clampedElapsed = max(0, elapsed)
+        let isDarkMode = colorScheme == .dark
+        let minVisibleOpacity = isDarkMode ? 0.0 : 0.34
 
-        return GalaxyWordCard(word: card.word)
+        ForEach(0..<innerDustCount, id: \.self) { index in
+            let phase = (clampedElapsed / innerDustCycleDuration + Double(index) * 0.173).truncatingRemainder(dividingBy: 1.0)
+            let opacityCurve = sin(.pi * phase)
+            let angle = orbitOffset * 0.62 + Double(index) * (2.0 * .pi / Double(innerDustCount))
+            let radiusX = GalaxyOrbit.radius * 0.54 * Double(galaxyScale)
+            let radiusY = GalaxyOrbit.radius * 0.19 * Double(galaxyScale)
+            let driftX = sin(phase * 2.0 * .pi + Double(index) * 0.8) * 6.0
+            let riseY = Double(innerDustRiseDistance * galaxyScale) * phase
+            let glowPulse = 0.74 + 0.26 * sin(clampedElapsed * 0.8 + Double(index))
+            let dynamicOpacity = opacityCurve * glowPulse * Double(revealProgress)
+            let opacity = min(1.0, max(minVisibleOpacity * Double(revealProgress), dynamicOpacity))
+
+            if opacity > 0.001 {
+                ZStack {
+                    if isDarkMode {
+                        Circle()
+                            .fill(innerDustColor.opacity(0.28))
+                            .frame(width: 9.6, height: 9.6)
+                            .blur(radius: 1.2)
+                        Circle()
+                            .fill(innerDustColor.opacity(0.38))
+                            .frame(width: 6.8, height: 6.8)
+                            .blur(radius: 0.45)
+                    }
+                    Circle()
+                        .fill(innerDustColor)
+                        .frame(width: 2.6, height: 2.6)
+                }
+                .opacity(opacity)
+                .scaleEffect(0.92 + CGFloat(phase) * 0.16)
+                .offset(
+                    x: cos(angle) * radiusX + driftX,
+                    y: sin(angle) * radiusY - riseY
+                )
+                .blendMode(isDarkMode ? .plusLighter : .normal)
+                .shadow(color: innerDustColor.opacity(0.34), radius: isDarkMode ? 2.8 : 0, x: 0, y: 0)
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func renderedGalaxyCard(_ card: ProjectedGalaxyCard) -> some View {
+        let state = orbitGalaxyCardState(for: card)
+        let materialEnabled = selectionAnimationStartTime == nil
+        return GalaxyWordCard(word: card.word, materialEnabled: materialEnabled)
             .rotation3DEffect(
                 .degrees(state.tiltY),
                 axis: (x: 0, y: 1, z: 0),
@@ -887,130 +1260,58 @@ private struct WordGalaxyOverlay: View {
             .offset(state.offset)
             .opacity(state.opacity)
             .blur(radius: state.blur)
-            .zIndex(-card.depth)
+            .zIndex(card.zOrder)
     }
 
-    private func renderedSelectedGalaxyCard(
-        _ animation: SelectedGalaxyCardAnimation,
-        currentCard: ProjectedGalaxyCard,
-        progress: Double
-    ) -> some View {
-        let orbitState = selectedGalaxyCardState(
-            for: currentCard,
-            selectedRollProgress: progress
-        )
-        let liftProgress = progress * progress * progress * progress
-        let offset = CGSize(
-            width: lerp(orbitState.offset.width, 0, liftProgress),
-            height: lerp(orbitState.offset.height, 12, liftProgress)
-        )
-        let scale = lerp(66.0 * orbitState.scale / animation.cardWidth, 1, liftProgress)
-        let tiltY = lerp(orbitState.tiltY, 0, liftProgress)
-        let tiltZ = lerp(orbitState.tiltZ, 0, liftProgress)
-        let opacity = lerp(orbitState.opacity, 1, liftProgress)
-        let blur = lerp(orbitState.blur, 0, liftProgress)
-
-        return TransitionDiscoverCard(
-            word: animation.word,
-            cardWidth: animation.cardWidth,
-            cardHeight: animation.cardHeight,
-            contentRevealProgress: progress
-        )
-            .frame(width: animation.cardWidth, height: animation.cardWidth)
-            .allowsHitTesting(false)
-            .compositingGroup()
-            .rotation3DEffect(
-                .degrees(tiltY),
-                axis: (x: 0, y: 1, z: 0),
-                perspective: 0
-            )
-            .rotationEffect(.degrees(tiltZ))
-            .scaleEffect(scale)
-            .offset(offset)
-            .opacity(opacity)
-            .blur(radius: blur)
-            .zIndex(9999)
-    }
-
-    private func spinToCardAndPopOut(
-        hitCard: ProjectedGalaxyCard,
-        elapsed: Double,
-        geoSize: CGSize,
-        startVector: CGSize
-    ) {
-        guard !isDismissing, !isSpinningToCard else { return }
-        isSpinningToCard = true
+    private func selectCard(_ hitCard: ProjectedGalaxyCard) {
+        guard !isDismissing, selectedCardIndex == nil, selectionAnimationStartTime == nil else { return }
         selectedCardIndex = hitCard.cardIndex
-        selectedWord = hitCard.word
         canDismissByTap = false
 
-        let count = Double(words.count)
-        let currentOrbitRad = (elapsed + orbitDragOffset) * orbitSpeed * .pi / 180.0
-        let cardAngle = currentOrbitRad + (Double(hitCard.cardIndex) / count) * 2.0 * .pi
-
-        let targetAngle = frontFacingAngle
-        var deltaAngle = targetAngle - cardAngle
-
+        var deltaAngle = frontFacingAngle - hitCard.angle
         deltaAngle = deltaAngle.truncatingRemainder(dividingBy: 2.0 * .pi)
         if deltaAngle > .pi { deltaAngle -= 2.0 * .pi }
         if deltaAngle < -.pi { deltaAngle += 2.0 * .pi }
-
-        let deltaDragOffset = deltaAngle * 180.0 / (orbitSpeed * .pi)
-        let targetCardWidth = selectedCardTargetWidth(for: geoSize)
-        let targetCardHeight = selectedCardTargetHeight(for: geoSize)
-        selectedCardAnimation = SelectedGalaxyCardAnimation(
-            word: hitCard.word,
-            cardWidth: targetCardWidth,
-            cardHeight: targetCardHeight
+        spinDragDelta = deltaAngle * 180.0 / (orbitSpeed * .pi)
+        selectionAnimationStartTime = Date()
+        onSelectCard(
+            GalaxySelectedCardTransitionRequest(
+                word: hitCard.word,
+                sourceCardWidth: 66,
+                galaxyScale: galaxyScale,
+                rollStartAngle: hitCard.angle,
+                rollEndAngle: hitCard.angle + deltaAngle
+            )
         )
-
-        // 启动手动旋转动画（由 TimelineView 驱动）
-        spinDragDelta = deltaDragOffset
-        spinStartTime = Date()
-        // 精确在动画结束时触发 dismiss，无异步延迟
-        DispatchQueue.main.asyncAfter(deadline: .now() + spinDuration) {
-            commitSpinAndPopOut()
-        }
     }
 
-    private func commitSpinAndPopOut() {
-        guard spinStartTime != nil, !isDismissing else { return }
-        isDismissing = true
-        // 不改任何视觉状态，直接通知父级关闭，避免中间帧重渲染造成卡顿
-        onDismiss(selectedWord)
-    }
-
-    private func dismiss(word: SimpleWord?) {
+    private func dismiss() {
         guard !isDismissing else { return }
         isDismissing = true
         withAnimation(.easeInOut(duration: 0.24)) {
             revealProgress = 0
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            onDismiss(word)
+            onDismiss()
         }
     }
 
     #if os(iOS)
     private func handleScalePinch(_ event: ExplorePinchEvent) {
-        guard !isDismissing else { return }
+        guard !isDismissing, selectedCardIndex == nil, selectionAnimationStartTime == nil else { return }
+        if event.state == .began || event.state == .changed {
+            isPinching = true
+            if let td = touchDownDate {
+                let pauseDuration = Date().timeIntervalSince(td)
+                animationStart = animationStart.addingTimeInterval(pauseDuration)
+                touchDownDate = nil
+            }
+        }
         switch event.state {
         case .began:
-            isPinching = true
             pinchStartScale = galaxyScale
-            if let td = touchDownDate {
-                let pauseDuration = Date().timeIntervalSince(td)
-                animationStart = animationStart.addingTimeInterval(pauseDuration)
-                touchDownDate = nil
-            }
             previousDragTranslationX = 0
         case .changed:
-            isPinching = true
-            if let td = touchDownDate {
-                let pauseDuration = Date().timeIntervalSince(td)
-                animationStart = animationStart.addingTimeInterval(pauseDuration)
-                touchDownDate = nil
-            }
             let nextScale = pinchStartScale * event.scale
             galaxyScale = min(max(nextScale, galaxyScaleRange.lowerBound), galaxyScaleRange.upperBound)
         case .ended, .cancelled, .failed:
@@ -1038,15 +1339,6 @@ private struct WordGalaxyOverlay: View {
         }
     }
 
-    private func selectedCardTargetWidth(for size: CGSize) -> CGFloat {
-        size.width
-    }
-
-    private func selectedCardTargetHeight(for size: CGSize) -> CGFloat {
-        let width = selectedCardTargetWidth(for: size)
-        return max(width - 48, 0)
-    }
-
     private func orbitGalaxyCardState(for card: ProjectedGalaxyCard) -> SelectedGalaxyCardState {
         SelectedGalaxyCardState(
             offset: CGSize(
@@ -1059,36 +1351,6 @@ private struct WordGalaxyOverlay: View {
             opacity: card.opacity,
             blur: CGFloat(card.blur)
         )
-    }
-
-    private func selectedGalaxyCardState(
-        for card: ProjectedGalaxyCard,
-        selectedRollProgress: Double
-    ) -> SelectedGalaxyCardState {
-        let orbitState = orbitGalaxyCardState(for: card)
-        let zoomProgress = smoothStep(min(1.0, max(0.0, (selectedRollProgress - 0.16) / 0.84)))
-        let faceProgress = smoothStep(min(1.0, max(0.0, (selectedRollProgress - 0.58) / 0.42)))
-
-        return SelectedGalaxyCardState(
-            offset: orbitState.offset,
-            scale: orbitState.scale * (1 + CGFloat(zoomProgress) * 1.18),
-            tiltY: lerp(orbitState.tiltY, 0, faceProgress),
-            tiltZ: lerp(orbitState.tiltZ, 4, faceProgress),
-            opacity: min(1.0, orbitState.opacity + zoomProgress * 0.18),
-            blur: lerp(orbitState.blur, orbitState.blur * 0.18, zoomProgress)
-        )
-    }
-
-    private func smoothStep(_ progress: Double) -> Double {
-        progress * progress * (3 - 2 * progress)
-    }
-
-    private func lerp(_ start: CGFloat, _ end: CGFloat, _ progress: Double) -> CGFloat {
-        start + (end - start) * CGFloat(progress)
-    }
-
-    private func lerp(_ start: Double, _ end: Double, _ progress: Double) -> Double {
-        start + (end - start) * progress
     }
 
     private func hitTestCard(
@@ -1112,75 +1374,280 @@ private struct WordGalaxyOverlay: View {
     }
 
     private func projectedCards(
-        size: CGSize,
         elapsed: TimeInterval,
-        startVector: CGSize,
         extraDragOffset: Double = 0
     ) -> [ProjectedGalaxyCard] {
         guard !words.isEmpty else { return [] }
 
-        let startX = Double(startVector.width)
-        let startY = Double(startVector.height)
-        let progress = max(0.0001, Double(revealProgress))
+        let visibilityProgress = max(0.0001, Double(revealProgress))
         let count = words.count
+        let clampedVisibilityProgress = min(1.0, max(0.0, visibilityProgress))
+        let orbitStep = 2.0 * .pi / Double(count)
+        let dealProgress = min(1.0, max(0.0, elapsed / dealDuration))
 
+        // Orbit rotation starts from frame 1 (no delay)
         let orbitRad = (elapsed + orbitDragOffset + extraDragOffset) * orbitSpeed * .pi / 180.0
 
-        // Rz · Rx rotation matrix (localY = 0, so m01/m11/m21 terms drop out)
-        let rxRad = ringTiltX * .pi / 180.0
-        let rzRad = ringTiltZ * .pi / 180.0
-        let cosRx = cos(rxRad), sinRx = sin(rxRad)
-        let cosRz = cos(rzRad), sinRz = sin(rzRad)
-        let m00 = cosRz,              m02 = sinRz * sinRx
-        let m10 = sinRz,              m12 = -cosRz * sinRx
-        let m22 = cosRx
+        let compressedSpan = compressedFanOrbitSteps * orbitStep
+        let maxSlot = Double(max(count - 1, 1))
 
         var results: [ProjectedGalaxyCard] = []
         results.reserveCapacity(count)
 
         for (index, word) in words.enumerated() {
-            let angle = orbitRad + (Double(index) / Double(count)) * 2.0 * .pi
-            let cosA = cos(angle), sinA = sin(angle)
+            let visualRank = index
+            let releaseRank = index
+            let orbitRank = count - 1 - index
+            let slotFraction = Double(visualRank) / maxSlot
 
-            let lx = cosA * orbitRadius
-            let lz = sinA * orbitRadius
+            let localDelay = Double(releaseRank) * dealStaggerPerCard / dealDuration
+            let rawLocal = min(1.0, max(0.0, (dealProgress - localDelay) / max(1.0 - localDelay, 0.001)))
+            let openProgress = galaxySmoothStep(rawLocal)
 
-            let wx = m00 * lx + m02 * lz
-            let wy = m10 * lx + m12 * lz
-            let wz = m22 * lz
+            let compressedOffset = compressedSpan / 2 - pow(slotFraction, compressedFanPower) * compressedSpan
+            let finalOffset = Double(orbitRank) * orbitStep
 
-            // 透视投影（位置）
-            let depthScale = cameraDistance / (cameraDistance + wz)
-            let screenX = wx * depthScale
-            let screenY = wy * depthScale
+            let angle = pileAngle + orbitRad + galaxyLerp(compressedOffset, finalOffset, openProgress)
+            let p = GalaxyOrbit.project(angle: angle)
 
-            // 卡片朝向：完整轨道角度，允许侧面变薄和背面镜像形成扇形效果
-            let cardTiltY = -asin(sin(angle)) * 180.0 / .pi
+            let targetScale = 0.5 + 0.5 * p.depthScale
+            let scale = targetScale * clampedVisibilityProgress + (1 - clampedVisibilityProgress) * 0.80
+            let targetOpacity = min(1.0, 0.25 + 0.75 * p.depthScale)
+            let opacity = targetOpacity * clampedVisibilityProgress + (1 - clampedVisibilityProgress) * 0.90
+            let blur = max(0.0, (1.0 - p.depthScale) * 3.0)
 
-            // 直接用 depthScale 驱动视觉属性（与参考模板一致，天然近大远小）
-            let targetScale = 0.5 + 0.5 * depthScale
-            let scale = targetScale * progress + (1 - progress) * 0.3
-            let targetOpacity = min(1.0, 0.25 + 0.75 * depthScale)
-            let opacity = targetOpacity * progress + (1 - progress) * 0.2
-            let blur = max(0.0, (1.0 - depthScale) * 3.0)
+            let zOrder = openProgress < depthZSwitchProgress ? Double(count - releaseRank) : -p.wz
 
             results.append(ProjectedGalaxyCard(
                 id: "\(word.id)-\(index)",
                 word: word,
                 cardIndex: index,
-                offset: CGSize(
-                    width: startX * (1 - progress) + screenX * progress,
-                    height: startY * (1 - progress) + screenY * progress
-                ),
+                angle: angle,
+                offset: CGSize(width: p.screenX, height: p.screenY),
                 scale: scale,
                 opacity: opacity,
                 blur: blur,
-                depth: wz,
-                cardTiltY: cardTiltY
+                depth: p.wz,
+                cardTiltY: p.cardTiltY,
+                zOrder: zOrder
             ))
         }
 
         return results
+    }
+}
+
+private struct GalaxySelectedCardTransitionRequest {
+    let word: SimpleWord
+    let sourceCardWidth: CGFloat
+    let galaxyScale: CGFloat
+    let rollStartAngle: Double
+    let rollEndAngle: Double
+}
+
+private func galaxySmoothStep(_ progress: Double) -> Double {
+    let t = min(1.0, max(0.0, progress))
+    return t * t * (3 - 2 * t)
+}
+
+private func galaxyLerp(_ start: CGFloat, _ end: CGFloat, _ progress: Double) -> CGFloat {
+    start + (end - start) * CGFloat(progress)
+}
+
+private func galaxyLerp(_ start: Double, _ end: Double, _ progress: Double) -> Double {
+    start + (end - start) * progress
+}
+
+private enum GalaxyOrbit {
+    static let radius: Double = 135
+    static let tiltX: Double = 18
+    static let tiltZ: Double = 17
+    static let camera: Double = 750
+
+    // Precomputed Rz · Rx rotation matrix (localY = 0)
+    private static let rxRad = tiltX * .pi / 180.0
+    private static let rzRad = tiltZ * .pi / 180.0
+    static let m00 = cos(rzRad)
+    static let m02 = sin(rzRad) * sin(rxRad)
+    static let m10 = sin(rzRad)
+    static let m12 = -cos(rzRad) * sin(rxRad)
+    static let m22 = cos(rxRad)
+
+    struct Projection {
+        let screenX: Double
+        let screenY: Double
+        let depthScale: Double
+        let cardTiltY: Double
+        let wz: Double
+    }
+
+    static func project(angle: Double) -> Projection {
+        let cosA = cos(angle), sinA = sin(angle)
+        let lx = cosA * radius
+        let lz = sinA * radius
+        let wx = m00 * lx + m02 * lz
+        let wy = m10 * lx + m12 * lz
+        let wz = m22 * lz
+        let depthScale = camera / (camera + wz)
+        return Projection(
+            screenX: wx * depthScale,
+            screenY: wy * depthScale,
+            depthScale: depthScale,
+            cardTiltY: -asin(sin(angle)) * 180.0 / .pi,
+            wz: wz
+        )
+    }
+}
+
+private func galaxyAccentBorder(isDarkMode: Bool) -> LinearGradient {
+    LinearGradient(
+        colors: [
+            Color(red: 0.28, green: 0.95, blue: 0.56).opacity(isDarkMode ? 0.82 : 0.62),
+            Color(red: 0.16, green: 0.78, blue: 0.46).opacity(isDarkMode ? 0.72 : 0.52)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
+private struct ActiveDiscoverCardHost: View {
+    let word: SimpleWord
+    let transitionRequest: GalaxySelectedCardTransitionRequest?
+    let containerSize: CGSize
+    let allowsInteractions: Bool
+    let isActiveTab: Bool
+    let scriptedGesture: DiscoverCardDemoGesture?
+    let onSwipeForgot: (String) -> Void
+    let onSwipeMastered: (String) -> Void
+    let onSwipeBlurry: (String) -> Void
+    let onTransitionComplete: () -> Void
+
+    @State private var animationStart = Date()
+    @State private var hasCompletedTransition = false
+
+    private let transitionDuration: Double = 0.48
+
+    var body: some View {
+        Group {
+            if let transitionRequest {
+                TimelineView(.animation) { context in
+                    let progress = min(1.0, context.date.timeIntervalSince(animationStart) / transitionDuration)
+                    ZStack {
+                        renderedCard(progress: progress, transitionRequest: transitionRequest)
+                        if progress >= 1.0, !hasCompletedTransition {
+                            Color.clear
+                                .frame(width: 0, height: 0)
+                                .onAppear {
+                                    hasCompletedTransition = true
+                                    onTransitionComplete()
+                                }
+                        }
+                    }
+                }
+            } else {
+                renderedCard(progress: 1, transitionRequest: nil)
+            }
+        }
+        .frame(width: containerSize.width, height: containerSize.height)
+        .onAppear {
+            if transitionRequest != nil {
+                animationStart = Date()
+                hasCompletedTransition = false
+            }
+        }
+        .onChange(of: transitionRequest?.word.id) { oldValue, newValue in
+            guard newValue != oldValue, newValue != nil else { return }
+            animationStart = Date()
+            hasCompletedTransition = false
+        }
+    }
+
+    @ViewBuilder
+    private func renderedCard(progress: Double, transitionRequest: GalaxySelectedCardTransitionRequest?) -> some View {
+        let detailProgress = transitionDetailProgress(progress: progress, transitionRequest: transitionRequest)
+        let isTransitioning = transitionRequest != nil
+        let glowStrength = isTransitioning ? min(1.0, detailProgress) : 1.0
+        let interactionEnabled = !isTransitioning && allowsInteractions
+        let state: SelectedGalaxyCardState = transitionRequest.map {
+            transitionRenderState(for: $0, targetCardWidth: containerSize.width, progress: progress)
+        } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
+
+        DiscoverCard(
+            word: word,
+            screenWidth: containerSize.width,
+            cardWidth: containerSize.width,
+            cardHeight: max(containerSize.width - 48, 0),
+            isActiveTab: isActiveTab && interactionEnabled,
+            detailProgress: detailProgress,
+            glowStrength: glowStrength,
+            interactionsEnabled: interactionEnabled,
+            scriptedGesture: scriptedGesture,
+            onSwipeForgot: onSwipeForgot,
+            onSwipeMastered: onSwipeMastered,
+            onSwipeBlurry: onSwipeBlurry
+        )
+        .id(word.id)
+        .frame(width: containerSize.width, height: containerSize.height)
+        .position(x: containerSize.width / 2, y: containerSize.height / 2)
+        .allowsHitTesting(!isTransitioning)
+        .rotation3DEffect(
+            .degrees(state.tiltY),
+            axis: (x: 0, y: 1, z: 0),
+            perspective: 0
+        )
+        .rotationEffect(.degrees(state.tiltZ))
+        .scaleEffect(state.scale)
+        .offset(state.offset)
+        .opacity(state.opacity)
+        .modifier(ConditionalBlur(radius: state.blur))
+    }
+
+    private func transitionDetailProgress(progress: Double, transitionRequest: GalaxySelectedCardTransitionRequest?) -> Double {
+        guard transitionRequest != nil else { return 1.0 }
+        let t = min(1.0, max(0.0, (progress - 0.02) / 0.40))
+        return galaxySmoothStep(t)
+    }
+
+    private func transitionRenderState(
+        for request: GalaxySelectedCardTransitionRequest,
+        targetCardWidth: CGFloat,
+        progress: Double
+    ) -> SelectedGalaxyCardState {
+        let eased = galaxySmoothStep(progress)
+        let angle = galaxyLerp(request.rollStartAngle, request.rollEndAngle, eased)
+        let base = orbitState(angle: angle, galaxyScale: request.galaxyScale)
+        let currentWidth = request.sourceCardWidth * base.scale
+        let settleT = galaxySmoothStep(min(1.0, max(0.0, (progress - 0.10) / 0.90)))
+        let scaleT = galaxySmoothStep(min(1.0, max(0.0, (progress - 0.04) / 0.96)))
+        let blurT = galaxySmoothStep(min(1.0, max(0.0, progress * 2.2)))
+
+        return SelectedGalaxyCardState(
+            offset: CGSize(
+                width: galaxyLerp(base.offset.width, 0, settleT),
+                height: galaxyLerp(base.offset.height, 0, settleT)
+            ),
+            scale: galaxyLerp(currentWidth / max(targetCardWidth, 1), 1, scaleT),
+            tiltY: galaxyLerp(base.tiltY, 0, settleT),
+            tiltZ: galaxyLerp(base.tiltZ, 0, settleT),
+            opacity: galaxyLerp(base.opacity, 1, settleT),
+            blur: galaxyLerp(base.blur, 0, blurT)
+        )
+    }
+
+    private func orbitState(angle: Double, galaxyScale: CGFloat) -> SelectedGalaxyCardState {
+        let p = GalaxyOrbit.project(angle: angle)
+        let scale = (0.5 + 0.5 * p.depthScale) * galaxyScale
+        let opacity = min(1.0, 0.25 + 0.75 * p.depthScale)
+        let blur = max(0.0, (1.0 - p.depthScale) * 3.0)
+
+        return SelectedGalaxyCardState(
+            offset: CGSize(width: p.screenX * galaxyScale, height: p.screenY * galaxyScale),
+            scale: CGFloat(scale),
+            tiltY: p.cardTiltY,
+            tiltZ: 15,
+            opacity: opacity,
+            blur: CGFloat(blur)
+        )
     }
 }
 
@@ -1197,35 +1664,21 @@ private struct ProjectedGalaxyCard: Identifiable {
     let id: String
     let word: SimpleWord
     let cardIndex: Int
+    let angle: Double
     let offset: CGSize
     let scale: Double
     let opacity: Double
     let blur: Double
     let depth: Double
     let cardTiltY: Double
-}
-
-private struct SelectedGalaxyCardAnimation {
-    let word: SimpleWord
-    let cardWidth: CGFloat
-    let cardHeight: CGFloat
+    let zOrder: Double
 }
 
 private struct GalaxyWordCard: View {
     let word: SimpleWord
+    var materialEnabled: Bool = true
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
-
-    init(word: SimpleWord) {
-        self.word = word
-    }
-
-    private enum CardFontWeight {
-        case regular
-        case medium
-        case semibold
-        case bold
-    }
 
     private var title: String {
         let display = word.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1236,55 +1689,35 @@ private struct GalaxyWordCard: View {
         colorScheme == .dark
     }
 
-    private var cardSurfaceColor: Color {
-        AppColors.elevatedSurfaceFill(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var cardBorderColor: Color {
-        AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var dividerColor: Color {
-        isDarkMode ? AppColors.nocturneBorderSoft : Color.black.opacity(0.14)
-    }
-
-    private var accentBorder: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.28, green: 0.95, blue: 0.56).opacity(isDarkMode ? 0.82 : 0.62),
-                Color(red: 0.16, green: 0.78, blue: 0.46).opacity(isDarkMode ? 0.72 : 0.52)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private func cardFont(size: CGFloat, weight: CardFontWeight = .regular) -> Font {
+    private var titleFont: Font {
         switch appState.cardFontStyle {
-        case .sfPro:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .default)
-        case .sfRounded:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
-        case .avenirNext:
-            return .custom(avenirNextFontName(for: weight), size: size)
+        case .sfPro: return .system(size: 9.5, weight: .bold, design: .default)
+        case .sfRounded: return .system(size: 9.5, weight: .bold, design: .rounded)
+        case .avenirNext: return .custom("AvenirNext-Bold", size: 9.5)
         }
     }
 
-    private func systemFontWeight(for weight: CardFontWeight) -> Font.Weight {
-        switch weight {
-        case .regular: return .regular
-        case .medium: return .medium
-        case .semibold: return .semibold
-        case .bold: return .bold
-        }
-    }
-
-    private func avenirNextFontName(for weight: CardFontWeight) -> String {
-        switch weight {
-        case .regular: return "AvenirNext-Regular"
-        case .medium: return "AvenirNext-Medium"
-        case .semibold: return "AvenirNext-DemiBold"
-        case .bold: return "AvenirNext-Bold"
+    @ViewBuilder
+    private var surface: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        if materialEnabled || !isDarkMode {
+            shape.themedGlassSurface(themeMode: appState.themeMode, isDarkMode: isDarkMode)
+        } else {
+            shape
+                .fill(AppColors.elevatedSurfaceTint(themeMode: appState.themeMode, isDarkMode: isDarkMode))
+                .overlay {
+                    shape.fill(AppColors.elevatedSurfaceGlowStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode))
+                }
+                .overlay {
+                    shape.fill(AppColors.elevatedSurfaceHighlightStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode))
+                }
+                .overlay {
+                    shape.stroke(AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode), lineWidth: 1)
+                }
+                .overlay {
+                    shape.inset(by: 1)
+                        .stroke(AppColors.elevatedSurfaceInnerBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode), lineWidth: 0.8)
+                }
         }
     }
 
@@ -1293,7 +1726,7 @@ private struct GalaxyWordCard: View {
             Color.clear
                 .frame(height: 6)
             Text(title)
-                .font(cardFont(size: 9.5, weight: .bold))
+                .font(titleFont)
                 .tracking(0.12)
                 .foregroundStyle(isDarkMode ? Color.white.opacity(0.90) : Color.black.opacity(0.82))
                 .lineLimit(1)
@@ -1301,27 +1734,15 @@ private struct GalaxyWordCard: View {
                 .allowsTightening(true)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 2)
-            Rectangle()
-                .fill(dividerColor)
-                .frame(height: 0.8)
-                .padding(.top, 3)
-                .opacity(0.18)
             Spacer(minLength: 0)
         }
         .frame(width: 56, height: 56, alignment: .topLeading)
         .padding(.horizontal, 5)
         .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(cardSurfaceColor)
-        )
+        .background(surface)
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(cardBorderColor, lineWidth: 0.8)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(accentBorder, lineWidth: 1.05)
+                .stroke(galaxyAccentBorder(isDarkMode: isDarkMode), lineWidth: 1.05)
         )
         .shadow(color: .black.opacity(isDarkMode ? 0.14 : 0.05), radius: 3, y: 1.5)
     }
@@ -1498,11 +1919,17 @@ struct SearchSelectedWordCardView: View {
             let discoverCardHeight = max(discoverCardWidth - 48, 0)
             ZStack {
                 if dismissOnTap {
-                    backgroundGradient.ignoresSafeArea()
+                    ThemedBackgroundView(
+                        themeMode: themeMode,
+                        isDarkMode: colorScheme == .dark
+                    )
                         .contentShape(Rectangle())
                         .onTapGesture { onDismiss() }
                 } else {
-                    backgroundGradient.ignoresSafeArea()
+                    ThemedBackgroundView(
+                        themeMode: themeMode,
+                        isDarkMode: colorScheme == .dark
+                    )
                 }
 
                 DiscoverCard(
@@ -1538,6 +1965,19 @@ struct SearchSelectedWordCardView: View {
             }
         }
         .interactiveDismissDisabled()
+    }
+}
+
+private struct OnboardingPinchDemoView: View {
+    let animate: Bool
+    let isDarkMode: Bool
+
+    var body: some View {
+        Image(systemName: "hand.pinch")
+            .font(.system(size: 52, weight: .thin))
+            .foregroundStyle(isDarkMode ? Color.white.opacity(0.45) : Color.black.opacity(0.25))
+            .scaleEffect(animate ? 0.8 : 1.1)
+            .allowsHitTesting(false)
     }
 }
 
@@ -1725,6 +2165,10 @@ private struct DiscoverCard: View {
     let cardWidth: CGFloat?
     let cardHeight: CGFloat?
     let isActiveTab: Bool
+    let detailProgress: Double
+    let glowStrength: Double
+    let interactionsEnabled: Bool
+    let scriptedGesture: DiscoverCardDemoGesture?
     let resetTransformAfterSwipe: Bool
     let allowsBlurrySwipe: Bool
     let onSwipeDownAction: (() -> Void)?
@@ -1739,6 +2183,7 @@ private struct DiscoverCard: View {
     @State private var dragRotation: Angle = .zero
     @State private var isSwipeCompleting = false
     @State private var pendingSpeechTask: Task<Void, Never>?
+    @State private var demoLoopTask: Task<Void, Never>?
     @State private var displayedWord: SimpleWord
     @State private var allSenses: [SimpleWord] = []
     @State private var currentSensePosition: Int = 0
@@ -1749,6 +2194,10 @@ private struct DiscoverCard: View {
         cardWidth: CGFloat? = nil,
         cardHeight: CGFloat? = nil,
         isActiveTab: Bool,
+        detailProgress: Double = 1,
+        glowStrength: Double = 1,
+        interactionsEnabled: Bool = true,
+        scriptedGesture: DiscoverCardDemoGesture? = nil,
         resetTransformAfterSwipe: Bool = true,
         allowsBlurrySwipe: Bool = true,
         onSwipeDownAction: (() -> Void)? = nil,
@@ -1762,6 +2211,10 @@ private struct DiscoverCard: View {
         self.cardWidth = cardWidth
         self.cardHeight = cardHeight
         self.isActiveTab = isActiveTab
+        self.detailProgress = detailProgress
+        self.glowStrength = glowStrength
+        self.interactionsEnabled = interactionsEnabled
+        self.scriptedGesture = scriptedGesture
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
         self.allowsBlurrySwipe = allowsBlurrySwipe
         self.onSwipeDownAction = onSwipeDownAction
@@ -1773,157 +2226,125 @@ private struct DiscoverCard: View {
     }
 
     private let swipeThreshold: CGFloat = 100
+    private enum SwipeHintDirection {
+        case forgot
+        case mastered
+        case blurry
+        case noAction
+    }
+    private var activeHintDirection: SwipeHintDirection? {
+        let absX = abs(dragOffset.width)
+        let absY = abs(dragOffset.height)
+        guard max(absX, absY) > 0 else { return nil }
+        if absY >= absX {
+            if dragOffset.height > 0, allowsBlurrySwipe {
+                return .blurry
+            }
+            if dragOffset.height < 0, onSwipeUpWithoutAction != nil {
+                return .noAction
+            }
+        } else {
+            if dragOffset.width < 0 {
+                return .forgot
+            }
+            if dragOffset.width > 0 {
+                return .mastered
+            }
+        }
+        return nil
+    }
     private var forgotHintOpacity: Double {
-        guard dragOffset.width < 0 else { return 0 }
+        guard activeHintDirection == .forgot, dragOffset.width < 0 else { return 0 }
         return min(0.35 + Double(abs(dragOffset.width) / 45), 1)
     }
     private var masteredHintOpacity: Double {
-        guard dragOffset.width > 0 else { return 0 }
+        guard activeHintDirection == .mastered, dragOffset.width > 0 else { return 0 }
         return min(0.35 + Double(abs(dragOffset.width) / 45), 1)
     }
     private var blurryHintOpacity: Double {
-        guard dragOffset.height > 0 else { return 0 }
+        guard activeHintDirection == .blurry, dragOffset.height > 0 else { return 0 }
         return min(0.15 + Double(abs(dragOffset.height) / 90), 1)
     }
     private var noActionHintOpacity: Double {
-        guard dragOffset.height < 0, onSwipeUpWithoutAction != nil else { return 0 }
+        guard activeHintDirection == .noAction, dragOffset.height < 0, onSwipeUpWithoutAction != nil else { return 0 }
         return min(0.20 + Double(abs(dragOffset.height) / 90), 1)
     }
-    private var isDarkMode: Bool {
-        colorScheme == .dark
+    private var resolvedCardWidth: CGFloat {
+        max(cardWidth ?? screenWidth, 0)
     }
-    private var cardSurfaceColor: Color {
-        AppColors.elevatedSurfaceFill(themeMode: appState.themeMode, isDarkMode: isDarkMode)
+    private var resolvedCardHeight: CGFloat {
+        max(cardHeight ?? max(resolvedCardWidth - 48, 0), 0)
     }
-    private var cardBorderColor: Color {
-        AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-    private var cardGlowColor: Color {
-        isDarkMode
-            ? Color(red: 0.31, green: 1.00, blue: 0.66)
-            : Color(red: 0.51, green: 0.86, blue: 0.75)
-    }
-    private var levelTextColor: Color {
-        AppColors.tertiaryText(isDarkMode: isDarkMode)
-    }
-    private var headlineTextColor: Color {
-        AppColors.primaryText(isDarkMode: isDarkMode)
-    }
+    private var isDarkMode: Bool { colorScheme == .dark }
     private var secondaryTextColor: Color {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.42)
     }
-    private var bodyTextColor: Color {
-        isDarkMode ? Color.white.opacity(0.80) : Color.black.opacity(0.78)
-    }
-    private var dividerColor: Color {
-        isDarkMode ? AppColors.nocturneBorderSoft : Color.black.opacity(0.14)
-    }
-    private var exampleTextColor: Color {
-        isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.72)
-    }
-    private var exampleTranslationColor: Color {
-        isDarkMode ? AppColors.nocturneTextTertiary : Color.black.opacity(0.48)
-    }
-    private var titleBaseFontSize: CGFloat {
-        let count = displayedWord.displayWord.count
-        if count >= 24 { return 42 }
-        if count >= 20 { return 46 }
-        if count >= 16 { return 50 }
-        return 56
-    }
-    private enum CardFontWeight {
-        case regular
-        case medium
-        case semibold
-        case bold
-    }
-    private func cardFont(size: CGFloat, weight: CardFontWeight = .regular) -> Font {
-        switch appState.cardFontStyle {
-        case .sfPro:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .default)
-        case .sfRounded:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
-        case .avenirNext:
-            return .custom(avenirNextFontName(for: weight), size: size)
+
+    private func demoTargetOffset(for gesture: DiscoverCardDemoGesture) -> CGSize {
+        switch gesture {
+        case .swipeRight:
+            return CGSize(width: min(resolvedCardWidth * 0.38, 140), height: 0)
+        case .swipeLeft:
+            return CGSize(width: -min(resolvedCardWidth * 0.38, 140), height: 0)
+        case .swipeDown:
+            return CGSize(width: 0, height: min(resolvedCardHeight * 0.24, 96))
         }
     }
-    private func systemFontWeight(for weight: CardFontWeight) -> Font.Weight {
-        switch weight {
-        case .regular: return .regular
-        case .medium: return .medium
-        case .semibold: return .semibold
-        case .bold: return .bold
+
+    private func demoTargetRotation(for gesture: DiscoverCardDemoGesture) -> Angle {
+        switch gesture {
+        case .swipeRight:
+            return .degrees(7)
+        case .swipeLeft:
+            return .degrees(-7)
+        case .swipeDown:
+            return .zero
         }
     }
-    private func avenirNextFontName(for weight: CardFontWeight) -> String {
-        switch weight {
-        case .regular: return "AvenirNext-Regular"
-        case .medium: return "AvenirNext-Medium"
-        case .semibold: return "AvenirNext-DemiBold"
-        case .bold: return "AvenirNext-Bold"
+
+    @MainActor
+    private func stopDemoLoop(resetTransform: Bool) {
+        demoLoopTask?.cancel()
+        demoLoopTask = nil
+        guard resetTransform else { return }
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            dragOffset = .zero
+            dragRotation = .zero
         }
     }
-    private enum NounCornerTone {
-        case green
-        case red
-        case lavender
-    }
-    private var nounFlags: Set<String> {
-        Set(displayedWord.nounUIFlags)
-    }
-    private var nounEntityType: String {
-        displayedWord.nounUIEntityType
-    }
-    private var isNounCard: Bool {
-        let normalizedTag = displayedWord.tag
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard normalizedTag == "n" || normalizedTag.hasPrefix("n.") else { return false }
-        return nounEntityType.isEmpty || nounEntityType.contains("name") || nounEntityType.contains("entity")
-    }
-    private var nounCornerTone: NounCornerTone? {
-        guard isNounCard else { return nil }
-        if nounFlags.contains("common_gender") || nounFlags.contains("proper_noun_like") {
-            return .lavender
+
+    @MainActor
+    private func restartDemoLoopIfNeeded() {
+        guard let scriptedGesture, !isSwipeCompleting else {
+            stopDemoLoop(resetTransform: true)
+            return
         }
-        switch displayedWord.nounUICorner {
-        case "green":
-            return .green
-        case "red":
-            return .red
-        case "dual", "neutral":
-            return .lavender
-        case "not_applicable":
-            return nil
-        default:
-            return nil
+
+        demoLoopTask?.cancel()
+        demoLoopTask = Task { @MainActor in
+            dragOffset = .zero
+            dragRotation = .zero
+
+            while !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.9)) {
+                    dragOffset = demoTargetOffset(for: scriptedGesture)
+                    dragRotation = demoTargetRotation(for: scriptedGesture)
+                }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                    dragOffset = .zero
+                    dragRotation = .zero
+                }
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
         }
     }
-    private var nounCornerColor: Color {
-        guard let tone = nounCornerTone else { return .clear }
-        switch tone {
-        case .green:
-            return isDarkMode ? Color(red: 0.45, green: 0.81, blue: 0.66) : Color(red: 0.43, green: 0.77, blue: 0.62)
-        case .red:
-            return isDarkMode ? Color(red: 0.83, green: 0.51, blue: 0.54) : Color(red: 0.86, green: 0.49, blue: 0.51)
-        case .lavender:
-            return isDarkMode ? Color(red: 0.72, green: 0.66, blue: 0.88) : Color(red: 0.71, green: 0.62, blue: 0.88)
-        }
+
+    private var bottomMetaReveal: Double {
+        galaxySmoothStep((detailProgress - 0.10) / 0.72)
     }
-    @ViewBuilder
-    private var nounCornerBadge: some View {
-        if nounCornerTone != nil {
-            NounCornerAccentShape()
-                .stroke(
-                    nounCornerColor.opacity(isDarkMode ? 0.96 : 0.92),
-                    style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
-                )
-                .frame(width: 84, height: 72)
-                .padding(.top, 8)
-                .padding(.trailing, 8)
-                .allowsHitTesting(false)
-        }
-    }
+
     private func speakWord() {
         let trimmedWord = displayedWord.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedWord.isEmpty else { return }
@@ -2035,7 +2456,7 @@ private struct DiscoverCard: View {
                 }
                 .rotationEffect(.degrees(-9))
                 .opacity(forgotHintOpacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .trailing)
                 .padding(.trailing, 20)
             }
 
@@ -2050,7 +2471,7 @@ private struct DiscoverCard: View {
                 }
                 .rotationEffect(.degrees(9))
                 .opacity(masteredHintOpacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .leading)
                 .padding(.leading, 20)
             }
 
@@ -2065,8 +2486,8 @@ private struct DiscoverCard: View {
                 }
                 .rotationEffect(.degrees(7))
                 .opacity(blurryHintOpacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, 20)
+                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .top)
+                .offset(y: -28)
             }
 
             if noActionHintOpacity > 0 {
@@ -2079,46 +2500,40 @@ private struct DiscoverCard: View {
                         .foregroundStyle(secondaryTextColor)
                 }
                 .opacity(noActionHintOpacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .top)
                 .padding(.top, 20)
             }
 
-            cardContent
-                .padding(.horizontal, 26)
-                .padding(.vertical, 24)
-                .frame(width: cardWidth, alignment: .top)
+            CardBody(
+                word: displayedWord,
+                cardWidth: cardWidth ?? 0,
+                cardHeight: cardHeight ?? 0,
+                detailProgress: detailProgress,
+                onTitleTap: { [self] in cancelScheduledSpeech(); speakWord() },
+                onDetailTap: { [self] in cancelScheduledSpeech(); speakExampleSentence() }
+            )
                 .overlay(alignment: .bottomTrailing) {
                     bottomMetaBar
                         .padding(.trailing, 12)
                         .padding(.bottom, 12)
+                        .opacity(bottomMetaReveal)
                 }
-                .overlay(alignment: .topTrailing) {
-                    nounCornerBadge
-                }
-                .background(cardSurfaceColor, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(cardBorderColor, lineWidth: 1)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(cardGlowColor.opacity(isDarkMode ? 0.64 : 0.42), lineWidth: isDarkMode ? 1.8 : 1.6)
-                        .blur(radius: isDarkMode ? 1.8 : 2)
-                )
-                .shadow(color: cardGlowColor.opacity(isDarkMode ? 0.30 : 0.22), radius: isDarkMode ? 8 : 12, x: 0, y: 0)
-                .shadow(color: cardGlowColor.opacity(isDarkMode ? 0.18 : 0.12), radius: isDarkMode ? 18 : 24, x: 0, y: 0)
-                .shadow(color: cardGlowColor.opacity(isDarkMode ? 0.11 : 0.07), radius: isDarkMode ? 34 : 38, x: 0, y: 0)
+                .modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
                 .offset(dragOffset)
                 .rotationEffect(dragRotation)
+                .allowsHitTesting(interactionsEnabled)
                 .gesture(
                     DragGesture(minimumDistance: 15)
                         .onChanged { v in
-                            guard !isSwipeCompleting else { return }
+                            guard interactionsEnabled, !isSwipeCompleting else { return }
+                            if scriptedGesture != nil {
+                                stopDemoLoop(resetTransform: false)
+                            }
                             dragOffset = v.translation
                             dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
                         }
                         .onEnded { v in
-                            guard !isSwipeCompleting else { return }
+                            guard interactionsEnabled, !isSwipeCompleting else { return }
                             let dx = v.translation.width
                             let dy = v.translation.height
                             if dx < -swipeThreshold {
@@ -2165,108 +2580,28 @@ private struct DiscoverCard: View {
                 }
                 .onChange(of: word.id) { _, _ in
                     refreshSenses(using: word)
-                    if isActiveTab && appState.autoPlay {
+                    if interactionsEnabled && isActiveTab && appState.autoPlay {
                         scheduleAutoPlay()
                     }
                 }
                 .onDisappear {
+                    stopDemoLoop(resetTransform: false)
                     stopSpeechPlayback()
                 }
                 .onAppear {
-                    FeedbackService.prepareInteractive()
                     refreshSenses(using: word)
-                    if isActiveTab && appState.autoPlay {
+                    if interactionsEnabled {
+                        FeedbackService.prepareInteractive()
+                    }
+                    if interactionsEnabled && isActiveTab && appState.autoPlay {
                         scheduleAutoPlay()
                     }
+                    restartDemoLoopIfNeeded()
+                }
+                .onChange(of: scriptedGesture) { _, _ in
+                    restartDemoLoopIfNeeded()
                 }
         }
-    }
-
-    private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Text(displayedWord.level.uppercased())
-                    if !displayedWord.auxiliary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(displayedWord.auxiliary)
-                    }
-                }
-                Text(displayedWord.displayWord)
-                    .font(cardFont(size: titleBaseFontSize, weight: .bold))
-                    .tracking(0.2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.42)
-                    .allowsTightening(true)
-                    .foregroundStyle(headlineTextColor)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 22)
-            }
-            .font(cardFont(size: 11, weight: .semibold))
-            .foregroundStyle(levelTextColor)
-            .padding(.bottom, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                cancelScheduledSpeech()
-                speakWord()
-            }
-
-            Rectangle()
-                .fill(dividerColor)
-                .frame(height: 1)
-                .padding(.bottom, 20)
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 10) {
-                    Text(posLabel(displayedWord.tag))
-                        .font(cardFont(size: 16, weight: .medium))
-                        .foregroundStyle(secondaryTextColor)
-                        .padding(.top, 1)
-
-                    Text(appState.translationText(for: displayedWord))
-                        .font(cardFont(size: 16))
-                        .lineSpacing(5)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(bodyTextColor)
-                }
-                .multilineTextAlignment(.leading)
-
-                let translatedExample = appState.translatedExampleText(for: displayedWord)
-                if !displayedWord.exampleFr.isEmpty || !translatedExample.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if !displayedWord.exampleFr.isEmpty {
-                            Text(displayedWord.exampleFr)
-                                .foregroundStyle(exampleTextColor)
-                                .font(cardFont(size: 16))
-                                .multilineTextAlignment(.leading)
-                                .lineSpacing(3)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if !translatedExample.isEmpty {
-                            Text(translatedExample)
-                                .font(cardFont(size: 15))
-                                .multilineTextAlignment(.leading)
-                                .lineSpacing(2)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .foregroundStyle(exampleTranslationColor)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 18)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                cancelScheduledSpeech()
-                speakExampleSentence()
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -2277,7 +2612,7 @@ private struct DiscoverCard: View {
                     Image(systemName: "square.stack.3d.up.fill")
                         .font(.system(size: 10, weight: .semibold))
                     Text("\(displayedWord.senseIndex)/\(allSenses.count)")
-                        .font(cardFont(size: 10, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                 }
                 .foregroundStyle(secondaryTextColor)
                 .padding(.horizontal, 8)
@@ -2292,81 +2627,90 @@ private struct DiscoverCard: View {
     }
 }
 
-private struct TransitionDiscoverCard: View {
-    let word: SimpleWord
-    let cardWidth: CGFloat
-    let cardHeight: CGFloat
-    let contentRevealProgress: Double
-
-    @EnvironmentObject private var appState: AppState
-    @Environment(\.colorScheme) private var colorScheme
-
-    private enum CardFontWeight {
-        case regular
-        case medium
-        case semibold
-        case bold
+private struct ConditionalBlur: ViewModifier {
+    let radius: CGFloat
+    func body(content: Content) -> some View {
+        if radius > 0 {
+            content.blur(radius: radius)
+        } else {
+            content
+        }
     }
+}
 
-    private enum NounCornerTone {
-        case green
-        case red
-        case lavender
+private struct OptionalTapModifier: ViewModifier {
+    let action: (() -> Void)?
+    func body(content: Content) -> some View {
+        if let action {
+            content.contentShape(Rectangle()).onTapGesture { action() }
+        } else {
+            content
+        }
     }
+}
 
-    private var isDarkMode: Bool {
-        colorScheme == .dark
-    }
+private struct CardGlowModifier: ViewModifier {
+    let strength: Double
+    let isDarkMode: Bool
 
-    private var cardSurfaceColor: Color {
-        AppColors.elevatedSurfaceFill(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var cardBorderColor: Color {
-        AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var cardGlowColor: Color {
+    private var glowColor: Color {
         isDarkMode
             ? Color(red: 0.31, green: 1.00, blue: 0.66)
             : Color(red: 0.51, green: 0.86, blue: 0.75)
     }
 
-    private var accentBorder: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.28, green: 0.95, blue: 0.56).opacity(isDarkMode ? 0.82 : 0.62),
-                Color(red: 0.16, green: 0.78, blue: 0.46).opacity(isDarkMode ? 0.72 : 0.52)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    func body(content: Content) -> some View {
+        if strength > 0.001 {
+            content
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(glowColor.opacity((isDarkMode ? 0.64 : 0.42) * strength), lineWidth: isDarkMode ? 1.8 : 1.6)
+                        .blur(radius: isDarkMode ? 1.8 : 2)
+                )
+                .shadow(color: glowColor.opacity((isDarkMode ? 0.30 : 0.22) * strength), radius: isDarkMode ? 8 : 12, x: 0, y: 0)
+                .shadow(color: glowColor.opacity((isDarkMode ? 0.18 : 0.12) * strength), radius: isDarkMode ? 18 : 24, x: 0, y: 0)
+                .shadow(color: glowColor.opacity((isDarkMode ? 0.11 : 0.07) * strength), radius: isDarkMode ? 34 : 38, x: 0, y: 0)
+        } else {
+            content
+        }
+    }
+}
+
+private struct CardBody: View {
+    let word: SimpleWord
+    let cardWidth: CGFloat
+    let cardHeight: CGFloat
+    let detailProgress: Double
+    var onTitleTap: (() -> Void)? = nil
+    var onDetailTap: (() -> Void)? = nil
+
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.colorScheme) private var colorScheme
+
+    private enum CardFontWeight {
+        case regular, medium, semibold, bold
     }
 
-    private var levelTextColor: Color {
-        AppColors.tertiaryText(isDarkMode: isDarkMode)
+    private enum NounCornerTone {
+        case green, red, lavender
     }
 
-    private var headlineTextColor: Color {
-        AppColors.primaryText(isDarkMode: isDarkMode)
-    }
+    private var isDarkMode: Bool { colorScheme == .dark }
 
+    private var levelTextColor: Color { AppColors.tertiaryText(isDarkMode: isDarkMode) }
+    private var headlineTextColor: Color { AppColors.primaryText(isDarkMode: isDarkMode) }
     private var secondaryTextColor: Color {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.42)
     }
-
     private var bodyTextColor: Color {
         isDarkMode ? Color.white.opacity(0.80) : Color.black.opacity(0.78)
     }
-
     private var dividerColor: Color {
         isDarkMode ? AppColors.nocturneBorderSoft : Color.black.opacity(0.14)
     }
-
     private var exampleTextColor: Color {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.72)
     }
-
     private var exampleTranslationColor: Color {
         isDarkMode ? AppColors.nocturneTextTertiary : Color.black.opacity(0.48)
     }
@@ -2408,18 +2752,8 @@ private struct TransitionDiscoverCard: View {
         }
     }
 
-    private var detailProgress: Double {
-        let t = min(1.0, max(0.0, (contentRevealProgress - 0.38) / 0.62))
-        return t * t * (3 - 2 * t)
-    }
-
-    private var nounFlags: Set<String> {
-        Set(word.nounUIFlags)
-    }
-
-    private var nounEntityType: String {
-        word.nounUIEntityType
-    }
+    private var nounFlags: Set<String> { Set(word.nounUIFlags) }
+    private var nounEntityType: String { word.nounUIEntityType }
 
     private var isNounCard: Bool {
         let normalizedTag = word.tag
@@ -2435,16 +2769,11 @@ private struct TransitionDiscoverCard: View {
             return .lavender
         }
         switch word.nounUICorner {
-        case "green":
-            return .green
-        case "red":
-            return .red
-        case "dual", "neutral":
-            return .lavender
-        case "not_applicable":
-            return nil
-        default:
-            return nil
+        case "green": return .green
+        case "red": return .red
+        case "dual", "neutral": return .lavender
+        case "not_applicable": return nil
+        default: return nil
         }
     }
 
@@ -2458,6 +2787,14 @@ private struct TransitionDiscoverCard: View {
         case .lavender:
             return isDarkMode ? Color(red: 0.72, green: 0.66, blue: 0.88) : Color(red: 0.71, green: 0.62, blue: 0.88)
         }
+    }
+
+    private var primaryReveal: Double {
+        detailProgress
+    }
+
+    private var secondaryReveal: Double {
+        galaxySmoothStep((detailProgress - 0.10) / 0.72)
     }
 
     @ViewBuilder
@@ -2482,18 +2819,13 @@ private struct TransitionDiscoverCard: View {
             .frame(width: cardWidth, alignment: .top)
             .overlay(alignment: .topTrailing) {
                 nounCornerBadge
-                    .opacity(detailProgress)
+                    .opacity(primaryReveal)
             }
-            .background(cardSurfaceColor, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(
+            .background(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(cardBorderColor, lineWidth: 1)
+                    .themedGlassSurface(themeMode: appState.themeMode, isDarkMode: isDarkMode, elevated: true)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(accentBorder, lineWidth: 1.2)
-            )
-            .shadow(color: .black.opacity(isDarkMode ? 0.14 : 0.05), radius: 10, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(isDarkMode ? 0.18 : 0.05), radius: isDarkMode ? 16 : 10, x: 0, y: isDarkMode ? 8 : 4)
     }
 
     private var cardContent: some View {
@@ -2505,7 +2837,7 @@ private struct TransitionDiscoverCard: View {
                         Text(word.auxiliary)
                     }
                 }
-                .opacity(detailProgress)
+                .opacity(primaryReveal)
                 Text(word.displayWord)
                     .font(cardFont(size: titleBaseFontSize, weight: .bold))
                     .tracking(0.2)
@@ -2520,12 +2852,13 @@ private struct TransitionDiscoverCard: View {
             .foregroundStyle(levelTextColor)
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(OptionalTapModifier(action: onTitleTap))
 
             Rectangle()
                 .fill(dividerColor)
                 .frame(height: 1)
                 .padding(.bottom, 20)
-                .opacity(0.18 + detailProgress * 0.82)
+                .opacity(0.18 + primaryReveal * 0.82)
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
@@ -2542,6 +2875,7 @@ private struct TransitionDiscoverCard: View {
                         .foregroundStyle(bodyTextColor)
                 }
                 .multilineTextAlignment(.leading)
+                .opacity(primaryReveal)
 
                 let translatedExample = appState.translatedExampleText(for: word)
                 if !word.exampleFr.isEmpty || !translatedExample.isEmpty {
@@ -2568,10 +2902,11 @@ private struct TransitionDiscoverCard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 18)
+                    .opacity(secondaryReveal)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .opacity(detailProgress)
+            .modifier(OptionalTapModifier(action: onDetailTap))
         }
         .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
     }
@@ -2927,6 +3262,7 @@ private struct ProgressWordRow: View {
 
 private struct SettingsScreen: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var storeKitManager: StoreKitManager
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
@@ -2985,15 +3321,12 @@ private struct SettingsScreen: View {
     }
     private var themes: [String] {
         [
+            appState.localized("System", "跟随系统", "सिस्टम"),
             appState.localized("Light", "浅色", "लाइट"),
             appState.localized("Dark", "深色", "डार्क"),
-            appState.localized("Paper", "纸感奶油白", "पेपर"),
-            appState.localized("Graphite", "高级灰黑", "ग्रेफाइट"),
-            appState.localized("Porcelain", "浅灰白卡", "पोर्सिलेन"),
-            appState.localized("System", "跟随系统", "सिस्टम")
+            appState.localized("Steppe", "草原", "घासभूमि")
         ]
     }
-    private let themeSymbols = ["sun.max.fill", "moon.fill", "doc.text.fill", "circle.grid.cross.fill", "square.fill", "circle.lefthalf.filled"]
     private let settingsToggleScale: CGFloat = 0.84
     private let compactSettingsRowVerticalPadding: CGFloat = 13
     private let chevronTrailingInset: CGFloat = 12
@@ -3008,12 +3341,10 @@ private struct SettingsScreen: View {
 
     private var selectedThemeIndex: Int {
         switch appState.themeMode {
-        case .light: return 0
-        case .dark: return 1
-        case .paper: return 2
-        case .graphite: return 3
-        case .porcelain: return 4
-        case .system: return 5
+        case .system: return 0
+        case .light: return 1
+        case .dark: return 2
+        case .steppe: return 3
         }
     }
 
@@ -3025,12 +3356,7 @@ private struct SettingsScreen: View {
         dailyCardLimits.firstIndex(of: srsManager.dailyDeckLimit) ?? (dailyCardLimits.count - 1)
     }
 
-    private var systemVoiceName: String {
-        appState.localized("System TTS", "系统 TTS", "सिस्टम TTS")
-    }
-
     private var selectedVoiceName: String {
-        guard appState.memberUnlocked else { return systemVoiceName }
         return voiceOptions.first(where: { $0.id == appState.selectedVoiceId })?.name ?? voiceOptions[0].name
     }
     private var selectedCardFontLabel: String {
@@ -3507,18 +3833,17 @@ private struct SettingsScreen: View {
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
                         }
 
-                        SettingsCardRow(
-                            icon: "waveform",
-                            title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
-                            titleTrailingSymbol: appState.memberUnlocked ? nil : "lock.fill",
-                            subtitle: "",
-                            titleFontSize: 13,
-                            rowVerticalPadding: 12,
-                            showsSubtitle: false,
-                            showsDivider: false,
-                            matchPickerFont: true
-                        ) {
-                            if appState.memberUnlocked {
+                        if appState.memberUnlocked {
+                            SettingsCardRow(
+                                icon: "waveform",
+                                title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
+                                subtitle: "",
+                                titleFontSize: 13,
+                                rowVerticalPadding: 12,
+                                showsSubtitle: false,
+                                showsDivider: false,
+                                matchPickerFont: true
+                            ) {
                                 Picker(
                                     selectedVoiceName,
                                     selection: Binding(
@@ -3533,21 +3858,28 @@ private struct SettingsScreen: View {
                                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 .pickerStyle(.menu)
                                 .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
-                            } else {
-                                Button {
-                                    showingMemberUnlock = true
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Text(systemVoiceName)
-                                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundStyle(isDarkMode ? Color.white.opacity(0.34) : Color.black.opacity(0.30))
-                                    }
-                                }
-                                .buttonStyle(.plain)
                             }
+                        } else {
+                            Button {
+                                showingMemberUnlock = true
+                            } label: {
+                                SettingsCardRow(
+                                    icon: "waveform",
+                                    title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
+                                    subtitle: "",
+                                    titleFontSize: 13,
+                                    rowVerticalPadding: 12,
+                                    showsSubtitle: false,
+                                    showsDivider: false,
+                                    matchPickerFont: true
+                                ) {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(isDarkMode ? Color.white.opacity(0.40) : Color.black.opacity(0.32))
+                                        .padding(.trailing, chevronTrailingInset)
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
                 }
                 .padding(.horizontal, 20)
@@ -3607,12 +3939,10 @@ private struct SettingsScreen: View {
                                     set: { idx in
                                         let newMode: ThemeMode
                                         switch idx {
-                                        case 0: newMode = .light
-                                        case 1: newMode = .dark
-                                        case 2: newMode = .paper
-                                        case 3: newMode = .graphite
-                                        case 4: newMode = .porcelain
-                                        default: newMode = .system
+                                        case 0: newMode = .system
+                                        case 1: newMode = .light
+                                        case 2: newMode = .dark
+                                        default: newMode = .steppe
                                         }
                                         guard appState.themeMode != newMode || themeSelectionOverride != nil else { return }
                                         themeSelectionOverride = idx
@@ -3856,6 +4186,7 @@ private struct SettingsScreen: View {
         }) {
             MemberUnlockPaywallView(showingAllPlans: $memberPaywallShowingAllPlans)
                 .environmentObject(appState)
+                .environmentObject(storeKitManager)
             #if os(iOS)
                 .presentationDetents([.height(memberPaywallDetentHeight)])
                 .presentationDragIndicator(.visible)
@@ -3865,7 +4196,7 @@ private struct SettingsScreen: View {
             appIconPickerSheet
                 .environmentObject(appState)
             #if os(iOS)
-                .presentationDetents([.height(370)])
+                .presentationDetents([.height(418)])
                 .presentationDragIndicator(.visible)
             #endif
         }
@@ -4021,6 +4352,13 @@ private struct SettingsScreen: View {
     private func resetLearningData() {
         srsManager.resetLearningData()
         UserDefaults.standard.removeObject(forKey: "search_recent_word_ids")
+        UserDefaults.standard.set(
+            GestureOnboardingState.pending.rawValue,
+            forKey: GestureOnboardingDefaults.stateKey
+        )
+        themeApplyTask?.cancel()
+        themeSelectionOverride = nil
+        appState.themeMode = .system
     }
 
     private var settingsBrandFooter: some View {
@@ -4045,7 +4383,11 @@ private struct SettingsScreen: View {
 
     private var appIconOptionsSection: some View {
         Button {
-            showingAppIconPicker = true
+            if appState.memberUnlocked {
+                showingAppIconPicker = true
+            } else {
+                showingMemberUnlock = true
+            }
         } label: {
             SettingsCardRow(
                 icon: "swirl.circle.righthalf.filled",
@@ -4057,9 +4399,13 @@ private struct SettingsScreen: View {
                 showsDivider: false,
                 matchPickerFont: true
             ) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                Image(systemName: appState.memberUnlocked ? "chevron.right" : "lock.fill")
+                    .font(.system(size: appState.memberUnlocked ? 18 : 14, weight: appState.memberUnlocked ? .medium : .semibold))
+                    .foregroundStyle(
+                        appState.memberUnlocked
+                            ? (isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                            : (isDarkMode ? Color.white.opacity(0.40) : Color.black.opacity(0.32))
+                    )
                     .padding(.trailing, chevronTrailingInset)
             }
         }
@@ -4068,27 +4414,25 @@ private struct SettingsScreen: View {
 
     private var appIconPickerSheet: some View {
         VStack(spacing: 0) {
-            Capsule()
-                .fill(isDarkMode ? Color.white.opacity(0.24) : Color.black.opacity(0.16))
-                .frame(width: 36, height: 5)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
-
             #if os(iOS)
-            let physicsPickerMinHeight = appIconTileSize * 3 + 22 * 2 + 16
-            GeometryReader { proxy in
-                AppIconPhysicsPicker(
-                    icons: AppIconManager.AppIcon.allIcons,
-                    currentIconID: appIconManager.currentIcon.id,
-                    memberUnlocked: appState.memberUnlocked,
-                    isDarkMode: isDarkMode,
-                    isApplying: appIconManager.changingIcon,
-                    tileSize: appIconTileSize,
-                    onTapIcon: handleAppIconSelection
-                )
-                .frame(width: proxy.size.width, height: max(proxy.size.height, physicsPickerMinHeight))
-            }
-            .frame(maxWidth: .infinity, minHeight: physicsPickerMinHeight, maxHeight: .infinity, alignment: .center)
+            let physicsPickerMinHeight = appIconTileSize * 3 + 22 * 2 + 84
+            AppIconPhysicsPicker(
+                icons: AppIconManager.AppIcon.allIcons,
+                currentIconID: appIconManager.currentIcon.id,
+                memberUnlocked: appState.memberUnlocked,
+                isDarkMode: isDarkMode,
+                isApplying: appIconManager.changingIcon,
+                tileSize: appIconTileSize,
+                onTapIcon: handleAppIconSelection
+            )
+            .frame(
+                maxWidth: .infinity,
+                minHeight: physicsPickerMinHeight,
+                idealHeight: physicsPickerMinHeight,
+                maxHeight: physicsPickerMinHeight,
+                alignment: .center
+            )
+            .padding(.top, 12)
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
             #else
@@ -4244,9 +4588,18 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
         private var lastCollisionSoundTime: CFTimeInterval = 0
         private let collisionVelocityThreshold: CGFloat = 140
         private let collisionSoundCooldown: CFTimeInterval = 0.14
+        private let defaultDropGravity = CGVector(dx: 0, dy: 1)
+        private let minimumEntranceGravityY: CGFloat = 0.68
+        private let maximumEntranceGravityX: CGFloat = 0.24
+        private let initialDropVelocity: CGFloat = 250
+        private let initialDropTopInset: CGFloat = 18
+        private let initialDropSpacing: CGFloat = 10
+        private var filteredGravity: CGVector
+        private let gravitySmoothing: CGFloat = 0.16
 
         init(parent: AppIconPhysicsPicker) {
             self.parent = parent
+            self.filteredGravity = defaultDropGravity
         }
 
         func attach(to container: AppIconPhysicsContainerView) {
@@ -4254,14 +4607,17 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             container.coordinator = self
             container.clipsToBounds = true
             container.backgroundColor = .clear
-            setupAnimatorIfNeeded(referenceView: container)
             applyCurrentState(animated: false)
+            kickstartInitialDropIfNeeded()
             startMotionUpdatesIfNeeded()
             FeedbackService.prepareInteractive()
         }
 
         func applyCurrentState(animated: Bool) {
             guard let container else { return }
+            if animator == nil, container.bounds.width > 0, container.bounds.height > 0 {
+                setupAnimatorIfNeeded(referenceView: container)
+            }
             syncTiles(in: container)
             updateTileStates()
 
@@ -4277,14 +4633,18 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             let bounds = container.bounds
             guard bounds.width > 0, bounds.height > 0 else { return }
 
+            if animator == nil {
+                setupAnimatorIfNeeded(referenceView: container)
+                syncTiles(in: container)
+                updateTileStates()
+            }
+
             let sizeChanged = bounds.size != lastContainerBoundsSize
             lastContainerBoundsSize = bounds.size
-            collisionBehavior.setTranslatesReferenceBoundsIntoBoundary(with: .zero)
+            updateCollisionBounds(in: container)
             if !didPlaceInitialDrop {
                 didPlaceInitialDrop = placeTilesAtTop()
             } else if sizeChanged {
-                keepTilesInsideBounds()
-            } else {
                 keepTilesInsideBounds()
             }
         }
@@ -4293,13 +4653,33 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             motionManager.stopDeviceMotionUpdates()
         }
 
+        func kickstartInitialDropIfNeeded() {
+            guard let container else { return }
+            let bounds = container.bounds
+            guard bounds.width > 0, bounds.height > 0 else { return }
+
+            if animator == nil {
+                setupAnimatorIfNeeded(referenceView: container)
+            }
+
+            syncTiles(in: container)
+            updateTileStates()
+
+            guard needsEntranceGravityAssist() else { return }
+
+            filteredGravity = defaultDropGravity
+            gravityBehavior.gravityDirection = filteredGravity
+            didPlaceInitialDrop = placeTilesAtTop()
+        }
+
         private func setupAnimatorIfNeeded(referenceView: UIView) {
             guard animator == nil else { return }
             let animator = UIDynamicAnimator(referenceView: referenceView)
 
             gravityBehavior.magnitude = 1.25
-            collisionBehavior.translatesReferenceBoundsIntoBoundary = true
+            gravityBehavior.gravityDirection = filteredGravity
             collisionBehavior.collisionDelegate = self
+            updateCollisionBounds(in: referenceView)
 
             itemBehavior.elasticity = 0.83
             itemBehavior.friction = 0.06
@@ -4372,20 +4752,26 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
 
             let tileSize = parent.tileSize
             let halfSize = tileSize / 2
-            let spawnY = -halfSize
-            let centerX = width / 2
-            let spreadStep = min(tileSize * 0.22, 16)
-            let middleIndex = CGFloat(max(orderedIDs.count - 1, 0)) / 2
+            let spacing = initialDropSpacing
+            let columns = min(3, max(Int(floor((width + spacing) / (tileSize + spacing))), 1))
 
             for (index, id) in orderedIDs.enumerated() {
                 guard let tile = tilesByID[id] else { continue }
-                let x = centerX + (CGFloat(index) - middleIndex) * spreadStep
-                let clampedX = min(max(x, halfSize), width - halfSize)
-                tile.center = CGPoint(x: clampedX, y: spawnY)
+                let col = index % columns
+                let row = index / columns
+                let itemsInRow = min(orderedIDs.count - row * columns, columns)
+                let rowWidth = CGFloat(itemsInRow) * tileSize + CGFloat(max(itemsInRow - 1, 0)) * spacing
+                let x = (width - rowWidth) / 2 + halfSize + CGFloat(col) * (tileSize + spacing)
+                let y = initialDropTopInset + halfSize + CGFloat(row) * (tileSize + spacing)
+                tile.center = CGPoint(x: x, y: y)
 
                 let linearVelocity = itemBehavior.linearVelocity(for: tile)
                 itemBehavior.addLinearVelocity(
                     CGPoint(x: -linearVelocity.x, y: -linearVelocity.y),
+                    for: tile
+                )
+                itemBehavior.addLinearVelocity(
+                    CGPoint(x: 0, y: initialDropVelocity),
                     for: tile
                 )
                 let angularVelocity = itemBehavior.angularVelocity(for: tile)
@@ -4395,6 +4781,23 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             }
 
             return true
+        }
+
+        private func updateCollisionBounds(in container: UIView) {
+            let tileSpan = parent.tileSize + 8
+            let estimatedRows = max(Int(ceil(Double(max(orderedIDs.count, 1)) / 3.0)), 1)
+            let headroom = CGFloat(estimatedRows) * tileSpan + parent.tileSize
+            collisionBehavior.setTranslatesReferenceBoundsIntoBoundary(
+                with: UIEdgeInsets(top: -headroom, left: 0, bottom: 0, right: 0)
+            )
+        }
+
+        private func needsEntranceGravityAssist() -> Bool {
+            guard !orderedIDs.isEmpty else { return false }
+            return orderedIDs.allSatisfy { id in
+                guard let tile = tilesByID[id] else { return true }
+                return tile.frame.maxY <= 0
+            }
         }
 
         private func keepTilesInsideBounds() {
@@ -4449,7 +4852,16 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
                 }
             }
 
-            gravityBehavior.gravityDirection = CGVector(dx: dx, dy: dy)
+            let a = gravitySmoothing
+            filteredGravity.dx += a * (CGFloat(dx) - filteredGravity.dx)
+            filteredGravity.dy += a * (CGFloat(dy) - filteredGravity.dy)
+
+            if needsEntranceGravityAssist() {
+                filteredGravity.dx = max(min(filteredGravity.dx, maximumEntranceGravityX), -maximumEntranceGravityX)
+                filteredGravity.dy = max(filteredGravity.dy, minimumEntranceGravityY)
+            }
+
+            gravityBehavior.gravityDirection = filteredGravity
         }
 
         @objc
@@ -4499,10 +4911,32 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
 private final class AppIconPhysicsContainerView: UIView {
     weak var coordinator: AppIconPhysicsPicker.Coordinator?
 
+    private func requestStableLayoutPass() {
+        setNeedsLayout()
+        superview?.setNeedsLayout()
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.layoutIfNeeded()
+            self.superview?.layoutIfNeeded()
+            self.coordinator?.containerDidLayout()
+        }
+    }
+
     override func willMove(toWindow newWindow: UIWindow?) {
         super.willMove(toWindow: newWindow)
         if newWindow == nil {
             coordinator?.stopMotionUpdates()
+        }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            requestStableLayoutPass()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
+                self?.requestStableLayoutPass()
+            }
         }
     }
 
@@ -4610,7 +5044,10 @@ private struct FAQSheetView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            backgroundGradient.ignoresSafeArea()
+            ThemedBackgroundView(
+                themeMode: appState.themeMode,
+                isDarkMode: isDarkMode
+            )
 
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 18) {
@@ -4683,7 +5120,7 @@ private struct FAQHeroCard: View {
         AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode)
     }
     private var fillColor: Color {
-        if appState.themeMode == .porcelain {
+        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
             return AppColors.porcelainCard
         }
         return isDarkMode ? AppColors.nocturneSurface.opacity(0.72) : Color.white.opacity(0.82)
@@ -4692,7 +5129,7 @@ private struct FAQHeroCard: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(fillColor)
+                .themedGlassSurface(themeMode: appState.themeMode, isDarkMode: isDarkMode, elevated: true)
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .fill(
                     LinearGradient(
@@ -4705,8 +5142,6 @@ private struct FAQHeroCard: View {
                         endPoint: .bottomTrailing
                     )
                 )
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(borderColor, lineWidth: 1)
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
@@ -4750,7 +5185,7 @@ private struct FAQAccordionCard: View {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.56)
     }
     private var borderColor: Color {
-        if appState.themeMode == .porcelain {
+        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
             return Color.black.opacity(0.08)
         }
         return isDarkMode ? AppColors.nocturneBorder : Color.white.opacity(0.68)
@@ -4759,7 +5194,7 @@ private struct FAQAccordionCard: View {
         isDarkMode ? AppColors.nocturneBorderSoft : Color.black.opacity(0.08)
     }
     private var fillColor: Color {
-        if appState.themeMode == .porcelain {
+        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
             return AppColors.porcelainCard
         }
         return isDarkMode ? AppColors.nocturneSurface.opacity(0.74) : Color.white.opacity(0.84)
@@ -4807,11 +5242,7 @@ private struct FAQAccordionCard: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(fillColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(borderColor, lineWidth: 1)
+                .themedGlassSurface(themeMode: appState.themeMode, isDarkMode: isDarkMode, elevated: true)
         )
     }
 }
@@ -4843,7 +5274,10 @@ private struct LegalDocumentSheetView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            backgroundGradient.ignoresSafeArea()
+            ThemedBackgroundView(
+                themeMode: themeMode,
+                isDarkMode: isDarkMode
+            )
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 14) {
@@ -4870,19 +5304,8 @@ private struct LegalDocumentSheetView: View {
                     }
                     .padding(18)
                     .background(
-                        Group {
-                            if themeMode == .porcelain {
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .fill(AppColors.porcelainCard)
-                            } else {
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .fill(.ultraThinMaterial)
-                            }
-                        }
-                    )
-                    .overlay(
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(borderColor, lineWidth: 1)
+                            .themedGlassSurface(themeMode: themeMode, isDarkMode: isDarkMode, elevated: true)
                     )
 
                     Spacer(minLength: 24)
@@ -5155,21 +5578,21 @@ private struct SettingsGroupCard<Content: View>: View {
     }
 
     private var borderColor: Color {
-        if appState.themeMode == .porcelain {
+        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
             return Color.black.opacity(0.08)
         }
         return colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.07)
     }
 
     private var fillColor: Color {
-        if appState.themeMode == .porcelain {
+        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
             return AppColors.porcelainCard
         }
         return colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.95)
     }
 
     private var cardShadowColor: Color {
-        if appState.themeMode == .porcelain {
+        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
             return Color.black.opacity(0.06)
         }
         return colorScheme == .dark ? Color.clear : Color.black.opacity(0.04)
@@ -5181,11 +5604,7 @@ private struct SettingsGroupCard<Content: View>: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(fillColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(borderColor, lineWidth: 1)
+                .themedGlassSurface(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark, elevated: true)
         )
         .shadow(color: cardShadowColor, radius: 3, x: 0, y: 1)
     }
@@ -6038,45 +6457,28 @@ private struct MemberUnlockPaywallView: View {
 
         var id: String { rawValue }
 
-        var priceText: String {
+        var storeProduct: StoreKitManager.MemberProduct {
             switch self {
             case .monthly:
-                return "$1.99 / Month"
+                return .monthly
             case .yearly:
-                return "$19.9 / Year"
+                return .yearly
             case .lifetime:
-                return "$39.9 / Lifetime"
-            }
-        }
-
-        var detailText: String {
-            switch self {
-            case .monthly:
-                return "3 days free, then $1.99 / Month"
-            case .yearly:
-                return "3 days free, then $19.9 / Year"
-            case .lifetime:
-                return "One-time payment, lifetime access"
-            }
-        }
-
-        var pickerTitle: String {
-            switch self {
-            case .monthly:
-                return "$1.99 / Month"
-            case .yearly:
-                return "$19.9 / Year"
-            case .lifetime:
-                return "$39.9 / Lifetime"
+                return .lifetime
             }
         }
     }
 
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var storeKitManager: StoreKitManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @Binding var showingAllPlans: Bool
     @State private var selectedPlan: MemberPlan = .monthly
+    @State private var storeAlertTitle = ""
+    @State private var storeAlertMessage = ""
+    @State private var showingStoreAlert = false
 
     private var benefits: [MemberUnlockBenefit] {
         [
@@ -6104,6 +6506,8 @@ private struct MemberUnlockPaywallView: View {
     private let planOptionRowHeight: CGFloat = 48
     private let planOptionSpacing: CGFloat = 8
     private let planOptionsAnimation = Animation.spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.12)
+    private let termsOfUseURL = "https://hungry-land-732.notion.site/Terms-of-Use-32c52d9458a9802e9308c296fc8fd9d8?source=copy_link"
+    private let privacyPolicyURL = "https://hungry-land-732.notion.site/Privacy-Policy-32c52d9458a980b6975cd6786df84199?source=copy_link"
     private var planOptionsExpandedHeight: CGFloat {
         let count = CGFloat(MemberPlan.allCases.count)
         let spacingCount = max(0, CGFloat(MemberPlan.allCases.count - 1))
@@ -6146,6 +6550,32 @@ private struct MemberUnlockPaywallView: View {
     private var legalDotColor: Color {
         isDarkMode ? Color.white.opacity(0.30) : Color.black.opacity(0.32)
     }
+    private var selectedProduct: Product? {
+        storeKitManager.product(for: selectedPlan.storeProduct)
+    }
+    private var selectedPlanPriceText: String {
+        priceText(for: selectedPlan)
+    }
+    private var selectedPlanDetailText: String {
+        detailText(for: selectedPlan)
+    }
+    private var purchaseButtonTitle: String {
+        if storeKitManager.memberUnlocked {
+            return appState.localized("Unlocked", "已解锁", "अनलॉक")
+        }
+        if storeKitManager.isPerformingStoreAction {
+            return appState.localized("Connecting...", "连接中...", "कनेक्ट हो रहा है...")
+        }
+        if storeKitManager.isLoadingProducts && selectedProduct == nil {
+            return appState.localized("Loading...", "加载中...", "लोड हो रहा है...")
+        }
+        return appState.localized("Continue", "继续", "जारी रखें")
+    }
+    private var isPurchaseButtonDisabled: Bool {
+        storeKitManager.memberUnlocked ||
+        storeKitManager.isPerformingStoreAction ||
+        (storeKitManager.isLoadingProducts && selectedProduct == nil)
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -6153,8 +6583,10 @@ private struct MemberUnlockPaywallView: View {
             let maxContentWidth = availableWidth.isFinite ? min(max(availableWidth, 0), 430) : 0
 
             ZStack {
-                backgroundColor
-                    .ignoresSafeArea()
+                ThemedBackgroundView(
+                    themeMode: appState.themeMode,
+                    isDarkMode: isDarkMode
+                )
 
                 VStack(spacing: 0) {
                     Spacer().frame(height: 18)
@@ -6165,6 +6597,18 @@ private struct MemberUnlockPaywallView: View {
                     legalSection(bottomInset: max(4, proxy.safeAreaInsets.bottom - 8))
                 }
             }
+        }
+        .task {
+            await storeKitManager.refreshProductsForCurrentStorefront()
+            await storeKitManager.syncMembershipStatus()
+            if let purchasedProduct = storeKitManager.purchasedProduct {
+                selectedPlan = plan(for: purchasedProduct)
+            }
+        }
+        .alert(storeAlertTitle, isPresented: $showingStoreAlert) {
+            Button(appState.localized("OK", "好的", "ठीक है"), role: .cancel) {}
+        } message: {
+            Text(storeAlertMessage)
         }
     }
 
@@ -6216,7 +6660,7 @@ private struct MemberUnlockPaywallView: View {
                 .allowsHitTesting(showingAllPlans)
 
             HStack(spacing: 12) {
-                Text(selectedPlan.priceText)
+                Text(selectedPlanPriceText)
                     .font(.system(size: 17, weight: .semibold, design: .default))
                     .foregroundStyle(primaryTextColor)
 
@@ -6238,15 +6682,14 @@ private struct MemberUnlockPaywallView: View {
             .frame(height: 40)
             .frame(maxWidth: maxContentWidth)
 
-            Text(selectedPlan.detailText)
+            Text(selectedPlanDetailText)
                 .font(.system(size: 13, weight: .regular, design: .default))
                 .foregroundStyle(secondaryTextColor)
 
             Button {
-                appState.memberUnlocked = true
-                dismiss()
+                purchaseSelectedPlan()
             } label: {
-                Text(appState.memberUnlocked ? "Unlocked" : "Continue")
+                Text(purchaseButtonTitle)
                     .font(.system(size: 17, weight: .semibold, design: .default))
                     .foregroundStyle(buttonTextColor)
                     .frame(maxWidth: .infinity)
@@ -6258,7 +6701,7 @@ private struct MemberUnlockPaywallView: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: maxContentWidth)
-            .disabled(appState.memberUnlocked)
+            .disabled(isPurchaseButtonDisabled)
 
         }
         .padding(.horizontal, horizontalPadding)
@@ -6280,7 +6723,7 @@ private struct MemberUnlockPaywallView: View {
                             .font(.system(size: 24, weight: .regular, design: .default))
                             .foregroundStyle(plan == selectedPlan ? planSelectedIconColor : planUnselectedIconColor)
 
-                        Text(plan.priceText)
+                        Text(priceText(for: plan))
                             .font(.system(size: 16, weight: .regular, design: .default))
                             .foregroundStyle(primaryTextColor)
 
@@ -6310,8 +6753,8 @@ private struct MemberUnlockPaywallView: View {
     @ViewBuilder
     private func legalSection(bottomInset: CGFloat) -> some View {
         HStack(spacing: 12) {
-            Button(action: {}) {
-                Text("Terms of Use")
+            Button(action: openTermsOfUse) {
+                Text(appState.localized("Terms of Use", "使用条款", "उपयोग की शर्तें"))
                     .font(.system(size: 13, weight: .regular, design: .default))
                     .foregroundStyle(secondaryTextColor)
             }
@@ -6321,8 +6764,8 @@ private struct MemberUnlockPaywallView: View {
                 .font(.system(size: 13, weight: .regular, design: .default))
                 .foregroundStyle(legalDotColor)
 
-            Button(action: {}) {
-                Text("Restore Purchases")
+            Button(action: restorePurchases) {
+                Text(appState.localized("Restore Purchases", "恢复购买", "खरीदारी बहाल करें"))
                     .font(.system(size: 13, weight: .regular, design: .default))
                     .foregroundStyle(secondaryTextColor)
             }
@@ -6332,8 +6775,8 @@ private struct MemberUnlockPaywallView: View {
                 .font(.system(size: 13, weight: .regular, design: .default))
                 .foregroundStyle(legalDotColor)
 
-            Button(action: {}) {
-                Text("Privacy Policy")
+            Button(action: openPrivacyPolicy) {
+                Text(appState.localized("Privacy Policy", "隐私政策", "गोपनीयता नीति"))
                     .font(.system(size: 13, weight: .regular, design: .default))
                     .foregroundStyle(secondaryTextColor)
             }
@@ -6346,6 +6789,170 @@ private struct MemberUnlockPaywallView: View {
         withAnimation(planOptionsAnimation) {
             showingAllPlans.toggle()
         }
+    }
+
+    private func plan(for product: StoreKitManager.MemberProduct) -> MemberPlan {
+        switch product {
+        case .monthly:
+            return .monthly
+        case .yearly:
+            return .yearly
+        case .lifetime:
+            return .lifetime
+        }
+    }
+
+    private func priceText(for plan: MemberPlan) -> String {
+        guard let product = storeKitManager.product(for: plan.storeProduct) else {
+            switch plan {
+            case .monthly:
+                return appState.localized("Monthly Plan", "月度会员", "मासिक प्लान")
+            case .yearly:
+                return appState.localized("Yearly Plan", "年度会员", "वार्षिक प्लान")
+            case .lifetime:
+                return appState.localized("Lifetime Access", "终身会员", "लाइफटाइम एक्सेस")
+            }
+        }
+
+        switch plan {
+        case .monthly:
+            return appState.localized(
+                "\(product.displayPrice) / Month",
+                "\(product.displayPrice) / 月",
+                "\(product.displayPrice) / माह"
+            )
+        case .yearly:
+            return appState.localized(
+                "\(product.displayPrice) / Year",
+                "\(product.displayPrice) / 年",
+                "\(product.displayPrice) / वर्ष"
+            )
+        case .lifetime:
+            return appState.localized(
+                "\(product.displayPrice) / Lifetime",
+                "\(product.displayPrice) / 终身",
+                "\(product.displayPrice) / लाइफटाइम"
+            )
+        }
+    }
+
+    private func detailText(for plan: MemberPlan) -> String {
+        if let product = storeKitManager.product(for: plan.storeProduct) {
+            switch plan {
+            case .monthly:
+                if product.subscription?.introductoryOffer != nil {
+                    return appState.localized(
+                        "Includes a free trial, then \(product.displayPrice) every month.",
+                        "含免费试用，之后每月 \(product.displayPrice)。",
+                        "इसमें फ्री ट्रायल शामिल है, फिर हर महीने \(product.displayPrice)।"
+                    )
+                }
+                return appState.localized(
+                    "Billed monthly at \(product.displayPrice).",
+                    "按月计费，每月 \(product.displayPrice)。",
+                    "हर महीने \(product.displayPrice) बिल किया जाएगा।"
+                )
+            case .yearly:
+                if product.subscription?.introductoryOffer != nil {
+                    return appState.localized(
+                        "Includes a free trial, then \(product.displayPrice) every year.",
+                        "含免费试用，之后每年 \(product.displayPrice)。",
+                        "इसमें फ्री ट्रायल शामिल है, फिर हर साल \(product.displayPrice)।"
+                    )
+                }
+                return appState.localized(
+                    "Billed yearly at \(product.displayPrice).",
+                    "按年计费，每年 \(product.displayPrice)。",
+                    "हर साल \(product.displayPrice) बिल किया जाएगा।"
+                )
+            case .lifetime:
+                return appState.localized(
+                    "One-time payment, lifetime access.",
+                    "一次购买，终身使用。",
+                    "एक बार भुगतान, लाइफटाइम एक्सेस।"
+                )
+            }
+        }
+
+        if storeKitManager.isLoadingProducts {
+            return appState.localized(
+                "Loading the latest App Store pricing...",
+                "正在加载 App Store 最新价格...",
+                "ऐप स्टोर की नवीनतम कीमतें लोड हो रही हैं..."
+            )
+        }
+
+        return appState.localized(
+            "App Store product unavailable. If this persists, verify the product ID in App Store Connect.",
+            "App Store 商品暂不可用；如果持续出现，请检查 App Store Connect 里的 Product ID。",
+            "ऐप स्टोर प्रोडक्ट उपलब्ध नहीं है। अगर यह बना रहे, तो App Store Connect में Product ID जांचें।"
+        )
+    }
+
+    private func purchaseSelectedPlan() {
+        Task {
+            let outcome = await storeKitManager.purchase(selectedPlan.storeProduct)
+            switch outcome {
+            case .success:
+                dismiss()
+            case .pending:
+                presentStoreAlert(
+                    title: appState.localized("Purchase Pending", "购买处理中", "खरीदारी लंबित है"),
+                    message: appState.localized(
+                        "The App Store is still processing this purchase.",
+                        "App Store 仍在处理这笔购买。",
+                        "ऐप स्टोर अभी इस खरीदारी को प्रोसेस कर रहा है।"
+                    )
+                )
+            case .cancelled:
+                break
+            case .failed(let message):
+                presentStoreAlert(
+                    title: appState.localized("Purchase Failed", "购买失败", "खरीदारी असफल"),
+                    message: message
+                )
+            }
+        }
+    }
+
+    private func restorePurchases() {
+        Task {
+            let outcome = await storeKitManager.restorePurchases()
+            switch outcome {
+            case .restored:
+                dismiss()
+            case .nothingToRestore:
+                presentStoreAlert(
+                    title: appState.localized("Nothing to Restore", "没有可恢复的购买", "बहाल करने के लिए कुछ नहीं है"),
+                    message: appState.localized(
+                        "No active membership purchase was found for this Apple ID.",
+                        "当前 Apple ID 下没有找到可恢复的会员购买。",
+                        "इस Apple ID के लिए कोई सक्रिय सदस्यता खरीदारी नहीं मिली।"
+                    )
+                )
+            case .failed(let message):
+                presentStoreAlert(
+                    title: appState.localized("Restore Failed", "恢复失败", "बहाली असफल"),
+                    message: message
+                )
+            }
+        }
+    }
+
+    private func openTermsOfUse() {
+        guard let url = URL(string: termsOfUseURL) else { return }
+        openURL(url)
+    }
+
+    private func openPrivacyPolicy() {
+        guard let url = URL(string: privacyPolicyURL) else { return }
+        openURL(url)
+    }
+
+    private func presentStoreAlert(title: String, message: String) {
+        storeAlertTitle = title
+        storeAlertMessage = message
+        showingStoreAlert = true
     }
 }
 

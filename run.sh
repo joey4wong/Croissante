@@ -292,7 +292,7 @@ cat > "$WORK_DIR/Croissante.xcodeproj/project.pbxproj" << 'PROJ'
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"Croissante/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Croissante/Info.plist;
@@ -316,7 +316,7 @@ cat > "$WORK_DIR/Croissante.xcodeproj/project.pbxproj" << 'PROJ'
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"Croissante/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Croissante/Info.plist;
@@ -569,7 +569,7 @@ cat > "$WORK_DIR/Croissante.xcodeproj/project.pbxproj" << 'PBXPROJ'
 				CODE_SIGN_STYLE = Manual;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_TESTABILITY = YES;
 				INFOPLIST_FILE = Croissante/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -589,7 +589,7 @@ cat > "$WORK_DIR/Croissante.xcodeproj/project.pbxproj" << 'PBXPROJ'
 				CODE_SIGN_STYLE = Manual;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				INFOPLIST_FILE = Croissante/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;

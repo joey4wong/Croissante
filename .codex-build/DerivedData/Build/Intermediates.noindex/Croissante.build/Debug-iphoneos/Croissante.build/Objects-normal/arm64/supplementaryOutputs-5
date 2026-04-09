@@ -1,0 +1,23 @@
+{
+  "/Users/jw/Documents/Croissante/Croissante/Views/Components/AmbientLightBackground.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AmbientLightBackground.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AmbientLightBackground.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AmbientLightBackground.dia",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AmbientLightBackground.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/AmbientLightBackground.swiftdeps"
+  },
+  "/Users/jw/Documents/Croissante/Croissante/Views/Components/CheckInHeatmapView.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/CheckInHeatmapView.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/CheckInHeatmapView.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/CheckInHeatmapView.dia",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/CheckInHeatmapView.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/CheckInHeatmapView.swiftdeps"
+  },
+  "/Users/jw/Documents/Croissante/Croissante/Views/Components/PolysemousWordView.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/PolysemousWordView.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/PolysemousWordView.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/PolysemousWordView.dia",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/PolysemousWordView.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/Croissante.build/Objects-normal/arm64/PolysemousWordView.swiftdeps"
+  }
+}

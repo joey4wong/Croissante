@@ -138,6 +138,7 @@ public final class SRSManager: ObservableObject {
     }()
     private let syncPayloadSchemaVersion = 1
     private var cancellables: Set<AnyCancellable> = []
+    private var pendingLearningStateSaveTask: Task<Void, Never>? = nil
     private var lastLearningStateMutationAt: Date = .distantPast
     private var learningSyncResetVersion: Int = 0
     private var isApplyingRemoteSyncPayload = false
@@ -150,7 +151,18 @@ public final class SRSManager: ObservableObject {
     
     public func configure(with appState: AppState) {
         self.appState = appState
-        targetLevel = canonicalTargetLevel(appState.level)
+        let configuredLevel = canonicalTargetLevel(appState.level)
+        let today = todayKey()
+
+        if targetLevel != configuredLevel,
+           levelDailyDeckSnapshots[configuredLevel]?.date != today {
+            dailyDeckWordIds = []
+            dailyMasteredDeckWordIds = []
+            learningQueueIds = []
+            isInfinitePracticeActive = false
+        }
+
+        targetLevel = configuredLevel
         refreshDailyDeckIfNeeded()
         reconcileDeckWithAvailableWords()
         saveLearningState()
@@ -159,6 +171,12 @@ public final class SRSManager: ObservableObject {
 
     public func refreshForCurrentDayIfNeeded() {
         refreshDailyDeckIfNeeded()
+    }
+
+    public func prepareDiscoverQueueForDisplay() {
+        refreshDailyDeckIfNeeded()
+        reconcileDeckWithAvailableWords()
+        ensureLearningQueueReady()
     }
     
     // MARK: - State Management
@@ -244,18 +262,17 @@ public final class SRSManager: ObservableObject {
         }
         pruneHeatmapDataToCurrentYear(today: today)
 
-        // Migration: if an older single-deck payload exists for today, import it as current level snapshot.
         if savedDeckDate == today,
-           levelDailyDeckSnapshots[targetLevel] == nil,
            let savedDeckIds = userDefaults.stringArray(forKey: Keys.dailyDeckWordIds) {
             let savedMasteredIds = userDefaults.stringArray(forKey: Keys.dailyMasteredDeckWordIds) ?? []
             let savedQueueIds = userDefaults.stringArray(forKey: Keys.learningQueueIds) ?? []
+            let existingSnapshot = levelDailyDeckSnapshots[targetLevel]
             levelDailyDeckSnapshots[targetLevel] = LevelDailyDeckSnapshot(
                 date: today,
                 deckWordIds: savedDeckIds,
                 masteredDeckWordIds: savedMasteredIds,
                 learningQueueIds: savedQueueIds,
-                infinitePracticeActive: false
+                infinitePracticeActive: existingSnapshot?.infinitePracticeActive ?? false
             )
         }
 
@@ -270,13 +287,17 @@ public final class SRSManager: ObservableObject {
                 sanitizeDeckState(preferredQueueIds: userDefaults.stringArray(forKey: Keys.learningQueueIds))
                 storeCurrentLevelSnapshot(for: today)
             } else {
-                // Generate new daily deck
-                generateDailyDeck()
+                dailyDeckWordIds = []
+                dailyMasteredDeckWordIds = []
+                learningQueueIds = []
+                isInfinitePracticeActive = false
             }
         }
     }
     
     private func saveLearningState() {
+        pendingLearningStateSaveTask?.cancel()
+        pendingLearningStateSaveTask = nil
         let today = todayKey()
         updateTodaySnapshots()
         pruneHeatmapDataToCurrentYear(today: today)
@@ -315,6 +336,17 @@ public final class SRSManager: ObservableObject {
 
         if !isApplyingRemoteSyncPayload {
             pushLearningStateToICloudIfNeeded()
+        }
+    }
+
+    public func scheduleLearningStateSave(delayNanoseconds: UInt64 = 180_000_000) {
+        pendingLearningStateSaveTask?.cancel()
+        pendingLearningStateSaveTask = Task { @MainActor in
+            if delayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
+            }
+            guard !Task.isCancelled else { return }
+            saveLearningState()
         }
     }
 
@@ -615,6 +647,13 @@ public final class SRSManager: ObservableObject {
         masteredDeckWordIds: Set<String>
     ) {
         guard !dateKey.isEmpty else { return }
+        guard !deckWordIds.isEmpty else {
+            if dailyCompletionRatios[dateKey] == nil,
+               dailyStudyStates[dateKey] == nil {
+                dailyStudyStates[dateKey] = DailyStudyState.noEligibleCards.rawValue
+            }
+            return
+        }
         let masteredCount = deckWordIds.filter { masteredDeckWordIds.contains($0) }.count
         let ratio = deckWordIds.isEmpty ? 0 : Double(masteredCount) / Double(deckWordIds.count)
         dailyCompletionRatios[dateKey] = max(dailyCompletionRatios[dateKey] ?? 0, ratio)
@@ -793,7 +832,7 @@ public final class SRSManager: ObservableObject {
         return getLearningQueueWordsSnapshot()
     }
 
-    public func promoteWordToLearningQueueFront(_ wordId: String) {
+    public func promoteWordToLearningQueueFront(_ wordId: String, persist: Bool = true) {
         guard !wordId.isEmpty else { return }
         guard let appState, appState.getWordById(wordId) != nil else { return }
         ensureLearningQueueReady()
@@ -803,7 +842,9 @@ public final class SRSManager: ObservableObject {
         }
 
         sanitizeDeckState(preferredQueueIds: [wordId] + learningQueueIds)
-        saveLearningState()
+        if persist {
+            saveLearningState()
+        }
     }
 
     private func ensureWordInDailyDeckFront(_ wordId: String) {
@@ -1099,7 +1140,7 @@ public final class SRSManager: ObservableObject {
     }
 
     private func sanitizeDeckState(preferredQueueIds: [String]? = nil) {
-        if let appState {
+        if let appState, appState.hasCompletedInitialResourceLoad {
             let validWordIds = Set(appState.words.map(\.id))
             if !validWordIds.isEmpty {
                 dailyDeckWordIds = dailyDeckWordIds.filter { validWordIds.contains($0) }

@@ -19,9 +19,12 @@ enum FeedbackService {
     private static let gearTickIntervalNanoseconds: UInt64 = 18_000_000
     private static let maxQueuedGearTicks = 20
     private static var didConfigureAudioSession = false
+    private static var lastWheelSpinSampleTime: CFAbsoluteTime?
+    private static var lastWheelSpinHapticTime: CFAbsoluteTime = 0
     private static var dropletPlayer: DropletSoundPlayer?
     private static var lastDropletTime: CFAbsoluteTime = 0
     private static let dropletInterval: CFTimeInterval = 0.055
+    private static let wheelSpinHapticInterval: CFTimeInterval = 0.04
     #endif
 
     #if os(iOS)
@@ -105,12 +108,29 @@ enum FeedbackService {
 
     static func wheelSpinTick(deltaX: CGFloat) {
         #if os(iOS)
-        _ = deltaX
+        let now = CFAbsoluteTimeGetCurrent()
+        defer { lastWheelSpinSampleTime = now }
+
+        guard abs(deltaX) >= 0.8 else { return }
+        guard let lastWheelSpinSampleTime else { return }
+
+        let dt = max(now - lastWheelSpinSampleTime, 0.008)
+        guard now - lastWheelSpinHapticTime >= wheelSpinHapticInterval else { return }
+
+        let speed = abs(deltaX) / CGFloat(dt)
+        let normalized = min(max((speed - 120) / 1080, 0), 1)
+        let intensity = 0.25 + normalized * 0.40
+
+        mediumImpactGenerator.impactOccurred(intensity: intensity)
+        mediumImpactGenerator.prepare()
+        lastWheelSpinHapticTime = now
         #endif
     }
 
     static func wheelSpinEnded() {
         #if os(iOS)
+        lastWheelSpinSampleTime = nil
+        lastWheelSpinHapticTime = 0
         #endif
     }
 

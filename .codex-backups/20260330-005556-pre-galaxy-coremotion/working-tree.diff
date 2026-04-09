@@ -1,0 +1,6 @@
+diff --git a/.claude/worktrees/unruffled-brattain b/.claude/worktrees/unruffled-brattain
+--- a/.claude/worktrees/unruffled-brattain
++++ b/.claude/worktrees/unruffled-brattain
+@@ -1 +1 @@
+-Subproject commit d9d43de8d6b2dddba8475bb6553177db257014bb
++Subproject commit d9d43de8d6b2dddba8475bb6553177db257014bb-dirty

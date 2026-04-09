@@ -1,0 +1,29 @@
+{
+  "" : {
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetExtension-primary.dia",
+    "emit-module-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetExtension-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetExtension-primary-emit-module.dia",
+    "pch" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetExtension-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetExtension-primary.swiftdeps"
+  },
+  "/Users/jw/Documents/Croissante/CroissanteWidget/CroissanteWidgetBundle.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle.dia",
+    "index-unit-output-path" : "/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle.o",
+    "llvm-bc" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle.bc",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle.swiftdeps",
+    "swiftmodule" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/CroissanteWidgetBundle~partial.swiftmodule"
+  },
+  "/Users/jw/Documents/Croissante/CroissanteWidget/DailyWordWidget.swift" : {
+    "const-values" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget.swiftconstvalues",
+    "dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget.d",
+    "diagnostics" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget.dia",
+    "index-unit-output-path" : "/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget.o",
+    "llvm-bc" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget.bc",
+    "object" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget.o",
+    "swift-dependencies" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget.swiftdeps",
+    "swiftmodule" : "/Users/jw/Documents/Croissante/.codex-build/DerivedData/Build/Intermediates.noindex/Croissante.build/Debug-iphoneos/CroissanteWidgetExtension.build/Objects-normal/arm64/DailyWordWidget~partial.swiftmodule"
+  }
+}

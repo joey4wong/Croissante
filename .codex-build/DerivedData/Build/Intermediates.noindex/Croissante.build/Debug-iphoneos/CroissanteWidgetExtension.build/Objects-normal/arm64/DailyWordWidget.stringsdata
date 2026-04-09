@@ -1,0 +1,40 @@
+{
+  "source": "/Users/jw/Documents/Croissante/CroissanteWidget/DailyWordWidget.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "%@.%@",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 128
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@.%@",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 154
+        }
+      },
+      {
+        "comment": "",
+        "key": "Daily Word",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 200
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your current French word at a glance.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 201
+        }
+      }
+    ]
+  },
+  "version": 1
+}
