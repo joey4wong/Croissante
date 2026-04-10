@@ -3,8 +3,15 @@
 .codex-backup/
 .codex-backups/
 .codex-build/
-.claude/worktrees/
-.blitz/screenshots/
+.agents/
+.blitz/
+.claude/
+.codex/
+.vscode/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+opencode.json
 *.backup-*
 *.xcuserstate
 xcuserdata/
