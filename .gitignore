@@ -1,6 +1,7 @@
 .DS_Store
 **/.DS_Store
 .codex-backup/
+.codex-backups/
 .codex-build/
 .claude/worktrees/
 .blitz/screenshots/
