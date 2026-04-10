@@ -1,6 +1,10 @@
 .DS_Store
 **/.DS_Store
 .codex-backup/
+.codex-build/
+.claude/worktrees/
+.blitz/screenshots/
+*.backup-*
 *.xcuserstate
 xcuserdata/
 Croissante/Configs/Secrets.xcconfig
