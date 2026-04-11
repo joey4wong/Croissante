@@ -393,12 +393,16 @@ public final class SRSManager: ObservableObject {
     
     // MARK: - Learning Actions
     
-    public func markWordMastered(_ wordId: String) {
+    public func markWordMastered(
+        _ wordId: String,
+        persistDuringInfinitePractice: Bool = false,
+        affectsDailyProgress: Bool = true
+    ) {
         let now = Date()
-        if handleInfinitePracticeSwipe(wordId, now: now) {
+        if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
             return
         }
-        let countedInTodayDeck = dailyDeckWordIds.contains(wordId)
+        let countedInTodayDeck = affectsDailyProgress && dailyDeckWordIds.contains(wordId)
         let oldCorrects = learningRecords[wordId]?.consecutiveCorrects ?? 0
 
         // 新词首次“掌握”只记为 1 次连对，不再直接毕业。
@@ -422,14 +426,20 @@ public final class SRSManager: ObservableObject {
             dailyMasteredDeckWordIds.insert(wordId)
         }
 
-        removeWordFromLearningQueue(wordId)
-        refillInfiniteQueueIfNeeded(now: now)
+        if affectsDailyProgress {
+            removeWordFromLearningQueue(wordId)
+            refillInfiniteQueueIfNeeded(now: now)
+        }
         saveLearningState()
     }
     
-    public func markWordBlurry(_ wordId: String) {
+    public func markWordBlurry(
+        _ wordId: String,
+        persistDuringInfinitePractice: Bool = false,
+        affectsDailyProgress: Bool = true
+    ) {
         let now = Date()
-        if handleInfinitePracticeSwipe(wordId, now: now) {
+        if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
             return
         }
         let oldRecord = learningRecords[wordId] ?? LearningRecord(
@@ -451,15 +461,22 @@ public final class SRSManager: ObservableObject {
         blurryWordIds.insert(wordId)
         masteredWordIds.remove(wordId)
         forgotWordIds.remove(wordId)
-        dailyMasteredDeckWordIds.remove(wordId)
-        enqueueWordForReview(wordId)
-        refillInfiniteQueueIfNeeded(now: now)
+        if affectsDailyProgress {
+            dailyMasteredDeckWordIds.remove(wordId)
+            stopInfinitePracticeIfDailyGoalReopened(by: wordId)
+            enqueueWordForReview(wordId)
+            refillInfiniteQueueIfNeeded(now: now)
+        }
         saveLearningState()
     }
     
-    public func markWordForgot(_ wordId: String) {
+    public func markWordForgot(
+        _ wordId: String,
+        persistDuringInfinitePractice: Bool = false,
+        affectsDailyProgress: Bool = true
+    ) {
         let now = Date()
-        if handleInfinitePracticeSwipe(wordId, now: now) {
+        if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
             return
         }
 
@@ -473,9 +490,12 @@ public final class SRSManager: ObservableObject {
         forgotWordIds.insert(wordId)
         masteredWordIds.remove(wordId)
         blurryWordIds.remove(wordId)
-        dailyMasteredDeckWordIds.remove(wordId)
-        enqueueWordForReview(wordId)
-        refillInfiniteQueueIfNeeded(now: now)
+        if affectsDailyProgress {
+            dailyMasteredDeckWordIds.remove(wordId)
+            stopInfinitePracticeIfDailyGoalReopened(by: wordId)
+            enqueueWordForReview(wordId)
+            refillInfiniteQueueIfNeeded(now: now)
+        }
 
         // 向外部模块广播“忘记”事件，便于同步错题本。
         NotificationCenter.default.post(
@@ -485,6 +505,13 @@ public final class SRSManager: ObservableObject {
         )
 
         saveLearningState()
+    }
+
+    private func stopInfinitePracticeIfDailyGoalReopened(by wordId: String) {
+        guard isInfinitePracticeActive,
+              dailyDeckWordIds.contains(wordId),
+              !dailyMasteredDeckWordIds.contains(wordId) else { return }
+        isInfinitePracticeActive = false
     }
 
     @discardableResult

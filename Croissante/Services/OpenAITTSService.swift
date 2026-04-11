@@ -13,11 +13,6 @@ public class OpenAITTSService {
         return created
     }
     
-    private var apiKey: String {
-        (Bundle.main.object(forInfoDictionaryKey: "OpenAIAPIKey") as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
     private let supportedVoices: Set<String> = [
         "coral", "alloy", "echo", "shimmer"
     ]
@@ -34,6 +29,7 @@ public class OpenAITTSService {
     private let outputFormat = "mp3"
     private let openAISpeechSpeed: Float = 1.15
     private let ttsInstructions = "Parle uniquement en français. Si le texte contient une autre langue, lis-le avec une prononciation française."
+    private let defaultBackendBaseURL = "https://croissante-tts.joey4wong.workers.dev"
     
     private let networkMonitor = NetworkMonitor.shared
     private let audioCache = AudioCacheManager.shared
@@ -52,6 +48,10 @@ public class OpenAITTSService {
         config.timeoutIntervalForRequest = 30.0
         return URLSession(configuration: config)
     }()
+
+    private var ttsEndpointURL: URL? {
+        endpointURL(from: configuredBackendBaseURL)
+    }
     
     private init() {
         setupAudioSession()
@@ -98,7 +98,7 @@ public class OpenAITTSService {
             return
         }
         
-        guard !apiKey.isEmpty else {
+        guard ttsEndpointURL != nil else {
             speakWithSystemTTS(trimmedText, language: language)
             return
         }
@@ -115,7 +115,7 @@ public class OpenAITTSService {
         }
         
         do {
-            let audioData = try await fetchAudioFromOpenAI(trimmedText)
+            let audioData = try await fetchAudioFromBackend(trimmedText)
             
             if let cachedURL = audioCache.cacheAudioData(audioData, forText: cacheText) {
                 await playAudio(from: cachedURL)
@@ -137,23 +137,17 @@ public class OpenAITTSService {
     
     private func makeRequestBody(for text: String) -> [String: Any] {
         [
-            "model": modelId,
             "voice": voice,
-            "input": text,
-            "speed": openAISpeechSpeed,
-            "instructions": ttsInstructions,
-            "response_format": outputFormat
+            "input": text
         ]
     }
     
-    private func fetchAudioFromOpenAI(_ text: String) async throws -> Data {
-        guard !apiKey.isEmpty else { throw TTSError.networkError }
-        let url = URL(string: "https://api.openai.com/v1/audio/speech")!
+    private func fetchAudioFromBackend(_ text: String) async throws -> Data {
+        guard let url = ttsEndpointURL else { throw TTSError.networkError }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: makeRequestBody(for: text))
         
         let (data, response) = try await urlSession.data(for: request)
@@ -170,7 +164,7 @@ public class OpenAITTSService {
     }
 
     private func cacheTextKey(for text: String) -> String {
-        "\(modelId)|\(voice)|\(openAISpeechSpeed)|\(ttsInstructions)|\(text)"
+        "\(modelId)|\(outputFormat)|\(voice)|\(openAISpeechSpeed)|\(ttsInstructions)|\(text)"
     }
     
     private func playAudio(from source: Any) async {
@@ -195,7 +189,7 @@ public class OpenAITTSService {
     
     func preloadAudio(for texts: [String]) async {
         guard memberUnlocked else { return }
-        guard !apiKey.isEmpty else { return }
+        guard ttsEndpointURL != nil else { return }
         for text in texts {
             let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedText.isEmpty else { continue }
@@ -204,7 +198,7 @@ public class OpenAITTSService {
             guard networkMonitor.isReachable else { break }
             
             do {
-                let audioData = try await fetchAudioFromOpenAI(trimmedText)
+                let audioData = try await fetchAudioFromBackend(trimmedText)
                 _ = audioCache.cacheAudioData(audioData, forText: cacheText)
                 try await Task.sleep(nanoseconds: 100_000_000)
             } catch {}
@@ -238,6 +232,43 @@ public class OpenAITTSService {
     private func stopSystemSpeech() {
         guard systemSynthesizer.isSpeaking else { return }
         systemSynthesizer.stopSpeaking(at: .immediate)
+    }
+
+    private var configuredBackendBaseURL: String {
+        if let configured = (Bundle.main.object(forInfoDictionaryKey: "TTSBackendBaseURL") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !configured.isEmpty {
+            return configured
+        }
+
+        let environmentValue = ProcessInfo.processInfo.environment["TTS_BACKEND_BASE_URL"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !environmentValue.isEmpty {
+            return environmentValue
+        }
+
+        #if targetEnvironment(simulator)
+        return defaultBackendBaseURL
+        #else
+        return defaultBackendBaseURL
+        #endif
+    }
+
+    private func endpointURL(from baseURLString: String) -> URL? {
+        guard !baseURLString.isEmpty, let baseURL = URL(string: baseURLString) else {
+            return nil
+        }
+        if baseURL.path.hasSuffix("/api/tts") {
+            return baseURL
+        }
+
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        let trimmedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.path = trimmedPath.isEmpty ? "/api/tts" : "/\(trimmedPath)/api/tts"
+        return components.url
     }
 }
 

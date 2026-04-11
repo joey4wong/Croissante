@@ -22,6 +22,23 @@ private struct SettingsAvatarBottomPreferenceKey: PreferenceKey {
     }
 }
 
+private struct AppIconPickerLayout {
+    let tileSize: CGFloat
+    let contentInset: CGFloat
+    let bottomInset: CGFloat
+    let initialDropTopInset: CGFloat
+    let initialDropSpacing: CGFloat
+
+    var sheetInsets: EdgeInsets {
+        EdgeInsets(
+            top: contentInset,
+            leading: contentInset,
+            bottom: bottomInset,
+            trailing: contentInset
+        )
+    }
+}
+
 private enum GestureOnboardingState: String {
     case pending
     case seen
@@ -236,9 +253,9 @@ public struct ContentView: View {
                 themeMode: appState.themeMode,
                 dismissOnTap: true,
                 onDismiss: { spotlightWord = nil },
-                onSwipeForgot: { srsManager.markWordForgot($0) },
-                onSwipeMastered: { srsManager.markWordMastered($0) },
-                onSwipeBlurry: { srsManager.markWordBlurry($0) }
+                onSwipeForgot: { srsManager.markWordForgot($0, persistDuringInfinitePractice: true) },
+                onSwipeMastered: { srsManager.markWordMastered($0, persistDuringInfinitePractice: true) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0, persistDuringInfinitePractice: true) }
             )
         }
         #endif
@@ -1685,8 +1702,9 @@ private struct GalaxyWordCard: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
 
-    init(word: SimpleWord) {
+    init(word: SimpleWord, materialEnabled: Bool = true) {
         self.word = word
+        self.materialEnabled = materialEnabled
     }
 
     private enum CardFontWeight {
@@ -2553,13 +2571,13 @@ private struct DiscoverCard: View {
                             let dx = v.translation.width
                             let dy = v.translation.height
                             if dx < -swipeThreshold {
-                                let swipedWordId = word.id
+                                let swipedWordId = displayedWord.id
                                 FeedbackService.swipeForgot()
                                 completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
                                     onSwipeForgot(swipedWordId)
                                 }
                             } else if dx > swipeThreshold {
-                                let swipedWordId = word.id
+                                let swipedWordId = displayedWord.id
                                 FeedbackService.swipeMastered()
                                 completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
                                     onSwipeMastered(swipedWordId)
@@ -2568,7 +2586,7 @@ private struct DiscoverCard: View {
                                 FeedbackService.swipeBlurry()
                                 completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
                             } else if dy > swipeThreshold && allowsBlurrySwipe {
-                                let swipedWordId = word.id
+                                let swipedWordId = displayedWord.id
                                 FeedbackService.swipeBlurry()
                                 completeSwipe(to: CGSize(width: 0, height: 400)) {
                                     onSwipeBlurry(swipedWordId)
@@ -3403,9 +3421,27 @@ private struct ProgressScreen: View {
                         allowsBlurrySwipe: true,
                         dismissOnTap: true,
                         onDismiss: { dismissWordCard() },
-                        onSwipeForgot: { srsManager.markWordForgot($0) },
-                        onSwipeMastered: { srsManager.markWordMastered($0) },
-                        onSwipeBlurry: { srsManager.markWordBlurry($0) }
+                        onSwipeForgot: {
+                            srsManager.markWordForgot(
+                                $0,
+                                persistDuringInfinitePractice: true,
+                                affectsDailyProgress: false
+                            )
+                        },
+                        onSwipeMastered: {
+                            srsManager.markWordMastered(
+                                $0,
+                                persistDuringInfinitePractice: true,
+                                affectsDailyProgress: false
+                            )
+                        },
+                        onSwipeBlurry: {
+                            srsManager.markWordBlurry(
+                                $0,
+                                persistDuringInfinitePractice: true,
+                                affectsDailyProgress: false
+                            )
+                        }
                     )
                     .id(word.id)
                     .mask(
@@ -3571,7 +3607,6 @@ private struct SettingsScreen: View {
     @State private var showingAvatarPicker = false
     @State private var showingFAQ = false
     @State private var showingTermsOfUse = false
-    @State private var showingTipOptions = false
     @State private var showingShareSheet = false
     @State private var showingMemberUnlock = false
     @State private var memberPaywallShowingAllPlans = false
@@ -3606,6 +3641,7 @@ private struct SettingsScreen: View {
     ]
     private let appIconTileSize: CGFloat = 68
     private let developerContactEmail = "joey4wong@gmail.com"
+    private let xProfileURL = "https://x.com/croissante4u?s=21"
     private let termsOfUseURL = "https://hungry-land-732.notion.site/Terms-of-Use-32c52d9458a9802e9308c296fc8fd9d8?source=copy_link"
     private let privacyPolicyURL = "https://hungry-land-732.notion.site/Privacy-Policy-32c52d9458a980b6975cd6786df84199?source=copy_link"
     private let cardFontOptions: [(style: CardFontStyle, label: String)] = [
@@ -3631,6 +3667,19 @@ private struct SettingsScreen: View {
     private let settingsToggleScale: CGFloat = 0.84
     private let compactSettingsRowVerticalPadding: CGFloat = 13
     private let chevronTrailingInset: CGFloat = 12
+    private let appIconPickerDetentFraction: CGFloat = 0.5
+    private let appIconPickerContentInset: CGFloat = 16
+    private let appIconPickerBottomInset: CGFloat = 4
+
+    private var appIconPickerLayout: AppIconPickerLayout {
+        AppIconPickerLayout(
+            tileSize: appIconTileSize,
+            contentInset: appIconPickerContentInset,
+            bottomInset: appIconPickerBottomInset,
+            initialDropTopInset: 12,
+            initialDropSpacing: 36
+        )
+    }
 
     private var selectedLevelIndex: Int {
         levels.firstIndex(of: appState.level) ?? 0
@@ -4451,7 +4500,7 @@ private struct SettingsScreen: View {
 
                         SettingsActionButtonsRow(labels: [
                             appState.localized("Report", "报错", "रिपोर्ट"),
-                            appState.localized("Tip", "打赏", "टिप"),
+                            "X",
                             appState.localized("Rate", "评分", "रेट"),
                             appState.localized("Share", "分享", "शेयर")
                         ]) { index in
@@ -4459,7 +4508,7 @@ private struct SettingsScreen: View {
                             case 0:
                                 contactDeveloper()
                             case 1:
-                                showingTipOptions = true
+                                openXProfile()
                             case 2:
                                 requestAppStoreRating()
                             case 3:
@@ -4497,7 +4546,7 @@ private struct SettingsScreen: View {
             appIconPickerSheet
                 .environmentObject(appState)
             #if os(iOS)
-                .presentationDetents([.height(418)])
+                .presentationDetents([.fraction(appIconPickerDetentFraction)])
                 .presentationDragIndicator(.visible)
             #endif
         }
@@ -4538,17 +4587,6 @@ private struct SettingsScreen: View {
             )
             #if os(iOS)
             .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            #endif
-        }
-        .sheet(isPresented: $showingTipOptions) {
-            TipSupportSheetView { _ in
-                // Placeholder for future in-app purchase wiring.
-                showingTipOptions = false
-            }
-            .environmentObject(appState)
-            #if os(iOS)
-            .presentationDetents([.height(204)])
             .presentationDragIndicator(.visible)
             #endif
         }
@@ -4639,6 +4677,11 @@ private struct SettingsScreen: View {
         openURL(url)
     }
 
+    private func openXProfile() {
+        guard let url = URL(string: xProfileURL) else { return }
+        openURL(url)
+    }
+
     private func requestAppStoreRating() {
         #if os(iOS)
         guard let scene = UIApplication.shared.connectedScenes
@@ -4714,28 +4757,20 @@ private struct SettingsScreen: View {
     }
 
     private var appIconPickerSheet: some View {
-        VStack(spacing: 0) {
+        Group {
             #if os(iOS)
-            let physicsPickerMinHeight = appIconTileSize * 3 + 22 * 2 + 84
             AppIconPhysicsPicker(
                 icons: AppIconManager.AppIcon.allIcons,
                 currentIconID: appIconManager.currentIcon.id,
                 memberUnlocked: appState.memberUnlocked,
                 isDarkMode: isDarkMode,
                 isApplying: appIconManager.changingIcon,
-                tileSize: appIconTileSize,
+                layout: appIconPickerLayout,
                 onTapIcon: handleAppIconSelection
             )
-            .frame(
-                maxWidth: .infinity,
-                minHeight: physicsPickerMinHeight,
-                idealHeight: physicsPickerMinHeight,
-                maxHeight: physicsPickerMinHeight,
-                alignment: .center
-            )
-            .padding(.top, 12)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .ignoresSafeArea(.container, edges: .bottom)
+            .padding(appIconPickerLayout.sheetInsets)
             #else
             GeometryReader { proxy in
                 let horizontalSpacing = max((proxy.size.width - appIconTileSize * 3) / 4, 0)
@@ -4856,7 +4891,7 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
     let memberUnlocked: Bool
     let isDarkMode: Bool
     let isApplying: Bool
-    let tileSize: CGFloat
+    let layout: AppIconPickerLayout
     let onTapIcon: (AppIconManager.AppIcon) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -4887,14 +4922,18 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
         private var didPlaceInitialDrop = false
         private var lastContainerBoundsSize: CGSize = .zero
         private var lastCollisionSoundTime: CFTimeInterval = 0
+        private var initialDropStartTime: CFTimeInterval = 0
+        private var entranceDropActivationToken: Int = 0
+        private var hasActivatedEntranceDrop = false
         private let collisionVelocityThreshold: CGFloat = 140
         private let collisionSoundCooldown: CFTimeInterval = 0.14
+        private let settledGravityMagnitude: CGFloat = 1.25
         private let defaultDropGravity = CGVector(dx: 0, dy: 1)
         private let minimumEntranceGravityY: CGFloat = 0.68
-        private let maximumEntranceGravityX: CGFloat = 0.24
-        private let initialDropVelocity: CGFloat = 250
-        private let initialDropTopInset: CGFloat = 18
-        private let initialDropSpacing: CGFloat = 10
+        private let maximumEntranceGravityX: CGFloat = 0.08
+        private let entranceAssistDuration: CFTimeInterval = 0.55
+        private let entranceActivationDelay: CFTimeInterval = 0.18
+        private let initialDropVelocity: CGFloat = 210
         private var filteredGravity: CGVector
         private let gravitySmoothing: CGFloat = 0.16
 
@@ -4916,17 +4955,8 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
 
         func applyCurrentState(animated: Bool) {
             guard let container else { return }
-            if animator == nil, container.bounds.width > 0, container.bounds.height > 0 {
-                setupAnimatorIfNeeded(referenceView: container)
-            }
-            syncTiles(in: container)
-            updateTileStates()
-
-            if !didPlaceInitialDrop {
-                didPlaceInitialDrop = placeTilesAtTop()
-            } else if animated {
-                keepTilesInsideBounds()
-            }
+            ensureAnimatorAndTileState(in: container)
+            restartEntranceIfNeeded(clampActiveTiles: animated)
         }
 
         func containerDidLayout() {
@@ -4934,23 +4964,17 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             let bounds = container.bounds
             guard bounds.width > 0, bounds.height > 0 else { return }
 
-            if animator == nil {
-                setupAnimatorIfNeeded(referenceView: container)
-                syncTiles(in: container)
-                updateTileStates()
-            }
+            ensureAnimatorAndTileState(in: container)
 
             let sizeChanged = bounds.size != lastContainerBoundsSize
             lastContainerBoundsSize = bounds.size
             updateCollisionBounds(in: container)
-            if !didPlaceInitialDrop {
-                didPlaceInitialDrop = placeTilesAtTop()
-            } else if sizeChanged {
-                keepTilesInsideBounds()
-            }
+            restartEntranceIfNeeded(clampActiveTiles: sizeChanged)
         }
 
         func stopMotionUpdates() {
+            entranceDropActivationToken += 1
+            hasActivatedEntranceDrop = false
             motionManager.stopDeviceMotionUpdates()
         }
 
@@ -4963,8 +4987,7 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
                 setupAnimatorIfNeeded(referenceView: container)
             }
 
-            syncTiles(in: container)
-            updateTileStates()
+            ensureAnimatorAndTileState(in: container)
 
             guard needsEntranceGravityAssist() else { return }
 
@@ -4973,11 +4996,27 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             didPlaceInitialDrop = placeTilesAtTop()
         }
 
+        private func ensureAnimatorAndTileState(in container: AppIconPhysicsContainerView) {
+            if animator == nil, container.bounds.width > 0, container.bounds.height > 0 {
+                setupAnimatorIfNeeded(referenceView: container)
+            }
+            syncTiles(in: container)
+            updateTileStates()
+        }
+
+        private func restartEntranceIfNeeded(clampActiveTiles: Bool) {
+            if !didPlaceInitialDrop || !hasActivatedEntranceDrop {
+                didPlaceInitialDrop = placeTilesAtTop()
+            } else if clampActiveTiles {
+                keepTilesInsideBounds()
+            }
+        }
+
         private func setupAnimatorIfNeeded(referenceView: UIView) {
             guard animator == nil else { return }
             let animator = UIDynamicAnimator(referenceView: referenceView)
 
-            gravityBehavior.magnitude = 1.25
+            gravityBehavior.magnitude = 0
             gravityBehavior.gravityDirection = filteredGravity
             collisionBehavior.collisionDelegate = self
             updateCollisionBounds(in: referenceView)
@@ -5007,13 +5046,20 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
                 tilesByID.removeValue(forKey: id)
             }
 
-            for icon in parent.icons {
+            for (index, icon) in parent.icons.enumerated() {
                 if let tile = tilesByID[icon.id] {
                     tile.updateIcon(icon)
                     continue
                 }
 
-                let tile = AppIconPhysicsTileView(icon: icon, tileSize: parent.tileSize)
+                let tile = AppIconPhysicsTileView(icon: icon, tileSize: parent.layout.tileSize)
+                if canPlaceInitialGrid(in: container.bounds) {
+                    tile.center = initialDropCenter(
+                        for: index,
+                        in: container.bounds,
+                        totalCount: newOrderedIDs.count
+                    )
+                }
                 tile.addTarget(self, action: #selector(handleTileTap(_:)), for: .touchUpInside)
                 container.addSubview(tile)
                 tilesByID[icon.id] = tile
@@ -5046,33 +5092,30 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
         @discardableResult
         private func placeTilesAtTop() -> Bool {
             guard let container else { return false }
+            guard canPlaceInitialGrid(in: container.bounds) else { return false }
 
             let width = container.bounds.width
             let height = container.bounds.height
             guard width > 0, height > 0 else { return false }
 
-            let tileSize = parent.tileSize
-            let halfSize = tileSize / 2
-            let spacing = initialDropSpacing
-            let columns = min(3, max(Int(floor((width + spacing) / (tileSize + spacing))), 1))
+            entranceDropActivationToken += 1
+            let activationToken = entranceDropActivationToken
+            hasActivatedEntranceDrop = false
+            gravityBehavior.magnitude = 0
+            filteredGravity = defaultDropGravity
+            gravityBehavior.gravityDirection = filteredGravity
 
             for (index, id) in orderedIDs.enumerated() {
                 guard let tile = tilesByID[id] else { continue }
-                let col = index % columns
-                let row = index / columns
-                let itemsInRow = min(orderedIDs.count - row * columns, columns)
-                let rowWidth = CGFloat(itemsInRow) * tileSize + CGFloat(max(itemsInRow - 1, 0)) * spacing
-                let x = (width - rowWidth) / 2 + halfSize + CGFloat(col) * (tileSize + spacing)
-                let y = initialDropTopInset + halfSize + CGFloat(row) * (tileSize + spacing)
-                tile.center = CGPoint(x: x, y: y)
+                tile.center = initialDropCenter(
+                    for: index,
+                    in: container.bounds,
+                    totalCount: orderedIDs.count
+                )
 
                 let linearVelocity = itemBehavior.linearVelocity(for: tile)
                 itemBehavior.addLinearVelocity(
                     CGPoint(x: -linearVelocity.x, y: -linearVelocity.y),
-                    for: tile
-                )
-                itemBehavior.addLinearVelocity(
-                    CGPoint(x: 0, y: initialDropVelocity),
                     for: tile
                 )
                 let angularVelocity = itemBehavior.angularVelocity(for: tile)
@@ -5081,15 +5124,67 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
                 animator?.updateItem(usingCurrentState: tile)
             }
 
+            DispatchQueue.main.asyncAfter(deadline: .now() + entranceActivationDelay) { [weak self] in
+                guard let self else { return }
+                guard self.entranceDropActivationToken == activationToken else { return }
+
+                self.hasActivatedEntranceDrop = true
+                self.initialDropStartTime = CFAbsoluteTimeGetCurrent()
+                self.filteredGravity = self.defaultDropGravity
+                self.gravityBehavior.gravityDirection = self.filteredGravity
+                self.gravityBehavior.magnitude = self.settledGravityMagnitude
+
+                for id in self.orderedIDs {
+                    guard let tile = self.tilesByID[id] else { continue }
+                    self.itemBehavior.addLinearVelocity(
+                        CGPoint(x: 0, y: self.initialDropVelocity),
+                        for: tile
+                    )
+                    self.animator?.updateItem(usingCurrentState: tile)
+                }
+            }
+
             return true
         }
 
+        private func canPlaceInitialGrid(in bounds: CGRect) -> Bool {
+            let minimumWidth = parent.layout.tileSize * 3 + parent.layout.initialDropSpacing * 2 + parent.layout.contentInset
+            let minimumHeight = parent.layout.tileSize * 3 + parent.layout.initialDropSpacing * 2
+            return bounds.width >= minimumWidth && bounds.height >= minimumHeight
+        }
+
+        private func initialDropCenter(for index: Int, in bounds: CGRect, totalCount: Int) -> CGPoint {
+            let tileSize = parent.layout.tileSize
+            let halfSize = tileSize / 2
+            let columns = min(3, max(totalCount, 1))
+            let preferredSpacing = parent.layout.initialDropSpacing
+            let availableRowWidth = bounds.width - parent.layout.contentInset
+            let maximumSpacing: CGFloat
+
+            if columns > 1 {
+                maximumSpacing = max(
+                    (availableRowWidth - CGFloat(columns) * tileSize) / CGFloat(columns - 1),
+                    0
+                )
+            } else {
+                maximumSpacing = 0
+            }
+
+            let spacing = min(preferredSpacing, maximumSpacing)
+            let col = index % columns
+            let row = index / columns
+            let itemsInRow = min(totalCount - row * columns, columns)
+            let rowWidth = CGFloat(itemsInRow) * tileSize + CGFloat(max(itemsInRow - 1, 0)) * spacing
+            let startX = (bounds.width - rowWidth) / 2 + halfSize
+            let x = startX + CGFloat(col) * (tileSize + spacing)
+            let y = halfSize + parent.layout.initialDropTopInset + CGFloat(row) * (tileSize + spacing)
+
+            return CGPoint(x: x, y: y)
+        }
+
         private func updateCollisionBounds(in container: UIView) {
-            let tileSpan = parent.tileSize + 8
-            let estimatedRows = max(Int(ceil(Double(max(orderedIDs.count, 1)) / 3.0)), 1)
-            let headroom = CGFloat(estimatedRows) * tileSpan + parent.tileSize
             collisionBehavior.setTranslatesReferenceBoundsIntoBoundary(
-                with: UIEdgeInsets(top: -headroom, left: 0, bottom: 0, right: 0)
+                with: .zero
             )
         }
 
@@ -5101,12 +5196,22 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             }
         }
 
+        private func shouldApplyEntranceGravityAssist() -> Bool {
+            if !hasActivatedEntranceDrop {
+                return true
+            }
+            if needsEntranceGravityAssist() {
+                return true
+            }
+            return CFAbsoluteTimeGetCurrent() - initialDropStartTime < entranceAssistDuration
+        }
+
         private func keepTilesInsideBounds() {
             guard let container else { return }
             let bounds = container.bounds
             guard bounds.width > 0, bounds.height > 0 else { return }
 
-            let halfSize = parent.tileSize / 2
+            let halfSize = parent.layout.tileSize / 2
             for id in orderedIDs {
                 guard let tile = tilesByID[id] else { continue }
                 var center = tile.center
@@ -5157,7 +5262,7 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             filteredGravity.dx += a * (CGFloat(dx) - filteredGravity.dx)
             filteredGravity.dy += a * (CGFloat(dy) - filteredGravity.dy)
 
-            if needsEntranceGravityAssist() {
+            if shouldApplyEntranceGravityAssist() {
                 filteredGravity.dx = max(min(filteredGravity.dx, maximumEntranceGravityX), -maximumEntranceGravityX)
                 filteredGravity.dy = max(filteredGravity.dy, minimumEntranceGravityY)
             }
@@ -6202,7 +6307,7 @@ private struct NotificationReminderSettingsCard: View {
                     )
                 }
                 .frame(height: 42)
-                .padding(.horizontal, 8)
+            .padding(.horizontal, 2)
                 .padding(.top, 6)
 
                 Text(displayTime)
@@ -6549,6 +6654,31 @@ private struct SettingsActionButtonsRow: View {
         colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)
     }
 
+    private var xIconColor: Color {
+        colorScheme == .dark ? .white : .black
+    }
+
+    @ViewBuilder
+    private func actionLabel(_ label: String) -> some View {
+        if label == "X" {
+            Image("XSocialIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 15, height: 15)
+                .foregroundStyle(xIconColor)
+                .accessibilityLabel("X")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        } else {
+            Text(label)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(actionColor)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Rectangle()
@@ -6561,128 +6691,13 @@ private struct SettingsActionButtonsRow: View {
                     Button(action: {
                         onTap(idx)
                     }) {
-                        Text(label)
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundStyle(actionColor)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                        actionLabel(label)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 6)
             .padding(.top, 8)
-        }
-    }
-}
-
-private struct TipSupportSheetView: View {
-    let onSelect: (Int) -> Void
-    @EnvironmentObject private var appState: AppState
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var isDarkMode: Bool { colorScheme == .dark }
-    private var rowTitleColor: Color {
-        isDarkMode ? Color.white.opacity(0.90) : Color.black.opacity(0.86)
-    }
-    private var rowSubtitleColor: Color {
-        isDarkMode ? Color.white.opacity(0.58) : Color.black.opacity(0.50)
-    }
-    private var rowDividerColor: Color {
-        isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
-    }
-    private var containerFillColor: Color {
-        isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.03)
-    }
-    private var containerBorderColor: Color {
-        isDarkMode ? Color.white.opacity(0.18) : Color.black.opacity(0.08)
-    }
-
-    @ViewBuilder
-    private func tipRow(
-        imageAssetName: String,
-        title: String,
-        price: String,
-        showsDivider: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Image(imageAssetName)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 64, height: 35)
-                        .accessibilityHidden(true)
-
-                    Text(title)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(rowTitleColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.90)
-
-                    Spacer(minLength: 10)
-
-                    Text(price)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(rowSubtitleColor)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-
-                if showsDivider {
-                    Rectangle()
-                        .fill(rowDividerColor)
-                        .frame(height: 1)
-                        .padding(.leading, 16)
-                        .padding(.trailing, 16)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            VStack(spacing: 0) {
-                tipRow(
-                    imageAssetName: "TipCroissantOne",
-                    title: appState.localized("Buy him one croissant", "请他吃一个可颂", "उसे एक क्रोइसां खिलाएं"),
-                    price: "$1.90",
-                    showsDivider: true
-                ) {
-                    onSelect(0)
-                }
-
-                tipRow(
-                    imageAssetName: "TipCroissantTwo",
-                    title: appState.localized("Buy him two croissants", "请他吃两个可颂", "उसे दो क्रोइसां खिलाएं"),
-                    price: "$6.99",
-                    showsDivider: true
-                ) {
-                    onSelect(1)
-                }
-
-                tipRow(
-                    imageAssetName: "TipCroissantMany",
-                    title: appState.localized("Buy him a lot of croissants", "请他吃一堆可颂", "उसे बहुत सारे क्रोइसां खिलाएं"),
-                    price: "$19.90",
-                    showsDivider: false
-                ) {
-                    onSelect(2)
-                }
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(containerFillColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(containerBorderColor, lineWidth: 1)
-            )
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .offset(y: proxy.safeAreaInsets.bottom * 0.5)
         }
     }
 }

@@ -139,9 +139,9 @@ struct SearchSheetView: View {
                 allowsBlurrySwipe: true,
                 dismissOnTap: true,
                 onDismiss: { selectedWordForCard = nil },
-                onSwipeForgot: { srsManager.markWordForgot($0) },
-                onSwipeMastered: { srsManager.markWordMastered($0) },
-                onSwipeBlurry: { srsManager.markWordBlurry($0) }
+                onSwipeForgot: { srsManager.markWordForgot($0, persistDuringInfinitePractice: true) },
+                onSwipeMastered: { srsManager.markWordMastered($0, persistDuringInfinitePractice: true) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0, persistDuringInfinitePractice: true) }
             )
         }
         #else
@@ -152,9 +152,9 @@ struct SearchSheetView: View {
                 allowsBlurrySwipe: true,
                 dismissOnTap: true,
                 onDismiss: { selectedWordForCard = nil },
-                onSwipeForgot: { srsManager.markWordForgot($0) },
-                onSwipeMastered: { srsManager.markWordMastered($0) },
-                onSwipeBlurry: { srsManager.markWordBlurry($0) }
+                onSwipeForgot: { srsManager.markWordForgot($0, persistDuringInfinitePractice: true) },
+                onSwipeMastered: { srsManager.markWordMastered($0, persistDuringInfinitePractice: true) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0, persistDuringInfinitePractice: true) }
             )
         }
         #endif

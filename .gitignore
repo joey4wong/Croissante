@@ -16,3 +16,12 @@ opencode.json
 *.xcuserstate
 xcuserdata/
 Croissante/Configs/Secrets.xcconfig
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+node_modules/
+backend/dist/
