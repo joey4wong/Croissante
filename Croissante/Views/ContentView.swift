@@ -6665,7 +6665,7 @@ private struct SettingsActionButtonsRow: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 15, height: 15)
+                .frame(width: 17, height: 17)
                 .foregroundStyle(xIconColor)
                 .accessibilityLabel("X")
                 .frame(maxWidth: .infinity)
