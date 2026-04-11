@@ -629,6 +629,7 @@ private struct DiscoverScreen: View {
     @State private var onboardingGalaxyWords: [SimpleWord] = []
     @State private var isOnboardingGalaxyVisible = false
     @State private var animatePinchDemo = false
+    @State private var pendingAutoInfiniteTask: Task<Void, Never>? = nil
     private let galaxyTargetCount = 22
     private let galaxyActivationCompression: CGFloat = 0.16
     private let galaxyQueueCommitDelay: UInt64 = 90_000_000
@@ -736,10 +737,8 @@ private struct DiscoverScreen: View {
                         )
                     } else if !isGalaxyVisible, gestureOnboardingStep == nil, shouldShowCompletionCelebration {
                         DeckCompletionCelebrationView(
-                            showContinueInfiniteButton: srsManager.canStartInfinitePractice,
-                            onContinueInfinite: {
-                                srsManager.startInfinitePractice()
-                            }
+                            showContinueInfiniteButton: false,
+                            onContinueInfinite: {}
                         )
                         .frame(width: geo.size.width, height: geo.size.height)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -835,12 +834,33 @@ private struct DiscoverScreen: View {
         .onChange(of: gestureOnboardingStep) { _, newValue in
             syncGestureOnboardingDemo(for: newValue)
         }
+        .onChange(of: shouldShowCompletionCelebration) { _, showing in
+            if showing {
+                scheduleAutoInfinitePractice()
+            } else {
+                pendingAutoInfiniteTask?.cancel()
+                pendingAutoInfiniteTask = nil
+            }
+        }
         .onDisappear {
+            pendingAutoInfiniteTask?.cancel()
+            pendingAutoInfiniteTask = nil
             pendingOnboardingGalaxyRevealTask?.cancel()
             pendingOnboardingGalaxyRevealTask = nil
             if isOnboardingGalaxyVisible {
                 onGalaxyVisibilityChanged(false)
             }
+        }
+    }
+
+    private func scheduleAutoInfinitePractice() {
+        pendingAutoInfiniteTask?.cancel()
+        pendingAutoInfiniteTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard srsManager.canStartInfinitePractice else { return }
+            srsManager.startInfinitePractice()
+            pendingAutoInfiniteTask = nil
         }
     }
 
@@ -2144,12 +2164,12 @@ private struct DeckCompletionCelebrationView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
-                Text(appState.localized("Deck Complete!", "今日卡片已完成！", "आज का डेक पूरा!"))
+                Text(appState.localized("Amazing, today's goal complete!", "太棒了，今日目标已完成！", "शानदार, आज का लक्ष्य पूरा!"))
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.84))
                     .offset(y: textLift ? -2 : 2)
 
-                Text(appState.localized("Great job. See you tomorrow.", "太棒了，明天继续。", "बहुत बढ़िया, कल फिर मिलते हैं।"))
+                Text(appState.localized("More cards coming up…", "更多卡片即将出现…", "और कार्ड आ रहे हैं…"))
                     .font(.system(size: 15, weight: .medium, design: .rounded))
                     .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.62) : Color.black.opacity(0.52))
                     .offset(y: textLift ? -1 : 1)
@@ -2384,7 +2404,7 @@ private struct DiscoverCard: View {
         guard !trimmedWord.isEmpty else { return }
         
         OpenAITTSService.stopPlayback()
-        OpenAITTSService.speakText(trimmedWord, language: "fr-FR")
+        OpenAITTSService.speakText(trimmedWord, language: "fr-FR", contentType: .word)
     }
 
     private func speakExampleSentence() {
@@ -2392,7 +2412,7 @@ private struct DiscoverCard: View {
         guard !trimmedExample.isEmpty else { return }
 
         OpenAITTSService.stopPlayback()
-        OpenAITTSService.speakText(trimmedExample, language: "fr-FR")
+        OpenAITTSService.speakText(trimmedExample, language: "fr-FR", contentType: .sentence)
     }
 
     private func cancelScheduledSpeech() {
@@ -3886,9 +3906,9 @@ private struct SettingsScreen: View {
                     "5 / 10 / 15 दैनिक लक्ष्य का क्या मतलब है?"
                 ),
                 answer: appState.localized(
-                    "It is a mastery goal, not a swipe count. Completion is measured by how many cards in today's target pool are marked Mastered. If you change the goal during the day, the app rebuilds today's target pool for the new goal and resets today's progress from the beginning.",
-                    "这代表“掌握目标”，不是“滑动次数”。系统按“今天目标池里被标记为掌握的卡片数”来判断完成度。只要你在当天修改每日目标，系统就会按新目标重建今天的目标池，并把当天进度从头开始计算。",
-                    "It is a mastery goal, not a swipe count. Completion is measured by how many cards in today's target pool are marked Mastered. If you change the goal during the day, the app rebuilds today's target pool for the new goal and resets today's progress from the beginning."
+                    "It is a today-pass goal, not a swipe count. Completion is measured by how many cards in today's target pool you can eventually mark Mastered today. That does not mean every card is permanently mastered in memory.",
+                    "这代表“今日通过目标”，不是“滑动次数”。系统按“今天目标池里有多少张最终能被你标记为掌握”来判断完成度，但这不等于这些词已经在长期记忆里永久掌握。",
+                    "It is a today-pass goal, not a swipe count. Completion is measured by how many cards in today's target pool you can eventually mark Mastered today. That does not mean every card is permanently mastered in memory."
                 )
             ),
             FAQItem(
@@ -3912,9 +3932,9 @@ private struct SettingsScreen: View {
                     "Why does a card come back after I already swiped it away?"
                 ),
                 answer: appState.localized(
-                    "After Blurry or Forgot, the app usually swaps that card out of today's active pool and issues another eligible card, so you don't get stuck looping the same few cards. The unsettled card is scheduled for a later review and usually becomes available again from the start of the next day.",
-                    "当你标记“模糊/忘记”后，系统通常会把这张卡先移出今天的活动牌池，并补发一张当前可发卡，避免你反复只刷到同几张词。未稳固的这张卡会被安排到后续复习，通常会在次日一开始重新变为可复习。",
-                    "After Blurry or Forgot, the app usually swaps that card out of today's active pool and issues another eligible card, so you don't get stuck looping the same few cards. The unsettled card is scheduled for a later review and usually becomes available again from the start of the next day."
+                    "After Blurry or Forgot, the card stays in today's target set until you can pass it today. If you later mark it Mastered on the same day, today's goal can move forward, but the long-term memory state stays unsettled and the word is scheduled for a short-term review.",
+                    "当你标记“模糊/忘记”后，这张卡仍会留在今天的目标池里，直到你今天能把它通过。若你同一天后面又标记“掌握”，今日目标可以继续推进，但长期记忆状态仍会保留为未稳固，并安排短期复习。",
+                    "After Blurry or Forgot, the card stays in today's target set until you can pass it today. If you later mark it Mastered on the same day, today's goal can move forward, but the long-term memory state stays unsettled and the word is scheduled for a short-term review."
                 )
             ),
             FAQItem(
@@ -3925,9 +3945,9 @@ private struct SettingsScreen: View {
                     "When is today's Explore session actually complete?"
                 ),
                 answer: appState.localized(
-                    "The day is complete when every card currently in today's base target pool is marked Mastered. If a card is marked Blurry or Forgot there, the app can replace it with another eligible card; Continue ∞ is separate and does not reopen today's completion.",
-                    "只有当“今天基础目标池”中的卡片都被标记为“掌握”时，首页才算完成。若你在这组卡片里标记“模糊/忘记”，系统会尝试补入其他可发卡；Continue ∞ 属于独立加练，不会重新打开今天的完成状态。",
-                    "The day is complete when every card currently in today's base target pool is marked Mastered. If a card is marked Blurry or Forgot there, the app can replace it with another eligible card; Continue ∞ is separate and does not reopen today's completion."
+                    "The day is complete when every card in today's base target pool has been passed today. A card that was Blurry or Forgot earlier can still count after you later mark it Mastered, but its Progress state may remain Blurry until a future review confirms it.",
+                    "只有当“今天基础目标池”里的每张卡都在今天通过后，首页才算完成。某张卡今天早些时候被标记过“模糊/忘记”，后面再标记“掌握”也可以计入今日完成，但它在进度页里可能仍会保持“模糊”，直到未来复习再次确认。",
+                    "The day is complete when every card in today's base target pool has been passed today. A card that was Blurry or Forgot earlier can still count after you later mark it Mastered, but its Progress state may remain Blurry until a future review confirms it."
                 )
             ),
             FAQItem(
@@ -4003,9 +4023,22 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "On today's base deck, swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. If a card shows multiple senses, the swipe applies to the sense currently displayed on the card. On cards opened from Search, Progress, or Spotlight, swipe up simply closes the card. In Continue ∞, swipes are non-persistent and only advance practice.",
-                    "在今天的基础牌堆里，右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑不记录任何操作。若一张卡包含多个义项，滑动会作用在当前卡面正在显示的那个义项上。对于从搜索、进度或 Spotlight 打开的弹出卡片，上滑仅表示关闭卡片。进入 Continue ∞ 后，所有滑动都不持久记录，只负责继续练习。",
-                    "On today's base deck, swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. If a card shows multiple senses, the swipe applies to the sense currently displayed on the card. On cards opened from Search, Progress, or Spotlight, swipe up simply closes the card. In Continue ∞, swipes are non-persistent and only advance practice."
+                    "On today's base deck, swipe right means passed today, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. Progress uses long-term memory state: if a word was Blurry or Forgot earlier today, a later right swipe completes today's card but keeps it unsettled for review.",
+                    "在今天的基础牌堆里，右滑表示“今天通过”，下滑是“模糊”，左滑是“忘记”，上滑不记录任何操作。进度页看的是长期记忆状态：如果一个词今天早些时候被标记过“模糊/忘记”，后面再右滑可以完成今日卡片，但它仍会保持未稳固并等待复习。",
+                    "On today's base deck, swipe right means passed today, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. Progress uses long-term memory state: if a word was Blurry or Forgot earlier today, a later right swipe completes today's card but keeps it unsettled for review."
+                )
+            ),
+            FAQItem(
+                id: "progress-buckets",
+                question: appState.localized(
+                    "Why can a word stay Blurry after I mark it Mastered?",
+                    "为什么我点了“掌握”，它还会留在“模糊”？",
+                    "Why can a word stay Blurry after I mark it Mastered?"
+                ),
+                answer: appState.localized(
+                    "Because Progress is not a last-swipe list. If a word was missed today, the same-day Mastered swipe only proves you can pass it after practice. The word moves back to Mastered after a later scheduled review also succeeds.",
+                    "因为进度页不是“最后一次手势列表”。如果一个词今天出错过，同一天后面的“掌握”只能说明你通过练习后暂时答对了；等后续到期复习再次成功，它才会回到“掌握”。",
+                    "Because Progress is not a last-swipe list. If a word was missed today, the same-day Mastered swipe only proves you can pass it after practice. The word moves back to Mastered after a later scheduled review also succeeds."
                 )
             ),
             FAQItem(

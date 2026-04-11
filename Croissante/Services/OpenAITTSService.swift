@@ -3,6 +3,11 @@ import AVFoundation
 
 @MainActor
 public class OpenAITTSService {
+    enum ContentType: String {
+        case word
+        case sentence
+    }
+
     private static var sharedInstance: OpenAITTSService?
     private static var shared: OpenAITTSService {
         if let existing = sharedInstance {
@@ -29,6 +34,7 @@ public class OpenAITTSService {
     private let outputFormat = "mp3"
     private let openAISpeechSpeed: Float = 1.15
     private let ttsInstructions = "Parle uniquement en français. Si le texte contient une autre langue, lis-le avec une prononciation française."
+    private let requestProfileVersion = "tts-v2"
     private let defaultBackendBaseURL = "https://croissante-tts.joey4wong.workers.dev"
     
     private let networkMonitor = NetworkMonitor.shared
@@ -57,11 +63,15 @@ public class OpenAITTSService {
         setupAudioSession()
     }
     
-    func speak(_ text: String, language: String = "fr-FR") async {
+    func speak(
+        _ text: String,
+        language: String = "fr-FR",
+        contentType: ContentType = .sentence
+    ) async {
         stop()
         
         currentTask = Task { @MainActor in
-            await performSpeak(text, language: language)
+            await performSpeak(text, language: language, contentType: contentType)
         }
     }
     
@@ -85,7 +95,11 @@ public class OpenAITTSService {
         #endif
     }
     
-    private func performSpeak(_ text: String, language: String) async {
+    private func performSpeak(
+        _ text: String,
+        language: String,
+        contentType: ContentType
+    ) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
@@ -108,14 +122,18 @@ public class OpenAITTSService {
             return
         }
 
-        let cacheText = cacheTextKey(for: trimmedText)
+        let cacheText = cacheTextKey(for: trimmedText, language: language, contentType: contentType)
         if let cachedURL = audioCache.getCachedAudioURL(forText: cacheText) {
             await playAudio(from: cachedURL)
             return
         }
         
         do {
-            let audioData = try await fetchAudioFromBackend(trimmedText)
+            let audioData = try await fetchAudioFromBackend(
+                trimmedText,
+                language: language,
+                contentType: contentType
+            )
             
             if let cachedURL = audioCache.cacheAudioData(audioData, forText: cacheText) {
                 await playAudio(from: cachedURL)
@@ -135,20 +153,32 @@ public class OpenAITTSService {
         systemSynthesizer.speak(utterance)
     }
     
-    private func makeRequestBody(for text: String) -> [String: Any] {
+    private func makeRequestBody(
+        for text: String,
+        language: String,
+        contentType: ContentType
+    ) -> [String: Any] {
         [
             "voice": voice,
-            "input": text
+            "input": text,
+            "language": language,
+            "contentType": contentType.rawValue
         ]
     }
     
-    private func fetchAudioFromBackend(_ text: String) async throws -> Data {
+    private func fetchAudioFromBackend(
+        _ text: String,
+        language: String,
+        contentType: ContentType
+    ) async throws -> Data {
         guard let url = ttsEndpointURL else { throw TTSError.networkError }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: makeRequestBody(for: text))
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: makeRequestBody(for: text, language: language, contentType: contentType)
+        )
         
         let (data, response) = try await urlSession.data(for: request)
         
@@ -163,8 +193,8 @@ public class OpenAITTSService {
         return data
     }
 
-    private func cacheTextKey(for text: String) -> String {
-        "\(modelId)|\(outputFormat)|\(voice)|\(openAISpeechSpeed)|\(ttsInstructions)|\(text)"
+    private func cacheTextKey(for text: String, language: String, contentType: ContentType) -> String {
+        "\(requestProfileVersion)|\(modelId)|\(outputFormat)|\(voice)|\(openAISpeechSpeed)|\(ttsInstructions)|\(language)|\(contentType.rawValue)|\(text)"
     }
     
     private func playAudio(from source: Any) async {
@@ -187,18 +217,26 @@ public class OpenAITTSService {
         }
     }
     
-    func preloadAudio(for texts: [String]) async {
+    func preloadAudio(
+        for texts: [String],
+        language: String = "fr-FR",
+        contentType: ContentType = .sentence
+    ) async {
         guard memberUnlocked else { return }
         guard ttsEndpointURL != nil else { return }
         for text in texts {
             let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedText.isEmpty else { continue }
-            let cacheText = cacheTextKey(for: trimmedText)
+            let cacheText = cacheTextKey(for: trimmedText, language: language, contentType: contentType)
             guard !audioCache.hasCachedAudio(forText: cacheText) else { continue }
             guard networkMonitor.isReachable else { break }
             
             do {
-                let audioData = try await fetchAudioFromBackend(trimmedText)
+                let audioData = try await fetchAudioFromBackend(
+                    trimmedText,
+                    language: language,
+                    contentType: contentType
+                )
                 _ = audioCache.cacheAudioData(audioData, forText: cacheText)
                 try await Task.sleep(nanoseconds: 100_000_000)
             } catch {}
@@ -280,9 +318,13 @@ enum TTSError: Error {
 
 extension OpenAITTSService {
     @MainActor
-    static func speakText(_ text: String, language: String = "fr-FR") {
+    static func speakText(
+        _ text: String,
+        language: String = "fr-FR",
+        contentType: ContentType = .sentence
+    ) {
         Task {
-            await shared.speak(text, language: language)
+            await shared.speak(text, language: language, contentType: contentType)
         }
     }
     

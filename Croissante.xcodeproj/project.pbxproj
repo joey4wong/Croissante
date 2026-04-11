@@ -304,9 +304,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					A10000000000000000000006 = {
-					DevelopmentTeam = M4X7UBJ3DR;
-					ProvisioningStyle = Automatic;
 						CreatedOnToolsVersion = 26.0;
+						DevelopmentTeam = M4X7UBJ3DR;
+						ProvisioningStyle = Automatic;
 					};
 					W10000000000000000000006 = {
 						CreatedOnToolsVersion = 26.0;
@@ -496,7 +496,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_DEBUG_DYLIB = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
@@ -541,7 +541,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Croissante;
@@ -582,7 +582,7 @@
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CroissanteWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";
@@ -615,7 +615,7 @@
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CroissanteWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";

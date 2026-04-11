@@ -24,6 +24,7 @@ public struct SimpleWord: Identifiable, Codable, Sendable {
     public enum CodingKeys: String, CodingKey {
         case id
         case word
+        case form
         case headword
         case displayWord = "display_word"
         case tag
@@ -95,6 +96,7 @@ public struct SimpleWord: Identifiable, Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedWord = Self.firstNonEmpty(
             try container.decodeIfPresent(String.self, forKey: .word),
+            try container.decodeIfPresent(String.self, forKey: .form),
             try container.decodeIfPresent(String.self, forKey: .headword),
             try container.decodeIfPresent(String.self, forKey: .displayWord)
         )

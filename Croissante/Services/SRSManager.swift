@@ -240,6 +240,9 @@ public final class SRSManager: ObservableObject {
         if let masteredArray = userDefaults.stringArray(forKey: Keys.masteredWordIds) {
             masteredWordIds = Set(masteredArray)
         }
+
+        migrateLegacyProgressBucketsIntoLearningRecords(now: Date())
+        syncProgressBucketsFromLearningRecords()
         
         let savedDeckDate = userDefaults.string(forKey: Keys.dailyDeckDate) ?? ""
         let today = todayKey()
@@ -302,6 +305,7 @@ public final class SRSManager: ObservableObject {
         updateTodaySnapshots()
         pruneHeatmapDataToCurrentYear(today: today)
         storeCurrentLevelSnapshot(for: today)
+        syncProgressBucketsFromLearningRecords()
 
         // Save learning records
         if let recordsData = try? JSONEncoder().encode(learningRecords) {
@@ -347,6 +351,89 @@ public final class SRSManager: ObservableObject {
             }
             guard !Task.isCancelled else { return }
             saveLearningState()
+        }
+    }
+
+    private func migrateLegacyProgressBucketsIntoLearningRecords(now: Date) {
+        guard !forgotWordIds.isEmpty || !blurryWordIds.isEmpty || !masteredWordIds.isEmpty else {
+            return
+        }
+
+        // Apply from lowest to highest risk so overlapping legacy sets settle on the riskiest state.
+        applyLegacyProgressBucket(masteredWordIds, state: .mastered, now: now)
+        applyLegacyProgressBucket(blurryWordIds, state: .blurry, now: now)
+        applyLegacyProgressBucket(forgotWordIds, state: .forgot, now: now)
+    }
+
+    private func applyLegacyProgressBucket(
+        _ wordIds: Set<String>,
+        state: LearningMemoryState,
+        now: Date
+    ) {
+        for wordId in wordIds where !wordId.isEmpty {
+            let existingRecord = learningRecords[wordId]
+            let consecutiveCorrects: Int
+            switch state {
+            case .forgot:
+                consecutiveCorrects = 0
+            case .blurry:
+                consecutiveCorrects = existingRecord?.consecutiveCorrects ?? 0
+            case .mastered:
+                consecutiveCorrects = max(1, existingRecord?.consecutiveCorrects ?? 1)
+            }
+
+            let nextReviewDate: Date
+            if let existingRecord {
+                nextReviewDate = existingRecord.nextReviewDate
+            } else if state == .mastered {
+                nextReviewDate = scheduledReviewDate(for: consecutiveCorrects, from: now)
+            } else {
+                nextReviewDate = dateByAddingDays(retryIntervalDays, from: now)
+            }
+
+            let lastMistakeAt: Date?
+            if state == .forgot || state == .blurry {
+                lastMistakeAt = existingRecord?.lastMistakeAt ?? now
+            } else {
+                lastMistakeAt = existingRecord?.lastMistakeAt
+            }
+
+            learningRecords[wordId] = LearningRecord(
+                wordId: wordId,
+                consecutiveCorrects: consecutiveCorrects,
+                nextReviewDate: nextReviewDate,
+                memoryState: state,
+                lastReviewedAt: existingRecord?.lastReviewedAt,
+                lastMistakeAt: lastMistakeAt,
+                forgotCount: existingRecord?.forgotCount ?? (state == .forgot ? 1 : 0),
+                blurryCount: existingRecord?.blurryCount ?? (state == .blurry ? 1 : 0),
+                successfulReviewsSinceMistake: existingRecord?.successfulReviewsSinceMistake ?? (state == .mastered ? 1 : 0)
+            )
+        }
+    }
+
+    private func syncProgressBucketsFromLearningRecords() {
+        forgotWordIds = []
+        blurryWordIds = []
+        masteredWordIds = []
+
+        for record in learningRecords.values {
+            updateProgressBucketMembership(for: record.wordId, state: record.memoryState)
+        }
+    }
+
+    private func updateProgressBucketMembership(for wordId: String, state: LearningMemoryState) {
+        forgotWordIds.remove(wordId)
+        blurryWordIds.remove(wordId)
+        masteredWordIds.remove(wordId)
+
+        switch state {
+        case .forgot:
+            forgotWordIds.insert(wordId)
+        case .blurry:
+            blurryWordIds.insert(wordId)
+        case .mastered:
+            masteredWordIds.insert(wordId)
         }
     }
 
@@ -403,25 +490,37 @@ public final class SRSManager: ObservableObject {
             return
         }
         let countedInTodayDeck = affectsDailyProgress && dailyDeckWordIds.contains(wordId)
-        let oldCorrects = learningRecords[wordId]?.consecutiveCorrects ?? 0
+        let oldRecord = learningRecords[wordId]
+        let oldCorrects = oldRecord?.consecutiveCorrects ?? 0
 
         // 新词首次“掌握”只记为 1 次连对，不再直接毕业。
         let nextCorrects: Int
-        if learningRecords[wordId] == nil {
+        if oldRecord == nil {
             nextCorrects = 1
         } else {
             nextCorrects = min(oldCorrects + 1, masteryThreshold)
         }
+        let hadMistakeToday = oldRecord.map { didMarkMistakeOnSameDay(in: $0, as: now) } ?? false
+        let nextMemoryState: LearningMemoryState = hadMistakeToday ? .blurry : .mastered
+        let nextReviewDate = hadMistakeToday
+            ? dateByAddingDays(retryIntervalDays, from: now)
+            : scheduledReviewDate(for: nextCorrects, from: now)
 
         learningRecords[wordId] = LearningRecord(
             wordId: wordId,
             consecutiveCorrects: nextCorrects,
-            nextReviewDate: scheduledReviewDate(for: nextCorrects, from: now)
+            nextReviewDate: nextReviewDate,
+            memoryState: nextMemoryState,
+            lastReviewedAt: now,
+            lastMistakeAt: oldRecord?.lastMistakeAt,
+            forgotCount: oldRecord?.forgotCount ?? 0,
+            blurryCount: oldRecord?.blurryCount ?? 0,
+            successfulReviewsSinceMistake: hadMistakeToday
+                ? 0
+                : ((oldRecord?.successfulReviewsSinceMistake ?? 0) + 1)
         )
 
-        masteredWordIds.insert(wordId)
-        blurryWordIds.remove(wordId)
-        forgotWordIds.remove(wordId)
+        updateProgressBucketMembership(for: wordId, state: nextMemoryState)
         if countedInTodayDeck {
             dailyMasteredDeckWordIds.insert(wordId)
         }
@@ -455,12 +554,16 @@ public final class SRSManager: ObservableObject {
         learningRecords[wordId] = LearningRecord(
             wordId: wordId,
             consecutiveCorrects: nextCorrects,
-            nextReviewDate: nextReviewDate
+            nextReviewDate: nextReviewDate,
+            memoryState: .blurry,
+            lastReviewedAt: now,
+            lastMistakeAt: now,
+            forgotCount: oldRecord.forgotCount,
+            blurryCount: oldRecord.blurryCount + 1,
+            successfulReviewsSinceMistake: 0
         )
         
-        blurryWordIds.insert(wordId)
-        masteredWordIds.remove(wordId)
-        forgotWordIds.remove(wordId)
+        updateProgressBucketMembership(for: wordId, state: .blurry)
         if affectsDailyProgress {
             dailyMasteredDeckWordIds.remove(wordId)
             stopInfinitePracticeIfDailyGoalReopened(by: wordId)
@@ -479,17 +582,22 @@ public final class SRSManager: ObservableObject {
         if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
             return
         }
+        let oldRecord = learningRecords[wordId]
 
         // 连续答对归零，下次明天复习。
         learningRecords[wordId] = LearningRecord(
             wordId: wordId,
             consecutiveCorrects: 0,
-            nextReviewDate: dateByAddingDays(retryIntervalDays, from: now)
+            nextReviewDate: dateByAddingDays(retryIntervalDays, from: now),
+            memoryState: .forgot,
+            lastReviewedAt: now,
+            lastMistakeAt: now,
+            forgotCount: (oldRecord?.forgotCount ?? 0) + 1,
+            blurryCount: oldRecord?.blurryCount ?? 0,
+            successfulReviewsSinceMistake: 0
         )
         
-        forgotWordIds.insert(wordId)
-        masteredWordIds.remove(wordId)
-        blurryWordIds.remove(wordId)
+        updateProgressBucketMembership(for: wordId, state: .forgot)
         if affectsDailyProgress {
             dailyMasteredDeckWordIds.remove(wordId)
             stopInfinitePracticeIfDailyGoalReopened(by: wordId)
@@ -554,6 +662,9 @@ public final class SRSManager: ObservableObject {
     }
     
     func removeWordFromMastered(_ wordId: String) {
+        if learningRecords[wordId]?.memoryState == .mastered {
+            learningRecords.removeValue(forKey: wordId)
+        }
         masteredWordIds.remove(wordId)
         dailyMasteredDeckWordIds.remove(wordId)
         refreshCurrentDeckState(afterMutating: wordId)
@@ -561,12 +672,18 @@ public final class SRSManager: ObservableObject {
     }
     
     func removeWordFromBlurry(_ wordId: String) {
+        if learningRecords[wordId]?.memoryState == .blurry {
+            learningRecords.removeValue(forKey: wordId)
+        }
         blurryWordIds.remove(wordId)
         refreshCurrentDeckState(afterMutating: wordId)
         saveLearningState()
     }
     
     func removeWordFromForgot(_ wordId: String) {
+        if learningRecords[wordId]?.memoryState == .forgot {
+            learningRecords.removeValue(forKey: wordId)
+        }
         forgotWordIds.remove(wordId)
         refreshCurrentDeckState(afterMutating: wordId)
         saveLearningState()
@@ -701,7 +818,13 @@ public final class SRSManager: ObservableObject {
             partialResult[pair.key] = LearningRecord(
                 wordId: record.wordId,
                 consecutiveCorrects: record.consecutiveCorrects,
-                nextReviewDate: normalizedDate
+                nextReviewDate: normalizedDate,
+                memoryState: record.memoryState,
+                lastReviewedAt: record.lastReviewedAt,
+                lastMistakeAt: record.lastMistakeAt,
+                forgotCount: record.forgotCount,
+                blurryCount: record.blurryCount,
+                successfulReviewsSinceMistake: record.successfulReviewsSinceMistake
             )
         }
     }
@@ -714,6 +837,11 @@ public final class SRSManager: ObservableObject {
     private func dateByAddingDays(_ days: Int, from date: Date) -> Date {
         let anchor = normalizedReviewDate(date)
         return calendar.date(byAdding: .day, value: days, to: anchor) ?? anchor
+    }
+
+    private func didMarkMistakeOnSameDay(in record: LearningRecord, as date: Date) -> Bool {
+        guard let lastMistakeAt = record.lastMistakeAt else { return false }
+        return calendar.isDate(lastMistakeAt, inSameDayAs: date)
     }
 
     private func scheduledReviewDate(for consecutiveCorrects: Int, from date: Date) -> Date {
@@ -933,20 +1061,30 @@ public final class SRSManager: ObservableObject {
         guard let appState = appState else { return [] }
         return dailyDeckWordIds.compactMap { appState.getWordById($0) }
     }
+
+    private func words(inMemoryState state: LearningMemoryState) -> [SimpleWord] {
+        guard let appState = appState else { return [] }
+        return learningRecords.values
+            .filter { $0.memoryState == state }
+            .sorted { lhs, rhs in
+                let lhsDate = lhs.lastReviewedAt ?? lhs.lastMistakeAt ?? lhs.nextReviewDate
+                let rhsDate = rhs.lastReviewedAt ?? rhs.lastMistakeAt ?? rhs.nextReviewDate
+                if lhsDate == rhsDate { return lhs.wordId < rhs.wordId }
+                return lhsDate > rhsDate
+            }
+            .compactMap { appState.getWordById($0.wordId) }
+    }
     
     public func getMasteredWords() -> [SimpleWord] {
-        guard let appState = appState else { return [] }
-        return masteredWordIds.compactMap { appState.getWordById($0) }
+        words(inMemoryState: .mastered)
     }
     
     public func getBlurryWords() -> [SimpleWord] {
-        guard let appState = appState else { return [] }
-        return blurryWordIds.compactMap { appState.getWordById($0) }
+        words(inMemoryState: .blurry)
     }
     
     public func getForgotWords() -> [SimpleWord] {
-        guard let appState = appState else { return [] }
-        return forgotWordIds.compactMap { appState.getWordById($0) }
+        words(inMemoryState: .forgot)
     }
     
     func isWordMastered(_ wordId: String) -> Bool {
@@ -1295,6 +1433,7 @@ public final class SRSManager: ObservableObject {
         let filteredRecords = learningRecords.filter { validWordIds.contains($0.key) }
         if filteredRecords.count != learningRecords.count {
             learningRecords = filteredRecords
+            syncProgressBucketsFromLearningRecords()
             didPrune = true
         }
 
@@ -1334,6 +1473,7 @@ public final class SRSManager: ObservableObject {
         guard appState?.iCloudSyncEnabled == true else { return }
         guard !isApplyingRemoteSyncPayload else { return }
         if adoptRemotePayloadIfResetVersionIsHigher() { return }
+        syncProgressBucketsFromLearningRecords()
 
         if force {
             lastLearningStateMutationAt = Date()
@@ -1395,6 +1535,7 @@ public final class SRSManager: ObservableObject {
         forgotWordIds = Set(payload.forgotWordIds)
         blurryWordIds = Set(payload.blurryWordIds)
         masteredWordIds = Set(payload.masteredWordIds)
+        migrateLegacyProgressBucketsIntoLearningRecords(now: Date())
         dailyCompletionRatios = payload.dailyCompletionRatios
         dailyStudyStates = payload.dailyStudyStates.filter { DailyStudyState(rawValue: $0.value) != nil }
         isInfinitePracticeActive = payload.isInfinitePracticeActive
@@ -1405,6 +1546,7 @@ public final class SRSManager: ObservableObject {
                 _ = pruneLearningState(using: validWordIds)
             }
         }
+        syncProgressBucketsFromLearningRecords()
         sanitizeDeckState(preferredQueueIds: payload.learningQueueIds)
 
         lastLearningStateMutationAt = payload.updatedAt
