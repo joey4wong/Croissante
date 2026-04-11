@@ -490,6 +490,7 @@ public final class SRSManager: ObservableObject {
             return
         }
         let countedInTodayDeck = affectsDailyProgress && dailyDeckWordIds.contains(wordId)
+        let wasInLearningQueue = learningQueueIds.contains(wordId)
         let oldRecord = learningRecords[wordId]
         let oldCorrects = oldRecord?.consecutiveCorrects ?? 0
 
@@ -525,7 +526,7 @@ public final class SRSManager: ObservableObject {
             dailyMasteredDeckWordIds.insert(wordId)
         }
 
-        if affectsDailyProgress {
+        if affectsDailyProgress || (isInfinitePracticeActive && wasInLearningQueue) {
             removeWordFromLearningQueue(wordId)
             refillInfiniteQueueIfNeeded(now: now)
         }
@@ -541,6 +542,7 @@ public final class SRSManager: ObservableObject {
         if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
             return
         }
+        let wasInLearningQueue = learningQueueIds.contains(wordId)
         let oldRecord = learningRecords[wordId] ?? LearningRecord(
             wordId: wordId,
             consecutiveCorrects: 0,
@@ -569,6 +571,9 @@ public final class SRSManager: ObservableObject {
             stopInfinitePracticeIfDailyGoalReopened(by: wordId)
             enqueueWordForReview(wordId)
             refillInfiniteQueueIfNeeded(now: now)
+        } else if isInfinitePracticeActive && wasInLearningQueue {
+            enqueueWordForReview(wordId)
+            refillInfiniteQueueIfNeeded(now: now)
         }
         saveLearningState()
     }
@@ -582,6 +587,7 @@ public final class SRSManager: ObservableObject {
         if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
             return
         }
+        let wasInLearningQueue = learningQueueIds.contains(wordId)
         let oldRecord = learningRecords[wordId]
 
         // 连续答对归零，下次明天复习。
@@ -601,6 +607,9 @@ public final class SRSManager: ObservableObject {
         if affectsDailyProgress {
             dailyMasteredDeckWordIds.remove(wordId)
             stopInfinitePracticeIfDailyGoalReopened(by: wordId)
+            enqueueWordForReview(wordId)
+            refillInfiniteQueueIfNeeded(now: now)
+        } else if isInfinitePracticeActive && wasInLearningQueue {
             enqueueWordForReview(wordId)
             refillInfiniteQueueIfNeeded(now: now)
         }

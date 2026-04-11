@@ -138,15 +138,15 @@ public struct ContentView: View {
             },
             onSwipeForgot: { [self] id in
                 if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
-                srsManager.markWordForgot(id); advanceDiscover()
+                markDiscoverWordForgot(id)
             },
             onSwipeMastered: { [self] id in
                 if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
-                srsManager.markWordMastered(id); advanceDiscover()
+                markDiscoverWordMastered(id)
             },
             onSwipeBlurry: { [self] id in
                 if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
-                srsManager.markWordBlurry(id); advanceDiscover()
+                markDiscoverWordBlurry(id)
             }
         )
     }
@@ -263,6 +263,36 @@ public struct ContentView: View {
 
     private func advanceDiscover() {
         discoverQueueIndex = 0
+    }
+
+    private func markDiscoverWordForgot(_ id: String) {
+        let isInfinitePractice = srsManager.isInfinitePracticeActive
+        srsManager.markWordForgot(
+            id,
+            persistDuringInfinitePractice: isInfinitePractice,
+            affectsDailyProgress: !isInfinitePractice
+        )
+        advanceDiscover()
+    }
+
+    private func markDiscoverWordMastered(_ id: String) {
+        let isInfinitePractice = srsManager.isInfinitePracticeActive
+        srsManager.markWordMastered(
+            id,
+            persistDuringInfinitePractice: isInfinitePractice,
+            affectsDailyProgress: !isInfinitePractice
+        )
+        advanceDiscover()
+    }
+
+    private func markDiscoverWordBlurry(_ id: String) {
+        let isInfinitePractice = srsManager.isInfinitePracticeActive
+        srsManager.markWordBlurry(
+            id,
+            persistDuringInfinitePractice: isInfinitePractice,
+            affectsDailyProgress: !isInfinitePractice
+        )
+        advanceDiscover()
     }
 
     private func advanceGestureOnboarding() {
@@ -3958,9 +3988,9 @@ private struct SettingsScreen: View {
                     "What is Continue ∞ and when does it appear?"
                 ),
                 answer: appState.localized(
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there are disposable practice only: they do not write memory state, progress buckets, today's completion, or the heatmap.",
-                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。这里的滑动只用于继续练习，不会写入记忆状态、进度分类、今日完成状态或热力图。",
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there are disposable practice only: they do not write memory state, progress buckets, today's completion, or the heatmap."
+                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap.",
+                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。这里的滑动会写入记忆状态、进度分类和下次复习安排，但不会改动今日基础目标的完成状态或热力图。",
+                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap."
                 )
             ),
             FAQItem(
