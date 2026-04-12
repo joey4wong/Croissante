@@ -13,9 +13,6 @@ struct LearningRecord: Codable {
     let memoryState: LearningMemoryState
     let lastReviewedAt: Date?
     let lastMistakeAt: Date?
-    let forgotCount: Int
-    let blurryCount: Int
-    let successfulReviewsSinceMistake: Int
     
     enum CodingKeys: String, CodingKey {
         case wordId
@@ -24,9 +21,6 @@ struct LearningRecord: Codable {
         case memoryState
         case lastReviewedAt
         case lastMistakeAt
-        case forgotCount
-        case blurryCount
-        case successfulReviewsSinceMistake
     }
 
     private static let iso8601WithFractionalSeconds = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
@@ -38,10 +32,7 @@ struct LearningRecord: Codable {
         nextReviewDate: Date,
         memoryState: LearningMemoryState = .mastered,
         lastReviewedAt: Date? = nil,
-        lastMistakeAt: Date? = nil,
-        forgotCount: Int = 0,
-        blurryCount: Int = 0,
-        successfulReviewsSinceMistake: Int = 0
+        lastMistakeAt: Date? = nil
     ) {
         self.wordId = wordId
         self.consecutiveCorrects = max(0, consecutiveCorrects)
@@ -49,9 +40,6 @@ struct LearningRecord: Codable {
         self.memoryState = memoryState
         self.lastReviewedAt = lastReviewedAt
         self.lastMistakeAt = lastMistakeAt
-        self.forgotCount = max(0, forgotCount)
-        self.blurryCount = max(0, blurryCount)
-        self.successfulReviewsSinceMistake = max(0, successfulReviewsSinceMistake)
     }
     
     init(from decoder: Decoder) throws {
@@ -64,9 +52,6 @@ struct LearningRecord: Codable {
         self.memoryState = Self.decodeMemoryState(from: container) ?? .mastered
         self.lastReviewedAt = Self.decodeDateIfPresent(from: container, forKey: .lastReviewedAt)
         self.lastMistakeAt = Self.decodeDateIfPresent(from: container, forKey: .lastMistakeAt)
-        self.forgotCount = max(0, (try? container.decodeIfPresent(Int.self, forKey: .forgotCount)) ?? 0)
-        self.blurryCount = max(0, (try? container.decodeIfPresent(Int.self, forKey: .blurryCount)) ?? 0)
-        self.successfulReviewsSinceMistake = max(0, (try? container.decodeIfPresent(Int.self, forKey: .successfulReviewsSinceMistake)) ?? 0)
     }
     
     func encode(to encoder: Encoder) throws {
@@ -79,9 +64,6 @@ struct LearningRecord: Codable {
         try container.encode(memoryState.rawValue, forKey: .memoryState)
         try Self.encodeDateIfPresent(lastReviewedAt, into: &container, forKey: .lastReviewedAt)
         try Self.encodeDateIfPresent(lastMistakeAt, into: &container, forKey: .lastMistakeAt)
-        try container.encode(forgotCount, forKey: .forgotCount)
-        try container.encode(blurryCount, forKey: .blurryCount)
-        try container.encode(successfulReviewsSinceMistake, forKey: .successfulReviewsSinceMistake)
     }
 
     private static func decodeMemoryState(from container: KeyedDecodingContainer<CodingKeys>) -> LearningMemoryState? {

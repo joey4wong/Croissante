@@ -1,6 +1,193 @@
 import Foundation
 import Combine
 
+private struct SRSScheduler {
+    let calendar: Calendar
+    let masteryThreshold: Int
+    let newCardQuotaRatio: Double
+    let retryIntervalDays: Int
+    let graduationYears: Int
+
+    func normalizedReviewDate(_ date: Date) -> Date {
+        calendar.startOfDay(for: date)
+    }
+
+    func retryReviewDate(from date: Date) -> Date {
+        dateByAddingDays(retryIntervalDays, from: date)
+    }
+
+    func scheduledReviewDate(for consecutiveCorrects: Int, from date: Date) -> Date {
+        let anchor = normalizedReviewDate(date)
+        if consecutiveCorrects >= masteryThreshold {
+            return calendar.date(byAdding: .year, value: graduationYears, to: anchor) ?? anchor
+        }
+
+        let intervalDays: Int
+        switch consecutiveCorrects {
+        case ..<1:
+            intervalDays = 1
+        case 1:
+            intervalDays = 2
+        case 2:
+            intervalDays = 4
+        case 3:
+            intervalDays = 8
+        default:
+            intervalDays = 15
+        }
+
+        return dateByAddingDays(intervalDays, from: anchor)
+    }
+
+    func buildDailyDeck(
+        from levelFilteredWords: [SimpleWord],
+        records: [String: LearningRecord],
+        now: Date,
+        deckLimit: Int
+    ) -> [SimpleWord] {
+        let dueReviewWords = dueReviewWords(in: levelFilteredWords, records: records, now: now)
+        let newWords = levelFilteredWords.filter { records[$0.id] == nil }.shuffled()
+
+        let guaranteedNewQuota = dailyNewWordQuota(for: deckLimit)
+        let reviewQuota = max(0, deckLimit - guaranteedNewQuota)
+
+        var selectedReviewWords = Array(dueReviewWords.prefix(reviewQuota))
+        var selectedNewWords = Array(newWords.prefix(guaranteedNewQuota))
+
+        if selectedReviewWords.count < reviewQuota {
+            let shortage = reviewQuota - selectedReviewWords.count
+            let remainingNewWords = newWords.dropFirst(selectedNewWords.count)
+            selectedNewWords.append(contentsOf: remainingNewWords.prefix(shortage))
+        }
+
+        if selectedNewWords.count < guaranteedNewQuota {
+            let shortage = guaranteedNewQuota - selectedNewWords.count
+            let remainingReviewWords = dueReviewWords.dropFirst(selectedReviewWords.count)
+            selectedReviewWords.append(contentsOf: remainingReviewWords.prefix(shortage))
+        }
+
+        return Array((selectedReviewWords + selectedNewWords).shuffled().prefix(deckLimit))
+    }
+
+    func buildInfinitePracticeBatch(
+        from levelFilteredWords: [SimpleWord],
+        records: [String: LearningRecord],
+        now: Date,
+        batchSize: Int
+    ) -> [SimpleWord] {
+        guard batchSize > 0, !levelFilteredWords.isEmpty else { return [] }
+
+        let dueReviewWords = dueReviewWords(in: levelFilteredWords, records: records, now: now)
+        let newWords = levelFilteredWords.filter { records[$0.id] == nil }.shuffled()
+        let reinforcementWords = levelFilteredWords.filter { records[$0.id] != nil }.shuffled()
+
+        var result: [SimpleWord] = []
+        var seenIds: Set<String> = []
+
+        func appendUnique(_ words: [SimpleWord]) {
+            for word in words {
+                guard seenIds.insert(word.id).inserted else { continue }
+                result.append(word)
+                if result.count >= batchSize { return }
+            }
+        }
+
+        appendUnique(dueReviewWords)
+        if result.count < batchSize { appendUnique(newWords) }
+        if result.count < batchSize { appendUnique(reinforcementWords) }
+        if result.count < batchSize { appendUnique(levelFilteredWords.shuffled()) }
+
+        return Array(result.prefix(batchSize))
+    }
+
+    func buildPreviewContinuation(
+        from filteredWords: [SimpleWord],
+        records: [String: LearningRecord],
+        now: Date,
+        excluding excludedIds: Set<String>,
+        dayKey: String
+    ) -> [SimpleWord] {
+        let availableWords = filteredWords.filter { !excludedIds.contains($0.id) }
+        guard !availableWords.isEmpty else { return [] }
+
+        let dueReviewWords = dueReviewWords(in: availableWords, records: records, now: now)
+        let dueReviewIDs = Set(dueReviewWords.map(\.id))
+        let newWords = stablePreviewOrder(
+            availableWords.filter { records[$0.id] == nil },
+            salt: "new",
+            dayKey: dayKey
+        )
+        let reinforcementWords = stablePreviewOrder(
+            availableWords.filter { records[$0.id] != nil && !dueReviewIDs.contains($0.id) },
+            salt: "reinforcement",
+            dayKey: dayKey
+        )
+
+        var result: [SimpleWord] = []
+        result.reserveCapacity(availableWords.count)
+        var seenIds: Set<String> = []
+
+        func appendUnique(_ words: [SimpleWord]) {
+            for word in words where seenIds.insert(word.id).inserted {
+                result.append(word)
+            }
+        }
+
+        appendUnique(dueReviewWords)
+        appendUnique(newWords)
+        appendUnique(reinforcementWords)
+        return result
+    }
+
+    func dueReviewWords(
+        in words: [SimpleWord],
+        records: [String: LearningRecord],
+        now: Date
+    ) -> [SimpleWord] {
+        words
+            .filter { word in
+                guard let record = records[word.id] else { return false }
+                return record.consecutiveCorrects < masteryThreshold && record.nextReviewDate <= now
+            }
+            .sorted { lhs, rhs in
+                let lhsDate = records[lhs.id]?.nextReviewDate ?? .distantFuture
+                let rhsDate = records[rhs.id]?.nextReviewDate ?? .distantFuture
+                if lhsDate == rhsDate { return lhs.id < rhs.id }
+                return lhsDate < rhsDate
+            }
+    }
+
+    private func dailyNewWordQuota(for deckLimit: Int) -> Int {
+        guard deckLimit > 0 else { return 0 }
+        return max(1, Int(ceil(Double(deckLimit) * newCardQuotaRatio)))
+    }
+
+    private func dateByAddingDays(_ days: Int, from date: Date) -> Date {
+        let anchor = normalizedReviewDate(date)
+        return calendar.date(byAdding: .day, value: days, to: anchor) ?? anchor
+    }
+
+    private func stablePreviewOrder(_ words: [SimpleWord], salt: String, dayKey: String) -> [SimpleWord] {
+        words.sorted { lhs, rhs in
+            let lhsRank = stablePreviewRank(for: lhs.id, salt: salt, dayKey: dayKey)
+            let rhsRank = stablePreviewRank(for: rhs.id, salt: salt, dayKey: dayKey)
+            if lhsRank == rhsRank {
+                return lhs.id < rhs.id
+            }
+            return lhsRank < rhsRank
+        }
+    }
+
+    private func stablePreviewRank(for id: String, salt: String, dayKey: String) -> UInt64 {
+        var hash: UInt64 = 1469598103934665603
+        for byte in "\(dayKey)|\(salt)|\(id)".utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        return hash
+    }
+}
+
 /// Spaced Repetition System Manager for learning French words
 @MainActor
 public final class SRSManager: ObservableObject {
@@ -10,6 +197,12 @@ public final class SRSManager: ObservableObject {
         case noEligibleCards = "no_eligible_cards"
         case inProgress = "in_progress"
         case completed = "completed"
+    }
+
+    private enum ReviewOutcome {
+        case mastered
+        case blurry
+        case forgot
     }
 
     private struct LevelDailyDeckSnapshot: Codable {
@@ -63,9 +256,9 @@ public final class SRSManager: ObservableObject {
         let dailyMasteredDeckWordIds: [String]
         let learningQueueIds: [String]
         let levelDailyDeckSnapshots: [String: LevelDailyDeckSnapshot]
-        let forgotWordIds: [String]
-        let blurryWordIds: [String]
-        let masteredWordIds: [String]
+        let forgotWordIds: [String]?
+        let blurryWordIds: [String]?
+        let masteredWordIds: [String]?
         let dailyCompletionRatios: [String: Double]
         let dailyStudyStates: [String: String]
         let isInfinitePracticeActive: Bool
@@ -117,9 +310,6 @@ public final class SRSManager: ObservableObject {
     @Published private(set) var dailyDeckLimit: Int = 50
     @Published private(set) var dailyDeckWordIds: [String] = []
     @Published private(set) var dailyMasteredDeckWordIds: Set<String> = []
-    @Published private(set) var forgotWordIds: Set<String> = []
-    @Published private(set) var blurryWordIds: Set<String> = []
-    @Published private(set) var masteredWordIds: Set<String> = []
     @Published private(set) var learningQueueIds: [String] = []
     @Published private(set) var dailyCompletionRatios: [String: Double] = [:]
     @Published private(set) var dailyStudyStates: [String: String] = [:]
@@ -144,6 +334,20 @@ public final class SRSManager: ObservableObject {
     private var isApplyingRemoteSyncPayload = false
     private lazy var iCloudSyncDeviceId: String = loadOrCreateICloudSyncDeviceId()
     private var appState: AppState? = nil
+
+    var forgotWordIds: Set<String> { wordIds(inMemoryState: .forgot) }
+    var blurryWordIds: Set<String> { wordIds(inMemoryState: .blurry) }
+    var masteredWordIds: Set<String> { wordIds(inMemoryState: .mastered) }
+
+    private var scheduler: SRSScheduler {
+        SRSScheduler(
+            calendar: calendar,
+            masteryThreshold: masteryThreshold,
+            newCardQuotaRatio: newCardQuotaRatio,
+            retryIntervalDays: retryIntervalDays,
+            graduationYears: graduationYears
+        )
+    }
     
     private init() {
         loadLearningState()
@@ -228,21 +432,16 @@ public final class SRSManager: ObservableObject {
             }
         }
         
-        // Forgot, Blurry, Mastered Word IDs
-        if let forgotArray = userDefaults.stringArray(forKey: Keys.forgotWordIds) {
-            forgotWordIds = Set(forgotArray)
-        }
-        
-        if let blurryArray = userDefaults.stringArray(forKey: Keys.blurryWordIds) {
-            blurryWordIds = Set(blurryArray)
-        }
-        
-        if let masteredArray = userDefaults.stringArray(forKey: Keys.masteredWordIds) {
-            masteredWordIds = Set(masteredArray)
-        }
-
-        migrateLegacyProgressBucketsIntoLearningRecords(now: Date())
-        syncProgressBucketsFromLearningRecords()
+        let legacyForgotWordIds = Set(userDefaults.stringArray(forKey: Keys.forgotWordIds) ?? [])
+        let legacyBlurryWordIds = Set(userDefaults.stringArray(forKey: Keys.blurryWordIds) ?? [])
+        let legacyMasteredWordIds = Set(userDefaults.stringArray(forKey: Keys.masteredWordIds) ?? [])
+        migrateLegacyProgressBucketsIntoLearningRecords(
+            forgotWordIds: legacyForgotWordIds,
+            blurryWordIds: legacyBlurryWordIds,
+            masteredWordIds: legacyMasteredWordIds,
+            now: Date()
+        )
+        clearLegacyProgressBucketDefaults()
         
         let savedDeckDate = userDefaults.string(forKey: Keys.dailyDeckDate) ?? ""
         let today = todayKey()
@@ -298,14 +497,13 @@ public final class SRSManager: ObservableObject {
         }
     }
     
-    private func saveLearningState() {
+    private func saveLearningState(touchMutation: Bool = false) {
         pendingLearningStateSaveTask?.cancel()
         pendingLearningStateSaveTask = nil
         let today = todayKey()
         updateTodaySnapshots()
         pruneHeatmapDataToCurrentYear(today: today)
         storeCurrentLevelSnapshot(for: today)
-        syncProgressBucketsFromLearningRecords()
 
         // Save learning records
         if let recordsData = try? JSONEncoder().encode(learningRecords) {
@@ -322,39 +520,44 @@ public final class SRSManager: ObservableObject {
         userDefaults.set(learningQueueIds, forKey: Keys.learningQueueIds)
         userDefaults.set(Array(dailyMasteredDeckWordIds), forKey: Keys.dailyMasteredDeckWordIds)
         
-        // Save word state sets
-        userDefaults.set(Array(forgotWordIds), forKey: Keys.forgotWordIds)
-        userDefaults.set(Array(blurryWordIds), forKey: Keys.blurryWordIds)
-        userDefaults.set(Array(masteredWordIds), forKey: Keys.masteredWordIds)
+        clearLegacyProgressBucketDefaults()
         userDefaults.set(dailyCompletionRatios, forKey: Keys.dailyCompletionRatios)
         userDefaults.set(dailyStudyStates, forKey: Keys.dailyStudyStates)
         if let snapshotData = try? JSONEncoder().encode(levelDailyDeckSnapshots) {
             userDefaults.set(snapshotData, forKey: Keys.levelDailyDeckSnapshots)
         }
 
-        if !isApplyingRemoteSyncPayload {
+        if touchMutation && !isApplyingRemoteSyncPayload {
             lastLearningStateMutationAt = Date()
         }
         userDefaults.set(lastLearningStateMutationAt, forKey: Keys.lastLearningStateMutationAt)
         userDefaults.set(learningSyncResetVersion, forKey: Keys.learningSyncResetVersion)
 
-        if !isApplyingRemoteSyncPayload {
+        if touchMutation && !isApplyingRemoteSyncPayload {
             pushLearningStateToICloudIfNeeded()
         }
     }
 
-    public func scheduleLearningStateSave(delayNanoseconds: UInt64 = 180_000_000) {
+    public func scheduleLearningStateSave(
+        delayNanoseconds: UInt64 = 180_000_000,
+        touchMutation: Bool = false
+    ) {
         pendingLearningStateSaveTask?.cancel()
         pendingLearningStateSaveTask = Task { @MainActor in
             if delayNanoseconds > 0 {
                 try? await Task.sleep(nanoseconds: delayNanoseconds)
             }
             guard !Task.isCancelled else { return }
-            saveLearningState()
+            saveLearningState(touchMutation: touchMutation)
         }
     }
 
-    private func migrateLegacyProgressBucketsIntoLearningRecords(now: Date) {
+    private func migrateLegacyProgressBucketsIntoLearningRecords(
+        forgotWordIds: Set<String>,
+        blurryWordIds: Set<String>,
+        masteredWordIds: Set<String>,
+        now: Date
+    ) {
         guard !forgotWordIds.isEmpty || !blurryWordIds.isEmpty || !masteredWordIds.isEmpty else {
             return
         }
@@ -386,9 +589,9 @@ public final class SRSManager: ObservableObject {
             if let existingRecord {
                 nextReviewDate = existingRecord.nextReviewDate
             } else if state == .mastered {
-                nextReviewDate = scheduledReviewDate(for: consecutiveCorrects, from: now)
+                nextReviewDate = scheduler.scheduledReviewDate(for: consecutiveCorrects, from: now)
             } else {
-                nextReviewDate = dateByAddingDays(retryIntervalDays, from: now)
+                nextReviewDate = scheduler.retryReviewDate(from: now)
             }
 
             let lastMistakeAt: Date?
@@ -404,37 +607,15 @@ public final class SRSManager: ObservableObject {
                 nextReviewDate: nextReviewDate,
                 memoryState: state,
                 lastReviewedAt: existingRecord?.lastReviewedAt,
-                lastMistakeAt: lastMistakeAt,
-                forgotCount: existingRecord?.forgotCount ?? (state == .forgot ? 1 : 0),
-                blurryCount: existingRecord?.blurryCount ?? (state == .blurry ? 1 : 0),
-                successfulReviewsSinceMistake: existingRecord?.successfulReviewsSinceMistake ?? (state == .mastered ? 1 : 0)
+                lastMistakeAt: lastMistakeAt
             )
         }
     }
 
-    private func syncProgressBucketsFromLearningRecords() {
-        forgotWordIds = []
-        blurryWordIds = []
-        masteredWordIds = []
-
-        for record in learningRecords.values {
-            updateProgressBucketMembership(for: record.wordId, state: record.memoryState)
-        }
-    }
-
-    private func updateProgressBucketMembership(for wordId: String, state: LearningMemoryState) {
-        forgotWordIds.remove(wordId)
-        blurryWordIds.remove(wordId)
-        masteredWordIds.remove(wordId)
-
-        switch state {
-        case .forgot:
-            forgotWordIds.insert(wordId)
-        case .blurry:
-            blurryWordIds.insert(wordId)
-        case .mastered:
-            masteredWordIds.insert(wordId)
-        }
+    private func clearLegacyProgressBucketDefaults() {
+        userDefaults.removeObject(forKey: Keys.forgotWordIds)
+        userDefaults.removeObject(forKey: Keys.blurryWordIds)
+        userDefaults.removeObject(forKey: Keys.masteredWordIds)
     }
 
     private func refreshDailyDeckIfNeeded(knownDeckDate: String? = nil) {
@@ -485,52 +666,12 @@ public final class SRSManager: ObservableObject {
         persistDuringInfinitePractice: Bool = false,
         affectsDailyProgress: Bool = true
     ) {
-        let now = Date()
-        if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
-            return
-        }
-        let countedInTodayDeck = affectsDailyProgress && dailyDeckWordIds.contains(wordId)
-        let wasInLearningQueue = learningQueueIds.contains(wordId)
-        let oldRecord = learningRecords[wordId]
-        let oldCorrects = oldRecord?.consecutiveCorrects ?? 0
-
-        // 新词首次“掌握”只记为 1 次连对，不再直接毕业。
-        let nextCorrects: Int
-        if oldRecord == nil {
-            nextCorrects = 1
-        } else {
-            nextCorrects = min(oldCorrects + 1, masteryThreshold)
-        }
-        let hadMistakeToday = oldRecord.map { didMarkMistakeOnSameDay(in: $0, as: now) } ?? false
-        let nextMemoryState: LearningMemoryState = hadMistakeToday ? .blurry : .mastered
-        let nextReviewDate = hadMistakeToday
-            ? dateByAddingDays(retryIntervalDays, from: now)
-            : scheduledReviewDate(for: nextCorrects, from: now)
-
-        learningRecords[wordId] = LearningRecord(
-            wordId: wordId,
-            consecutiveCorrects: nextCorrects,
-            nextReviewDate: nextReviewDate,
-            memoryState: nextMemoryState,
-            lastReviewedAt: now,
-            lastMistakeAt: oldRecord?.lastMistakeAt,
-            forgotCount: oldRecord?.forgotCount ?? 0,
-            blurryCount: oldRecord?.blurryCount ?? 0,
-            successfulReviewsSinceMistake: hadMistakeToday
-                ? 0
-                : ((oldRecord?.successfulReviewsSinceMistake ?? 0) + 1)
+        recordReview(
+            wordId,
+            outcome: .mastered,
+            persistDuringInfinitePractice: persistDuringInfinitePractice,
+            affectsDailyProgress: affectsDailyProgress
         )
-
-        updateProgressBucketMembership(for: wordId, state: nextMemoryState)
-        if countedInTodayDeck {
-            dailyMasteredDeckWordIds.insert(wordId)
-        }
-
-        if affectsDailyProgress || (isInfinitePracticeActive && wasInLearningQueue) {
-            removeWordFromLearningQueue(wordId)
-            refillInfiniteQueueIfNeeded(now: now)
-        }
-        saveLearningState()
     }
     
     public func markWordBlurry(
@@ -538,44 +679,12 @@ public final class SRSManager: ObservableObject {
         persistDuringInfinitePractice: Bool = false,
         affectsDailyProgress: Bool = true
     ) {
-        let now = Date()
-        if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
-            return
-        }
-        let wasInLearningQueue = learningQueueIds.contains(wordId)
-        let oldRecord = learningRecords[wordId] ?? LearningRecord(
-            wordId: wordId,
-            consecutiveCorrects: 0,
-            nextReviewDate: now
+        recordReview(
+            wordId,
+            outcome: .blurry,
+            persistDuringInfinitePractice: persistDuringInfinitePractice,
+            affectsDailyProgress: affectsDailyProgress
         )
-
-        // 连续答对次数回退一档，下次明天复习。
-        let nextCorrects = max(0, oldRecord.consecutiveCorrects - 1)
-        let nextReviewDate = dateByAddingDays(retryIntervalDays, from: now)
-        
-        learningRecords[wordId] = LearningRecord(
-            wordId: wordId,
-            consecutiveCorrects: nextCorrects,
-            nextReviewDate: nextReviewDate,
-            memoryState: .blurry,
-            lastReviewedAt: now,
-            lastMistakeAt: now,
-            forgotCount: oldRecord.forgotCount,
-            blurryCount: oldRecord.blurryCount + 1,
-            successfulReviewsSinceMistake: 0
-        )
-        
-        updateProgressBucketMembership(for: wordId, state: .blurry)
-        if affectsDailyProgress {
-            dailyMasteredDeckWordIds.remove(wordId)
-            stopInfinitePracticeIfDailyGoalReopened(by: wordId)
-            enqueueWordForReview(wordId)
-            refillInfiniteQueueIfNeeded(now: now)
-        } else if isInfinitePracticeActive && wasInLearningQueue {
-            enqueueWordForReview(wordId)
-            refillInfiniteQueueIfNeeded(now: now)
-        }
-        saveLearningState()
     }
     
     public func markWordForgot(
@@ -583,45 +692,119 @@ public final class SRSManager: ObservableObject {
         persistDuringInfinitePractice: Bool = false,
         affectsDailyProgress: Bool = true
     ) {
+        recordReview(
+            wordId,
+            outcome: .forgot,
+            persistDuringInfinitePractice: persistDuringInfinitePractice,
+            affectsDailyProgress: affectsDailyProgress
+        )
+    }
+
+    private func recordReview(
+        _ wordId: String,
+        outcome: ReviewOutcome,
+        persistDuringInfinitePractice: Bool,
+        affectsDailyProgress: Bool
+    ) {
         let now = Date()
         if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
             return
         }
         let wasInLearningQueue = learningQueueIds.contains(wordId)
         let oldRecord = learningRecords[wordId]
-
-        // 连续答对归零，下次明天复习。
-        learningRecords[wordId] = LearningRecord(
-            wordId: wordId,
-            consecutiveCorrects: 0,
-            nextReviewDate: dateByAddingDays(retryIntervalDays, from: now),
-            memoryState: .forgot,
-            lastReviewedAt: now,
-            lastMistakeAt: now,
-            forgotCount: (oldRecord?.forgotCount ?? 0) + 1,
-            blurryCount: oldRecord?.blurryCount ?? 0,
-            successfulReviewsSinceMistake: 0
+        let newRecord = learningRecord(
+            for: wordId,
+            outcome: outcome,
+            oldRecord: oldRecord,
+            now: now
         )
-        
-        updateProgressBucketMembership(for: wordId, state: .forgot)
-        if affectsDailyProgress {
-            dailyMasteredDeckWordIds.remove(wordId)
-            stopInfinitePracticeIfDailyGoalReopened(by: wordId)
-            enqueueWordForReview(wordId)
-            refillInfiniteQueueIfNeeded(now: now)
-        } else if isInfinitePracticeActive && wasInLearningQueue {
-            enqueueWordForReview(wordId)
-            refillInfiniteQueueIfNeeded(now: now)
+        learningRecords[wordId] = newRecord
+
+        updateQueueAfterReview(
+            wordId,
+            outcome: outcome,
+            affectsDailyProgress: affectsDailyProgress,
+            wasInLearningQueue: wasInLearningQueue,
+            now: now
+        )
+
+        if outcome == .forgot {
+            NotificationCenter.default.post(
+                name: Self.didMarkForgotWordNotification,
+                object: self,
+                userInfo: [Self.forgotWordIdUserInfoKey: wordId]
+            )
         }
 
-        // 向外部模块广播“忘记”事件，便于同步错题本。
-        NotificationCenter.default.post(
-            name: Self.didMarkForgotWordNotification,
-            object: self,
-            userInfo: [Self.forgotWordIdUserInfoKey: wordId]
-        )
+        saveLearningState(touchMutation: true)
+    }
 
-        saveLearningState()
+    private func learningRecord(
+        for wordId: String,
+        outcome: ReviewOutcome,
+        oldRecord: LearningRecord?,
+        now: Date
+    ) -> LearningRecord {
+        switch outcome {
+        case .mastered:
+            let oldCorrects = oldRecord?.consecutiveCorrects ?? 0
+            let nextCorrects = oldRecord == nil ? 1 : min(oldCorrects + 1, masteryThreshold)
+            let hadMistakeToday = oldRecord.map { didMarkMistakeOnSameDay(in: $0, as: now) } ?? false
+            return LearningRecord(
+                wordId: wordId,
+                consecutiveCorrects: nextCorrects,
+                nextReviewDate: hadMistakeToday
+                    ? scheduler.retryReviewDate(from: now)
+                    : scheduler.scheduledReviewDate(for: nextCorrects, from: now),
+                memoryState: hadMistakeToday ? .blurry : .mastered,
+                lastReviewedAt: now,
+                lastMistakeAt: oldRecord?.lastMistakeAt
+            )
+        case .blurry:
+            let nextCorrects = max(0, (oldRecord?.consecutiveCorrects ?? 0) - 1)
+            return LearningRecord(
+                wordId: wordId,
+                consecutiveCorrects: nextCorrects,
+                nextReviewDate: scheduler.retryReviewDate(from: now),
+                memoryState: .blurry,
+                lastReviewedAt: now,
+                lastMistakeAt: now
+            )
+        case .forgot:
+            return LearningRecord(
+                wordId: wordId,
+                consecutiveCorrects: 0,
+                nextReviewDate: scheduler.retryReviewDate(from: now),
+                memoryState: .forgot,
+                lastReviewedAt: now,
+                lastMistakeAt: now
+            )
+        }
+    }
+
+    private func updateQueueAfterReview(
+        _ wordId: String,
+        outcome: ReviewOutcome,
+        affectsDailyProgress: Bool,
+        wasInLearningQueue: Bool,
+        now: Date
+    ) {
+        if outcome == .mastered, affectsDailyProgress, dailyDeckWordIds.contains(wordId) {
+            dailyMasteredDeckWordIds.insert(wordId)
+        } else if outcome != .mastered, affectsDailyProgress {
+            dailyMasteredDeckWordIds.remove(wordId)
+            stopInfinitePracticeIfDailyGoalReopened(by: wordId)
+        }
+
+        guard affectsDailyProgress || (isInfinitePracticeActive && wasInLearningQueue) else { return }
+
+        switch outcome {
+        case .mastered:
+            removeWordFromLearningQueue(wordId)
+        case .blurry, .forgot:
+            enqueueWordForReview(wordId)
+        }
+        refillInfiniteQueueIfNeeded(now: now)
     }
 
     private func stopInfinitePracticeIfDailyGoalReopened(by wordId: String) {
@@ -642,20 +825,14 @@ public final class SRSManager: ObservableObject {
 
     public func resetWordToNew(_ wordId: String) {
         learningRecords.removeValue(forKey: wordId)
-        forgotWordIds.remove(wordId)
-        blurryWordIds.remove(wordId)
-        masteredWordIds.remove(wordId)
         dailyMasteredDeckWordIds.remove(wordId)
         refreshCurrentDeckState(afterMutating: wordId)
-        saveLearningState()
+        saveLearningState(touchMutation: true)
     }
 
     public func resetLearningData() {
         bumpLearningSyncResetVersion()
         learningRecords = [:]
-        forgotWordIds = []
-        blurryWordIds = []
-        masteredWordIds = []
         dailyDeckWordIds = []
         dailyMasteredDeckWordIds = []
         learningQueueIds = []
@@ -667,42 +844,7 @@ public final class SRSManager: ObservableObject {
             targetLevel = appState.level
         }
         rebuildDeck(now: Date())
-        saveLearningState()
-    }
-    
-    func removeWordFromMastered(_ wordId: String) {
-        if learningRecords[wordId]?.memoryState == .mastered {
-            learningRecords.removeValue(forKey: wordId)
-        }
-        masteredWordIds.remove(wordId)
-        dailyMasteredDeckWordIds.remove(wordId)
-        refreshCurrentDeckState(afterMutating: wordId)
-        saveLearningState()
-    }
-    
-    func removeWordFromBlurry(_ wordId: String) {
-        if learningRecords[wordId]?.memoryState == .blurry {
-            learningRecords.removeValue(forKey: wordId)
-        }
-        blurryWordIds.remove(wordId)
-        refreshCurrentDeckState(afterMutating: wordId)
-        saveLearningState()
-    }
-    
-    func removeWordFromForgot(_ wordId: String) {
-        if learningRecords[wordId]?.memoryState == .forgot {
-            learningRecords.removeValue(forKey: wordId)
-        }
-        forgotWordIds.remove(wordId)
-        refreshCurrentDeckState(afterMutating: wordId)
-        saveLearningState()
-    }
-    
-    // MARK: - Learning Queue
-    
-    private func rebuildLearningQueue() {
-        // 与每日发牌同规则，保持首页来源一致。
-        rebuildDeck(now: Date())
+        saveLearningState(touchMutation: true)
     }
     
     // MARK: - Daily Deck
@@ -746,33 +888,12 @@ public final class SRSManager: ObservableObject {
 
     private func buildDailyDeck(from allWords: [SimpleWord], now: Date, deckLimit: Int) -> [SimpleWord] {
         let levelFilteredWords = wordsForTargetLevel(from: allWords)
-        let dueReviewWords = dueReviewWords(in: levelFilteredWords, now: now)
-
-        // 新词池随机化，保证每日新词有变化。
-        let newWords = levelFilteredWords.filter { learningRecords[$0.id] == nil }.shuffled()
-
-        let guaranteedNewQuota = dailyNewWordQuota(for: deckLimit)
-        let reviewQuota = max(0, deckLimit - guaranteedNewQuota)
-
-        var selectedReviewWords = Array(dueReviewWords.prefix(reviewQuota))
-        var selectedNewWords = Array(newWords.prefix(guaranteedNewQuota))
-
-        // 若复习词不够，缺口补给新词。
-        if selectedReviewWords.count < reviewQuota {
-            let shortage = reviewQuota - selectedReviewWords.count
-            let remainingNewWords = newWords.dropFirst(selectedNewWords.count)
-            selectedNewWords.append(contentsOf: remainingNewWords.prefix(shortage))
-        }
-
-        // 若新词不够，缺口补给复习词（继续按到期优先）。
-        if selectedNewWords.count < guaranteedNewQuota {
-            let shortage = guaranteedNewQuota - selectedNewWords.count
-            let remainingReviewWords = dueReviewWords.dropFirst(selectedReviewWords.count)
-            selectedReviewWords.append(contentsOf: remainingReviewWords.prefix(shortage))
-        }
-
-        // 新旧混排返回；不足上限时按可用词数量返回。
-        return Array((selectedReviewWords + selectedNewWords).shuffled().prefix(deckLimit))
+        return scheduler.buildDailyDeck(
+            from: levelFilteredWords,
+            records: learningRecords,
+            now: now,
+            deckLimit: deckLimit
+        )
     }
     
     // MARK: - Helper Functions
@@ -817,7 +938,7 @@ public final class SRSManager: ObservableObject {
     }
 
     private func normalizedReviewDate(_ date: Date) -> Date {
-        calendar.startOfDay(for: date)
+        scheduler.normalizedReviewDate(date)
     }
 
     private func normalizeLearningRecordsReviewDates() {
@@ -830,50 +951,14 @@ public final class SRSManager: ObservableObject {
                 nextReviewDate: normalizedDate,
                 memoryState: record.memoryState,
                 lastReviewedAt: record.lastReviewedAt,
-                lastMistakeAt: record.lastMistakeAt,
-                forgotCount: record.forgotCount,
-                blurryCount: record.blurryCount,
-                successfulReviewsSinceMistake: record.successfulReviewsSinceMistake
+                lastMistakeAt: record.lastMistakeAt
             )
         }
-    }
-
-    private func dailyNewWordQuota(for deckLimit: Int) -> Int {
-        guard deckLimit > 0 else { return 0 }
-        return max(1, Int(ceil(Double(deckLimit) * newCardQuotaRatio)))
-    }
-
-    private func dateByAddingDays(_ days: Int, from date: Date) -> Date {
-        let anchor = normalizedReviewDate(date)
-        return calendar.date(byAdding: .day, value: days, to: anchor) ?? anchor
     }
 
     private func didMarkMistakeOnSameDay(in record: LearningRecord, as date: Date) -> Bool {
         guard let lastMistakeAt = record.lastMistakeAt else { return false }
         return calendar.isDate(lastMistakeAt, inSameDayAs: date)
-    }
-
-    private func scheduledReviewDate(for consecutiveCorrects: Int, from date: Date) -> Date {
-        let anchor = normalizedReviewDate(date)
-        if consecutiveCorrects >= masteryThreshold {
-            return calendar.date(byAdding: .year, value: graduationYears, to: anchor) ?? anchor
-        }
-
-        let intervalDays: Int
-        switch consecutiveCorrects {
-        case ..<1:
-            intervalDays = 1
-        case 1:
-            intervalDays = 2
-        case 2:
-            intervalDays = 4
-        case 3:
-            intervalDays = 8
-        default:
-            intervalDays = 15
-        }
-
-        return dateByAddingDays(intervalDays, from: anchor)
     }
     
     func setTargetLevel(_ level: String) {
@@ -881,7 +966,7 @@ public final class SRSManager: ObservableObject {
         guard targetLevel != normalizedLevel else { return }
         targetLevel = normalizedLevel
         resetTodayProgressForPlanChange(now: Date())
-        saveLearningState()
+        saveLearningState(touchMutation: true)
     }
 
     func setDailyDeckLimit(_ limit: Int) {
@@ -889,7 +974,7 @@ public final class SRSManager: ObservableObject {
         guard dailyDeckLimit != normalizedLimit else { return }
         dailyDeckLimit = normalizedLimit
         resetTodayProgressForPlanChange(now: Date())
-        saveLearningState()
+        saveLearningState(touchMutation: true)
     }
 
     private func resetTodayProgressForPlanChange(now: Date) {
@@ -1095,17 +1180,11 @@ public final class SRSManager: ObservableObject {
     public func getForgotWords() -> [SimpleWord] {
         words(inMemoryState: .forgot)
     }
-    
-    func isWordMastered(_ wordId: String) -> Bool {
-        return masteredWordIds.contains(wordId)
-    }
-    
-    func isWordBlurry(_ wordId: String) -> Bool {
-        return blurryWordIds.contains(wordId)
-    }
-    
-    func isWordForgot(_ wordId: String) -> Bool {
-        return forgotWordIds.contains(wordId)
+
+    private func wordIds(inMemoryState state: LearningMemoryState) -> Set<String> {
+        Set(learningRecords.values.lazy
+            .filter { $0.memoryState == state }
+            .map(\.wordId))
     }
 
     private var todayDeckMasteredCount: Int {
@@ -1126,7 +1205,7 @@ public final class SRSManager: ObservableObject {
         guard hasReachedDailyMasteryGoal else { return }
         isInfinitePracticeActive = true
         refillInfiniteQueueIfNeeded(now: Date())
-        saveLearningState()
+        saveLearningState(touchMutation: true)
     }
 
     var todayMasteryProgressRatio: Double {
@@ -1191,63 +1270,23 @@ public final class SRSManager: ObservableObject {
     }
 
     private func buildInfinitePracticeBatch(from allWords: [SimpleWord], now: Date, batchSize: Int) -> [SimpleWord] {
-        guard batchSize > 0 else { return [] }
-
         let levelFilteredWords = wordsForTargetLevel(from: allWords)
-        guard !levelFilteredWords.isEmpty else { return [] }
-        let dueReviewWords = dueReviewWords(in: levelFilteredWords, now: now)
-
-        let newWords = levelFilteredWords.filter { learningRecords[$0.id] == nil }.shuffled()
-        let reinforcementWords = levelFilteredWords.filter { learningRecords[$0.id] != nil }.shuffled()
-
-        var result: [SimpleWord] = []
-        var seenIds: Set<String> = []
-
-        func appendUnique(_ words: [SimpleWord]) {
-            for word in words {
-                guard seenIds.insert(word.id).inserted else { continue }
-                result.append(word)
-                if result.count >= batchSize { return }
-            }
-        }
-
-        appendUnique(dueReviewWords)
-        if result.count < batchSize { appendUnique(newWords) }
-        if result.count < batchSize { appendUnique(reinforcementWords) }
-        if result.count < batchSize { appendUnique(levelFilteredWords.shuffled()) }
-
-        return Array(result.prefix(batchSize))
+        return scheduler.buildInfinitePracticeBatch(
+            from: levelFilteredWords,
+            records: learningRecords,
+            now: now,
+            batchSize: batchSize
+        )
     }
 
     private func buildPreviewContinuation(from allWords: [SimpleWord], now: Date, excluding excludedIds: Set<String>) -> [SimpleWord] {
-        let filteredWords = wordsForTargetLevel(from: allWords).filter { !excludedIds.contains($0.id) }
-        guard !filteredWords.isEmpty else { return [] }
-
-        let dueReviewWords = dueReviewWords(in: filteredWords, now: now)
-        let dueReviewIDs = Set(dueReviewWords.map(\.id))
-        let newWords = stablePreviewOrder(
-            filteredWords.filter { learningRecords[$0.id] == nil },
-            salt: "new"
+        scheduler.buildPreviewContinuation(
+            from: wordsForTargetLevel(from: allWords),
+            records: learningRecords,
+            now: now,
+            excluding: excludedIds,
+            dayKey: todayKey()
         )
-        let reinforcementWords = stablePreviewOrder(
-            filteredWords.filter { learningRecords[$0.id] != nil && !dueReviewIDs.contains($0.id) },
-            salt: "reinforcement"
-        )
-
-        var result: [SimpleWord] = []
-        result.reserveCapacity(filteredWords.count)
-        var seenIds: Set<String> = []
-
-        func appendUnique(_ words: [SimpleWord]) {
-            for word in words where seenIds.insert(word.id).inserted {
-                result.append(word)
-            }
-        }
-
-        appendUnique(dueReviewWords)
-        appendUnique(newWords)
-        appendUnique(reinforcementWords)
-        return result
     }
 
     private func wordsForTargetLevel(from allWords: [SimpleWord]) -> [SimpleWord] {
@@ -1276,41 +1315,6 @@ public final class SRSManager: ObservableObject {
             return trimmed
         }
         return "All"
-    }
-
-    private func dueReviewWords(in words: [SimpleWord], now: Date) -> [SimpleWord] {
-        words
-            .filter { word in
-                guard let record = learningRecords[word.id] else { return false }
-                return record.consecutiveCorrects < masteryThreshold && record.nextReviewDate <= now
-            }
-            .sorted { lhs, rhs in
-                let lhsDate = learningRecords[lhs.id]?.nextReviewDate ?? .distantFuture
-                let rhsDate = learningRecords[rhs.id]?.nextReviewDate ?? .distantFuture
-                if lhsDate == rhsDate { return lhs.id < rhs.id }
-                return lhsDate < rhsDate
-            }
-    }
-
-    private func stablePreviewOrder(_ words: [SimpleWord], salt: String) -> [SimpleWord] {
-        let dayKey = todayKey()
-        return words.sorted { lhs, rhs in
-            let lhsRank = stablePreviewRank(for: lhs.id, salt: salt, dayKey: dayKey)
-            let rhsRank = stablePreviewRank(for: rhs.id, salt: salt, dayKey: dayKey)
-            if lhsRank == rhsRank {
-                return lhs.id < rhs.id
-            }
-            return lhsRank < rhsRank
-        }
-    }
-
-    private func stablePreviewRank(for id: String, salt: String, dayKey: String) -> UInt64 {
-        var hash: UInt64 = 1469598103934665603
-        for byte in "\(dayKey)|\(salt)|\(id)".utf8 {
-            hash ^= UInt64(byte)
-            hash &*= 1099511628211
-        }
-        return hash
     }
 
     private func sanitizeDeckState(preferredQueueIds: [String]? = nil) {
@@ -1442,25 +1446,6 @@ public final class SRSManager: ObservableObject {
         let filteredRecords = learningRecords.filter { validWordIds.contains($0.key) }
         if filteredRecords.count != learningRecords.count {
             learningRecords = filteredRecords
-            syncProgressBucketsFromLearningRecords()
-            didPrune = true
-        }
-
-        let filteredForgot = forgotWordIds.intersection(validWordIds)
-        if filteredForgot != forgotWordIds {
-            forgotWordIds = filteredForgot
-            didPrune = true
-        }
-
-        let filteredBlurry = blurryWordIds.intersection(validWordIds)
-        if filteredBlurry != blurryWordIds {
-            blurryWordIds = filteredBlurry
-            didPrune = true
-        }
-
-        let filteredMastered = masteredWordIds.intersection(validWordIds)
-        if filteredMastered != masteredWordIds {
-            masteredWordIds = filteredMastered
             didPrune = true
         }
 
@@ -1482,7 +1467,6 @@ public final class SRSManager: ObservableObject {
         guard appState?.iCloudSyncEnabled == true else { return }
         guard !isApplyingRemoteSyncPayload else { return }
         if adoptRemotePayloadIfResetVersionIsHigher() { return }
-        syncProgressBucketsFromLearningRecords()
 
         if force {
             lastLearningStateMutationAt = Date()
@@ -1502,9 +1486,9 @@ public final class SRSManager: ObservableObject {
             dailyMasteredDeckWordIds: Array(dailyMasteredDeckWordIds).sorted(),
             learningQueueIds: learningQueueIds,
             levelDailyDeckSnapshots: levelDailyDeckSnapshots,
-            forgotWordIds: Array(forgotWordIds).sorted(),
-            blurryWordIds: Array(blurryWordIds).sorted(),
-            masteredWordIds: Array(masteredWordIds).sorted(),
+            forgotWordIds: nil,
+            blurryWordIds: nil,
+            masteredWordIds: nil,
             dailyCompletionRatios: dailyCompletionRatios,
             dailyStudyStates: dailyStudyStates,
             isInfinitePracticeActive: isInfinitePracticeActive,
@@ -1541,10 +1525,12 @@ public final class SRSManager: ObservableObject {
         dailyMasteredDeckWordIds = Set(payload.dailyMasteredDeckWordIds)
         learningQueueIds = payload.learningQueueIds
         levelDailyDeckSnapshots = payload.levelDailyDeckSnapshots
-        forgotWordIds = Set(payload.forgotWordIds)
-        blurryWordIds = Set(payload.blurryWordIds)
-        masteredWordIds = Set(payload.masteredWordIds)
-        migrateLegacyProgressBucketsIntoLearningRecords(now: Date())
+        migrateLegacyProgressBucketsIntoLearningRecords(
+            forgotWordIds: Set(payload.forgotWordIds ?? []),
+            blurryWordIds: Set(payload.blurryWordIds ?? []),
+            masteredWordIds: Set(payload.masteredWordIds ?? []),
+            now: Date()
+        )
         dailyCompletionRatios = payload.dailyCompletionRatios
         dailyStudyStates = payload.dailyStudyStates.filter { DailyStudyState(rawValue: $0.value) != nil }
         isInfinitePracticeActive = payload.isInfinitePracticeActive
@@ -1555,7 +1541,6 @@ public final class SRSManager: ObservableObject {
                 _ = pruneLearningState(using: validWordIds)
             }
         }
-        syncProgressBucketsFromLearningRecords()
         sanitizeDeckState(preferredQueueIds: payload.learningQueueIds)
 
         lastLearningStateMutationAt = payload.updatedAt
