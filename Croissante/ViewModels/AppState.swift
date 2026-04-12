@@ -392,6 +392,7 @@ public final class AppState: ObservableObject {
         
         // Member Unlocked
         memberUnlocked = userDefaults.bool(forKey: Keys.memberUnlocked)
+        WidgetDataService.writeMemberUnlocked(memberUnlocked)
         
         // Avatar Path
         if let savedAvatarPath = userDefaults.string(forKey: Keys.avatarPath) {
@@ -463,6 +464,7 @@ public final class AppState: ObservableObject {
     
     private func saveMemberUnlocked() {
         userDefaults.set(memberUnlocked, forKey: Keys.memberUnlocked)
+        WidgetDataService.writeMemberUnlocked(memberUnlocked)
     }
     
     private func saveAvatarPath() {

@@ -847,6 +847,9 @@ private struct DiscoverScreen: View {
         .onChange(of: appState.level) { _, _ in
             scheduleWidgetDataWrite()
         }
+        .onChange(of: appState.memberUnlocked) { _, _ in
+            scheduleWidgetDataWrite()
+        }
         .onChange(of: appState.hasCompletedInitialResourceLoad) { _, loaded in
             guard loaded else {
                 isPreparingInitialDiscoverContent = true
@@ -954,7 +957,12 @@ private struct DiscoverScreen: View {
                 exampleFr: $0.exampleFr, exampleEn: $0.exampleEn, exampleZh: $0.exampleZh
             )
         }
-        WidgetDataService.writeWidgetPool(pool, language: appState.language, level: level)
+        WidgetDataService.writeWidgetPool(
+            pool,
+            language: appState.language,
+            level: level,
+            memberUnlocked: appState.memberUnlocked
+        )
         WidgetCenter.shared.reloadAllTimelines()
     }
 

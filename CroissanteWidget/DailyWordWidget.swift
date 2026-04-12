@@ -1,12 +1,22 @@
 import WidgetKit
 import SwiftUI
 
+private enum DailyWordWidgetDefaults {
+    static let appGroupId = "group.com.jw.Croissante"
+    static let wordPoolKey = "widget_word_pool"
+    static let languageKey = "widget_language"
+    static let memberUnlockedKey = "widget_member_unlocked"
+    static let memberAccessExpiresAtKey = "widget_member_access_expires_at"
+    static let memberAccessNeverExpiresKey = "widget_member_access_never_expires"
+}
+
 struct DailyWordEntry: TimelineEntry {
     let date: Date
     let word: String
     let tag: String
     let level: String
     let exampleFr: String
+    let isLocked: Bool
     let isEmpty: Bool
 }
 
@@ -14,7 +24,7 @@ struct DailyWordProvider: TimelineProvider {
     func placeholder(in context: Context) -> DailyWordEntry {
         DailyWordEntry(
             date: .now, word: "bonjour", tag: "INTJ", level: "A1",
-            exampleFr: "Bonjour, comment allez-vous ?", isEmpty: false
+            exampleFr: "Bonjour, comment allez-vous ?", isLocked: false, isEmpty: false
         )
     }
 
@@ -23,16 +33,22 @@ struct DailyWordProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<DailyWordEntry>) -> Void) {
+        guard isMemberUnlocked else {
+            let next = Calendar.current.date(byAdding: .hour, value: 1, to: .now) ?? .now
+            completion(Timeline(entries: [lockedEntry(date: .now)], policy: .after(next)))
+            return
+        }
+
         var entries: [DailyWordEntry] = []
         let pool = loadPool()
         let now = Date()
         for i in 0..<max(pool.count, 1) {
             let entryDate = Calendar.current.date(byAdding: .hour, value: i, to: now) ?? now
             if pool.isEmpty {
-                entries.append(DailyWordEntry(date: entryDate, word: "croissant", tag: "N", level: "A1", exampleFr: "", isEmpty: true))
+                entries.append(emptyEntry(date: entryDate))
             } else {
                 let w = pool[i % pool.count]
-                entries.append(DailyWordEntry(date: entryDate, word: w.word, tag: w.tag, level: w.level, exampleFr: w.exampleFr, isEmpty: false))
+                entries.append(entry(for: w, date: entryDate))
             }
         }
         let next = Calendar.current.date(byAdding: .hour, value: entries.count, to: now) ?? now
@@ -40,20 +56,77 @@ struct DailyWordProvider: TimelineProvider {
     }
 
     private func loadEntry() -> DailyWordEntry {
+        guard isMemberUnlocked else {
+            return lockedEntry(date: .now)
+        }
+
         let pool = loadPool()
         guard !pool.isEmpty else {
-            return DailyWordEntry(date: .now, word: "croissant", tag: "N", level: "A1", exampleFr: "", isEmpty: true)
+            return emptyEntry(date: .now)
         }
         let w = pool.randomElement()!
-        return DailyWordEntry(date: .now, word: w.word, tag: w.tag, level: w.level, exampleFr: w.exampleFr, isEmpty: false)
+        return entry(for: w, date: .now)
+    }
+
+    private var isMemberUnlocked: Bool {
+        guard let defaults = sharedDefaults,
+              defaults.bool(forKey: DailyWordWidgetDefaults.memberUnlockedKey) else {
+            return false
+        }
+        if defaults.bool(forKey: DailyWordWidgetDefaults.memberAccessNeverExpiresKey) {
+            return true
+        }
+        let expirationInterval = defaults.double(forKey: DailyWordWidgetDefaults.memberAccessExpiresAtKey)
+        guard expirationInterval > 0 else { return false }
+        return Date(timeIntervalSince1970: expirationInterval) > Date()
+    }
+
+    private var sharedDefaults: UserDefaults? {
+        UserDefaults(suiteName: DailyWordWidgetDefaults.appGroupId)
     }
 
     private func loadPool() -> [WidgetWordData] {
-        guard let defaults = UserDefaults(suiteName: "group.com.jw.Croissante"),
-              let data = defaults.data(forKey: "widget_word_pool"),
+        guard let defaults = sharedDefaults,
+              let data = defaults.data(forKey: DailyWordWidgetDefaults.wordPoolKey),
               let words = try? JSONDecoder().decode([WidgetWordData].self, from: data)
         else { return [] }
         return words.shuffled()
+    }
+
+    private func entry(for word: WidgetWordData, date: Date) -> DailyWordEntry {
+        DailyWordEntry(
+            date: date,
+            word: word.word,
+            tag: word.tag,
+            level: word.level,
+            exampleFr: word.exampleFr,
+            isLocked: false,
+            isEmpty: false
+        )
+    }
+
+    private func emptyEntry(date: Date) -> DailyWordEntry {
+        DailyWordEntry(
+            date: date,
+            word: "croissant",
+            tag: "N",
+            level: "A1",
+            exampleFr: "",
+            isLocked: false,
+            isEmpty: true
+        )
+    }
+
+    private func lockedEntry(date: Date) -> DailyWordEntry {
+        DailyWordEntry(
+            date: date,
+            word: "Croissante Plus",
+            tag: "",
+            level: "",
+            exampleFr: "Open Croissante to unlock widgets.",
+            isLocked: true,
+            isEmpty: false
+        )
     }
 }
 
@@ -111,16 +184,45 @@ struct DailyWordWidgetView: View {
 
     var body: some View {
         Group {
-            switch family {
-            case .systemSmall:
-                smallView
-            case .systemMedium:
-                mediumView
-            default:
-                mediumView
+            if entry.isLocked {
+                lockedView
+            } else {
+                switch family {
+                case .systemSmall:
+                    smallView
+                case .systemMedium:
+                    mediumView
+                default:
+                    mediumView
+                }
             }
         }
         .containerBackground(for: .widget) { bgGradient }
+    }
+
+    private var lockedView: some View {
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 7 : 9) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: family == .systemSmall ? 14 : 16, weight: .semibold))
+                    .foregroundStyle(headlineColor.opacity(0.78))
+
+                Text("Croissante Plus")
+                    .font(.system(size: family == .systemSmall ? 17 : 19, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .foregroundStyle(headlineColor)
+            }
+
+            Text(entry.exampleFr)
+                .font(.system(size: family == .systemSmall ? 12 : 14, weight: .regular))
+                .lineLimit(family == .systemSmall ? 3 : 2)
+                .foregroundStyle(exampleColor)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(4)
     }
 
     private var smallView: some View {
@@ -198,7 +300,7 @@ struct DailyWordWidget: Widget {
             DailyWordWidgetView(entry: entry)
         }
         .configurationDisplayName("Daily Word")
-        .description("Your current French word at a glance.")
+        .description("A Croissante Plus daily word at a glance.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
