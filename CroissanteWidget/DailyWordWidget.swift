@@ -1,3 +1,4 @@
+import Foundation
 import WidgetKit
 import SwiftUI
 
@@ -12,19 +13,32 @@ private enum DailyWordWidgetDefaults {
 
 struct DailyWordEntry: TimelineEntry {
     let date: Date
+    let wordId: String
     let word: String
     let tag: String
     let level: String
+    let translation: String
     let exampleFr: String
+    let exampleTranslation: String
     let isLocked: Bool
     let isEmpty: Bool
 }
 
 struct DailyWordProvider: TimelineProvider {
+    private static let entryIntervalMinutes = 5
+
     func placeholder(in context: Context) -> DailyWordEntry {
         DailyWordEntry(
-            date: .now, word: "bonjour", tag: "INTJ", level: "A1",
-            exampleFr: "Bonjour, comment allez-vous ?", isLocked: false, isEmpty: false
+            date: .now,
+            wordId: "w_bonjour",
+            word: "bonjour",
+            tag: "INTJ",
+            level: "A1",
+            translation: "hello",
+            exampleFr: "Bonjour, comment allez-vous ?",
+            exampleTranslation: "Hello, how are you?",
+            isLocked: false,
+            isEmpty: false
         )
     }
 
@@ -34,24 +48,25 @@ struct DailyWordProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<DailyWordEntry>) -> Void) {
         guard isMemberUnlocked else {
-            let next = Calendar.current.date(byAdding: .hour, value: 1, to: .now) ?? .now
+            let next = Calendar.current.date(byAdding: .minute, value: Self.entryIntervalMinutes, to: .now) ?? .now
             completion(Timeline(entries: [lockedEntry(date: .now)], policy: .after(next)))
             return
         }
 
         var entries: [DailyWordEntry] = []
         let pool = loadPool()
+        let language = currentLanguage
         let now = Date()
         for i in 0..<max(pool.count, 1) {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: i, to: now) ?? now
+            let entryDate = Calendar.current.date(byAdding: .minute, value: Self.entryIntervalMinutes * i, to: now) ?? now
             if pool.isEmpty {
                 entries.append(emptyEntry(date: entryDate))
             } else {
                 let w = pool[i % pool.count]
-                entries.append(entry(for: w, date: entryDate))
+                entries.append(entry(for: w, date: entryDate, language: language))
             }
         }
-        let next = Calendar.current.date(byAdding: .hour, value: entries.count, to: now) ?? now
+        let next = Calendar.current.date(byAdding: .minute, value: Self.entryIntervalMinutes * entries.count, to: now) ?? now
         completion(Timeline(entries: entries, policy: .after(next)))
     }
 
@@ -65,7 +80,7 @@ struct DailyWordProvider: TimelineProvider {
             return emptyEntry(date: .now)
         }
         let w = pool.randomElement()!
-        return entry(for: w, date: .now)
+        return entry(for: w, date: .now, language: currentLanguage)
     }
 
     private var isMemberUnlocked: Bool {
@@ -85,6 +100,10 @@ struct DailyWordProvider: TimelineProvider {
         UserDefaults(suiteName: DailyWordWidgetDefaults.appGroupId)
     }
 
+    private var currentLanguage: String {
+        sharedDefaults?.string(forKey: DailyWordWidgetDefaults.languageKey) ?? "en"
+    }
+
     private func loadPool() -> [WidgetWordData] {
         guard let defaults = sharedDefaults,
               let data = defaults.data(forKey: DailyWordWidgetDefaults.wordPoolKey),
@@ -93,13 +112,16 @@ struct DailyWordProvider: TimelineProvider {
         return words.shuffled()
     }
 
-    private func entry(for word: WidgetWordData, date: Date) -> DailyWordEntry {
+    private func entry(for word: WidgetWordData, date: Date, language: String) -> DailyWordEntry {
         DailyWordEntry(
             date: date,
+            wordId: word.id,
             word: word.word,
             tag: word.tag,
             level: word.level,
+            translation: translation(for: word, language: language),
             exampleFr: word.exampleFr,
+            exampleTranslation: exampleTranslation(for: word, language: language),
             isLocked: false,
             isEmpty: false
         )
@@ -108,10 +130,13 @@ struct DailyWordProvider: TimelineProvider {
     private func emptyEntry(date: Date) -> DailyWordEntry {
         DailyWordEntry(
             date: date,
+            wordId: "",
             word: "croissant",
             tag: "N",
             level: "A1",
+            translation: "",
             exampleFr: "",
+            exampleTranslation: "",
             isLocked: false,
             isEmpty: true
         )
@@ -120,13 +145,48 @@ struct DailyWordProvider: TimelineProvider {
     private func lockedEntry(date: Date) -> DailyWordEntry {
         DailyWordEntry(
             date: date,
+            wordId: "",
             word: "Croissante Plus",
             tag: "",
             level: "",
+            translation: "",
             exampleFr: "Open Croissante to unlock widgets.",
+            exampleTranslation: "",
             isLocked: true,
             isEmpty: false
         )
+    }
+
+    private func translation(for word: WidgetWordData, language: String) -> String {
+        let candidates: [String?]
+        switch language {
+        case "zh":
+            candidates = [word.translationZh, word.translationEn, word.translationHi]
+        case "hi":
+            candidates = [word.translationHi, word.translationEn, word.translationZh]
+        default:
+            candidates = [word.translationEn, word.translationZh, word.translationHi]
+        }
+
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
+    }
+
+    private func exampleTranslation(for word: WidgetWordData, language: String) -> String {
+        let candidates: [String?]
+        switch language {
+        case "zh":
+            candidates = [word.exampleZh, word.exampleEn, word.exampleHi]
+        case "hi":
+            candidates = [word.exampleHi, word.exampleEn, word.exampleZh]
+        default:
+            candidates = [word.exampleEn, word.exampleZh, word.exampleHi]
+        }
+
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
     }
 }
 
@@ -137,9 +197,64 @@ struct WidgetWordData: Codable {
     let level: String
     let translationEn: String
     let translationZh: String
+    let translationHi: String?
     let exampleFr: String
     let exampleEn: String
     let exampleZh: String
+    let exampleHi: String?
+}
+
+private struct WidgetCardMetrics {
+    let scale: CGFloat
+    let titleBaseFontSize: CGFloat
+    let isSmall: Bool
+
+    init(family: WidgetFamily, size: CGSize, word: String) {
+        // Mirrors the homepage card content baseline: 393pt card width minus 26pt side padding.
+        let referenceContentWidth: CGFloat = 341
+        let referenceContentHeight: CGFloat = 252
+        let availableWidth = max(size.width, 1)
+        let availableHeight = max(size.height, 1)
+        scale = min(availableWidth / referenceContentWidth, availableHeight / referenceContentHeight)
+
+        let count = word.count
+        if count >= 24 {
+            titleBaseFontSize = 42
+        } else if count >= 20 {
+            titleBaseFontSize = 46
+        } else if count >= 16 {
+            titleBaseFontSize = 50
+        } else {
+            titleBaseFontSize = 56
+        }
+
+        isSmall = family == .systemSmall
+    }
+
+    func scaled(_ value: CGFloat) -> CGFloat {
+        value * scale
+    }
+
+    func fontSize(_ value: CGFloat, minimum: CGFloat) -> CGFloat {
+        max(scaled(value), minimum)
+    }
+
+    var horizontalPadding: CGFloat { max(4, scaled(26)) }
+    var verticalPadding: CGFloat { max(4, scaled(14)) }
+    var headerBottomPadding: CGFloat { max(2, scaled(6)) }
+    var titleBottomPadding: CGFloat { max(2, scaled(6)) }
+    var dividerBottomPadding: CGFloat { max(3, scaled(8)) }
+    var exampleTopPadding: CGFloat { max(4, scaled(8)) }
+    var exampleSpacing: CGFloat { max(2, scaled(4)) }
+    var detailSpacing: CGFloat { max(6, scaled(10)) }
+    var levelFontSize: CGFloat { fontSize(11, minimum: isSmall ? 9 : 10) }
+    var titleFontSize: CGFloat { fontSize(titleBaseFontSize, minimum: isSmall ? 24 : 30) }
+    var posFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
+    var translationFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
+    var exampleFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
+    var exampleTranslationFontSize: CGFloat { fontSize(15, minimum: isSmall ? 9.5 : 11.5) }
+    var titleTracking: CGFloat { scaled(0.2) }
+    var dividerOpacity: Double { 0.64 }
 }
 
 struct DailyWordWidgetView: View {
@@ -173,6 +288,9 @@ struct DailyWordWidgetView: View {
     private var exampleColor: Color {
         isDark ? Color.white.opacity(0.64) : Color.black.opacity(0.72)
     }
+    private var dividerColor: Color {
+        isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.14)
+    }
     private var bgGradient: LinearGradient {
         LinearGradient(
             colors: isDark
@@ -182,6 +300,18 @@ struct DailyWordWidgetView: View {
         )
     }
 
+    private var deepLinkURL: URL? {
+        guard !entry.isLocked, !entry.isEmpty else { return nil }
+        let wordId = entry.wordId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wordId.isEmpty else { return nil }
+
+        var components = URLComponents()
+        components.scheme = "croissante"
+        components.host = "word"
+        components.queryItems = [URLQueryItem(name: "id", value: wordId)]
+        return components.url
+    }
+
     var body: some View {
         Group {
             if entry.isLocked {
@@ -189,15 +319,16 @@ struct DailyWordWidgetView: View {
             } else {
                 switch family {
                 case .systemSmall:
-                    smallView
+                    scaledCardView
                 case .systemMedium:
-                    mediumView
+                    scaledCardView
                 default:
-                    mediumView
+                    scaledCardView
                 }
             }
         }
         .containerBackground(for: .widget) { bgGradient }
+        .widgetURL(deepLinkURL)
     }
 
     private var lockedView: some View {
@@ -225,54 +356,82 @@ struct DailyWordWidgetView: View {
         .padding(4)
     }
 
-    private var smallView: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("\(entry.level.uppercased()).\(posLabelWidget(entry.tag))")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(levelColor)
+    private var scaledCardView: some View {
+        GeometryReader { proxy in
+            let metrics = WidgetCardMetrics(family: family, size: proxy.size, word: entry.word)
 
-            Text(entry.word)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .foregroundStyle(headlineColor)
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(entry.level.uppercased()).\(posLabelWidget(entry.tag))")
+                        .font(.system(size: metrics.levelFontSize, weight: .semibold, design: .rounded))
+                        .foregroundStyle(levelColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
 
-            if !entry.exampleFr.isEmpty {
-                Text(entry.exampleFr)
-                    .font(.system(size: 11, weight: .regular))
-                    .lineLimit(3)
-                    .foregroundStyle(exampleColor)
-                    .padding(.top, 6)
+                    Text(entry.word)
+                        .font(.system(size: metrics.titleFontSize, weight: .bold, design: .rounded))
+                        .tracking(metrics.titleTracking)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.42)
+                        .allowsTightening(true)
+                        .foregroundStyle(headlineColor)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.bottom, metrics.titleBottomPadding)
+                }
+                .padding(.bottom, metrics.headerBottomPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Rectangle()
+                    .fill(dividerColor)
+                    .frame(height: max(0.5, metrics.scaled(1)))
+                    .opacity(metrics.dividerOpacity)
+                    .padding(.bottom, metrics.dividerBottomPadding)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    if !entry.translation.isEmpty || !entry.tag.isEmpty {
+                        HStack(alignment: .top, spacing: metrics.detailSpacing) {
+                            Text(posLabelWidget(entry.tag))
+                                .font(.system(size: metrics.posFontSize, weight: .medium, design: .rounded))
+                                .foregroundStyle(secondaryColor)
+                                .padding(.top, max(0.5, metrics.scaled(1)))
+
+                            Text(entry.translation)
+                                .font(.system(size: metrics.translationFontSize, weight: .regular))
+                                .lineSpacing(metrics.scaled(5))
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(bodyColor)
+                        }
+                    }
+
+                    if !entry.exampleFr.isEmpty {
+                        Text(entry.exampleFr)
+                            .font(.system(size: metrics.exampleFontSize, weight: .regular))
+                            .lineSpacing(metrics.scaled(3))
+                            .lineLimit(entry.exampleTranslation.isEmpty ? 3 : 2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(exampleColor)
+                            .padding(.top, metrics.exampleTopPadding)
+                    }
+
+                    if !entry.exampleTranslation.isEmpty {
+                        Text(entry.exampleTranslation)
+                            .font(.system(size: metrics.exampleTranslationFontSize, weight: .regular))
+                            .lineSpacing(metrics.scaled(2))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(secondaryColor)
+                            .padding(.top, entry.exampleFr.isEmpty ? metrics.exampleTopPadding : metrics.exampleSpacing)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.vertical, metrics.verticalPadding)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(4)
-    }
-
-    private var mediumView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("\(entry.level.uppercased()).\(posLabelWidget(entry.tag))")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(levelColor)
-
-            Text(entry.word)
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .foregroundStyle(headlineColor)
-
-            if !entry.exampleFr.isEmpty {
-                Text(entry.exampleFr)
-                    .font(.system(size: 14, weight: .regular))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(exampleColor)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(4)
     }
 
     private func posLabelWidget(_ tag: String) -> String {

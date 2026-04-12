@@ -70,6 +70,7 @@ public struct ContentView: View {
     @State private var lastContentTab: MainTab = .explore
     @State private var settingsGearSpinToken = 0
     @State private var spotlightWord: SimpleWord?
+    @State private var widgetOpenedWordId: String?
     @State private var isGalaxyVisibleInExplore = false
     @State private var isGestureOnboardingPending = false
     @State private var gestureOnboardingStep: GestureOnboardingStep = .swipeRight
@@ -230,6 +231,11 @@ public struct ContentView: View {
                 searchIndex: appState.wordSearchIndex
             )
         )
+        .onAppear {
+            guard appState.hasCompletedInitialResourceLoad else { return }
+            presentSpotlightWordIfAvailable(appState.spotlightSelectedWordId)
+            presentWidgetWordIfAvailable(appState.widgetSelectedWordId)
+        }
         .onChange(of: appState.level) { _, newLevel in
             srsManager.setTargetLevel(newLevel)
             advanceDiscover()
@@ -242,23 +248,85 @@ public struct ContentView: View {
             }
         }
         .onChange(of: appState.spotlightSelectedWordId) { _, wordId in
-            guard let wordId, let word = appState.words.first(where: { $0.id == wordId }) else { return }
-            appState.spotlightSelectedWordId = nil
-            spotlightWord = word
+            presentSpotlightWordIfAvailable(wordId)
+        }
+        .onChange(of: appState.widgetSelectedWordId) { _, wordId in
+            presentWidgetWordIfAvailable(wordId)
+        }
+        .onChange(of: appState.hasCompletedInitialResourceLoad) { _, loaded in
+            guard loaded else { return }
+            presentSpotlightWordIfAvailable(appState.spotlightSelectedWordId)
+            presentWidgetWordIfAvailable(appState.widgetSelectedWordId)
         }
         #if os(iOS)
         .fullScreenCover(item: $spotlightWord) { word in
+            let openedFromWidget = widgetOpenedWordId == word.id
             SearchSelectedWordCardView(
                 word: word,
                 themeMode: appState.themeMode,
                 dismissOnTap: true,
-                onDismiss: { spotlightWord = nil },
-                onSwipeForgot: { srsManager.markWordForgot($0, persistDuringInfinitePractice: true) },
-                onSwipeMastered: { srsManager.markWordMastered($0, persistDuringInfinitePractice: true) },
-                onSwipeBlurry: { srsManager.markWordBlurry($0, persistDuringInfinitePractice: true) }
+                onDismiss: {
+                    spotlightWord = nil
+                    if openedFromWidget {
+                        widgetOpenedWordId = nil
+                    }
+                },
+                onSwipeForgot: { markPresentedWordForgot($0, openedFromWidget: openedFromWidget) },
+                onSwipeMastered: { markPresentedWordMastered($0, openedFromWidget: openedFromWidget) },
+                onSwipeBlurry: { markPresentedWordBlurry($0, openedFromWidget: openedFromWidget) }
             )
         }
         #endif
+    }
+
+    private func presentSpotlightWordIfAvailable(_ wordId: String?) {
+        guard let wordId,
+              let word = appState.getWordById(wordId) ?? appState.words.first(where: { $0.id == wordId }) else {
+            return
+        }
+
+        appState.spotlightSelectedWordId = nil
+        widgetOpenedWordId = nil
+        spotlightWord = word
+    }
+
+    private func presentWidgetWordIfAvailable(_ wordId: String?) {
+        guard let wordId,
+              let word = appState.getWordById(wordId) ?? appState.words.first(where: { $0.id == wordId }) else {
+            return
+        }
+
+        appState.widgetSelectedWordId = nil
+        widgetOpenedWordId = wordId
+        spotlightWord = word
+    }
+
+    private func markPresentedWordForgot(_ id: String, openedFromWidget: Bool) {
+        srsManager.markWordForgot(id, persistDuringInfinitePractice: true)
+        refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
+    }
+
+    private func markPresentedWordMastered(_ id: String, openedFromWidget: Bool) {
+        srsManager.markWordMastered(id, persistDuringInfinitePractice: true)
+        refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
+    }
+
+    private func markPresentedWordBlurry(_ id: String, openedFromWidget: Bool) {
+        srsManager.markWordBlurry(id, persistDuringInfinitePractice: true)
+        refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
+    }
+
+    private func refreshWidgetAfterMarking(wordId: String, openedFromWidget: Bool) {
+        guard openedFromWidget, appState.hasCompletedInitialResourceLoad else { return }
+        WidgetDataService.writeWidgetPool(
+            from: appState.words,
+            language: appState.language,
+            level: appState.level,
+            memberUnlocked: appState.memberUnlocked,
+            excluding: [wordId]
+        )
+        WidgetCenter.shared.reloadAllTimelines()
+        widgetOpenedWordId = nil
     }
 
     private func advanceDiscover() {
@@ -948,19 +1016,10 @@ private struct DiscoverScreen: View {
 
     private func writeWidgetData() {
         guard appState.hasCompletedInitialResourceLoad else { return }
-        let level = appState.level
-        let filtered = level == "All" ? appState.words : appState.words.filter { $0.level == level }
-        let pool = filtered.shuffled().prefix(50).map {
-            WidgetWordData(
-                id: $0.id, word: $0.word, tag: $0.tag, level: $0.level,
-                translationEn: $0.translationEn, translationZh: $0.translationZh,
-                exampleFr: $0.exampleFr, exampleEn: $0.exampleEn, exampleZh: $0.exampleZh
-            )
-        }
         WidgetDataService.writeWidgetPool(
-            pool,
+            from: appState.words,
             language: appState.language,
-            level: level,
+            level: appState.level,
             memberUnlocked: appState.memberUnlocked
         )
         WidgetCenter.shared.reloadAllTimelines()

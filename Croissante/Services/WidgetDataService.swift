@@ -7,9 +7,11 @@ struct WidgetWordData: Codable {
     let level: String
     let translationEn: String
     let translationZh: String
+    let translationHi: String?
     let exampleFr: String
     let exampleEn: String
     let exampleZh: String
+    let exampleHi: String?
 }
 
 enum WidgetDataService {
@@ -79,5 +81,36 @@ enum WidgetDataService {
             defaults.removeObject(forKey: memberAccessExpiresAtKey)
             defaults.removeObject(forKey: memberAccessNeverExpiresKey)
         }
+    }
+
+    static func writeWidgetPool(
+        from words: [SimpleWord],
+        language: String,
+        level: String,
+        memberUnlocked: Bool,
+        excluding excludedWordIds: Set<String> = []
+    ) {
+        let filtered = level == "All" ? words : words.filter { $0.level == level }
+        let pool = filtered
+            .filter { !excludedWordIds.contains($0.id) }
+            .shuffled()
+            .prefix(50)
+            .map { word in
+                WidgetWordData(
+                    id: word.id,
+                    word: word.word,
+                    tag: word.tag,
+                    level: word.level,
+                    translationEn: word.translationEn,
+                    translationZh: word.translationZh,
+                    translationHi: word.translationHi,
+                    exampleFr: word.exampleFr,
+                    exampleEn: word.exampleEn,
+                    exampleZh: word.exampleZh,
+                    exampleHi: word.exampleHi
+                )
+            }
+
+        writeWidgetPool(pool, language: language, level: level, memberUnlocked: memberUnlocked)
     }
 }
