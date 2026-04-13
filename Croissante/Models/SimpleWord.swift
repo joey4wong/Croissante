@@ -199,7 +199,7 @@ public struct SimpleWord: Identifiable, Codable, Sendable {
     }
 
     private static func idPart(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "na" }
         return trimmed
             .replacingOccurrences(of: "'", with: "")
