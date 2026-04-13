@@ -3005,10 +3005,11 @@ private struct CardBody: View {
                         Text(word.auxiliary)
                     }
                 }
-                .font(cardFont(size: 10, weight: .semibold))
+                .font(cardFont(size: 10 * (2.0 / 3.0), weight: .semibold))
                 .tracking(0.7)
                 .foregroundStyle(levelTextColor)
                 .opacity(primaryReveal * 0.78)
+                .offset(y: -8)
                 Text(word.displayWord)
                     .font(cardFont(size: titleBaseFontSize, weight: .bold))
                     .tracking(0.2)
@@ -3294,7 +3295,10 @@ private struct TransitionDiscoverCard: View {
                         Text(word.auxiliary)
                     }
                 }
+                .font(cardFont(size: 11 * (2.0 / 3.0), weight: .semibold))
+                .foregroundStyle(levelTextColor)
                 .opacity(detailProgress)
+                .offset(y: -8)
                 Text(word.displayWord)
                     .font(cardFont(size: titleBaseFontSize, weight: .bold))
                     .tracking(0.2)
@@ -3305,8 +3309,6 @@ private struct TransitionDiscoverCard: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 22)
             }
-            .font(cardFont(size: 11, weight: .semibold))
-            .foregroundStyle(levelTextColor)
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
 
