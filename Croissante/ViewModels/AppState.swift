@@ -263,6 +263,7 @@ public final class AppState: ObservableObject {
     @Published public var words: [SimpleWord] = []
     @Published public var spotlightSelectedWordId: String?
     @Published public var widgetSelectedWordId: String?
+    @Published public var openMemberPaywallFromDeepLink = false
     @Published public var conjugationFormsByLemma: [String: [String]] = [:]
     @Published var wordSearchIndex: WordSearchIndex = .empty
     @Published public private(set) var hasCompletedInitialResourceLoad: Bool = false

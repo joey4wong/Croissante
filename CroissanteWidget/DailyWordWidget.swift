@@ -150,7 +150,7 @@ struct DailyWordProvider: TimelineProvider {
             tag: "",
             level: "",
             translation: "",
-            exampleFr: "Open Croissante to unlock widgets.",
+            exampleFr: "",
             exampleTranslation: "",
             isLocked: true,
             isEmpty: false
@@ -158,35 +158,27 @@ struct DailyWordProvider: TimelineProvider {
     }
 
     private func translation(for word: WidgetWordData, language: String) -> String {
-        let candidates: [String?]
         switch language {
-        case "zh":
-            candidates = [word.translationZh, word.translationEn, word.translationHi]
-        case "hi":
-            candidates = [word.translationHi, word.translationEn, word.translationZh]
-        default:
-            candidates = [word.translationEn, word.translationZh, word.translationHi]
+        case "zh": return firstNonEmpty(word.translationZh, word.translationEn, word.translationHi)
+        case "hi": return firstNonEmpty(word.translationHi, word.translationEn, word.translationZh)
+        default: return firstNonEmpty(word.translationEn, word.translationZh, word.translationHi)
         }
-
-        return candidates
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty } ?? ""
     }
 
     private func exampleTranslation(for word: WidgetWordData, language: String) -> String {
-        let candidates: [String?]
         switch language {
-        case "zh":
-            candidates = [word.exampleZh, word.exampleEn, word.exampleHi]
-        case "hi":
-            candidates = [word.exampleHi, word.exampleEn, word.exampleZh]
-        default:
-            candidates = [word.exampleEn, word.exampleZh, word.exampleHi]
+        case "zh": return firstNonEmpty(word.exampleZh, word.exampleEn, word.exampleHi)
+        case "hi": return firstNonEmpty(word.exampleHi, word.exampleEn, word.exampleZh)
+        default: return firstNonEmpty(word.exampleEn, word.exampleZh, word.exampleHi)
         }
+    }
 
-        return candidates
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty } ?? ""
+    private func firstNonEmpty(_ values: String?...) -> String {
+        for v in values {
+            let t = v?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !t.isEmpty { return t }
+        }
+        return ""
     }
 }
 
@@ -267,15 +259,6 @@ struct DailyWordWidgetView: View {
 
     private var isDark: Bool { colorScheme == .dark }
 
-    private var surfaceColor: Color {
-        isDark ? Color(red: 0.15, green: 0.14, blue: 0.15) : Color(red: 0.965, green: 0.966, blue: 0.972)
-    }
-    private var borderColor: Color {
-        isDark ? Color.white.opacity(0.14) : Color.white.opacity(0.72)
-    }
-    private var glowColor: Color {
-        isDark ? Color(red: 0.31, green: 1.00, blue: 0.66) : Color(red: 0.51, green: 0.86, blue: 0.75)
-    }
     private var headlineColor: Color {
         isDark ? Color.white.opacity(0.92) : Color(red: 0.08, green: 0.11, blue: 0.20)
     }
@@ -304,7 +287,10 @@ struct DailyWordWidgetView: View {
     }
 
     private var deepLinkURL: URL? {
-        guard !entry.isLocked, !entry.isEmpty else { return nil }
+        if entry.isLocked {
+            return URL(string: "croissante://paywall")
+        }
+        guard !entry.isEmpty else { return nil }
         let wordId = entry.wordId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !wordId.isEmpty else { return nil }
 
@@ -320,14 +306,7 @@ struct DailyWordWidgetView: View {
             if entry.isLocked {
                 lockedView
             } else {
-                switch family {
-                case .systemSmall:
-                    scaledCardView
-                case .systemMedium:
-                    scaledCardView
-                default:
-                    scaledCardView
-                }
+                scaledCardView
             }
         }
         .containerBackground(for: .widget) { bgGradient }
@@ -335,28 +314,27 @@ struct DailyWordWidgetView: View {
     }
 
     private var lockedView: some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 7 : 9) {
-            HStack(spacing: 8) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: family == .systemSmall ? 14 : 16, weight: .semibold))
-                    .foregroundStyle(headlineColor.opacity(0.78))
+        let side = family == .systemSmall ? CGFloat(56) : 72
+        let titleSize = family == .systemSmall ? CGFloat(17) : 22
+        let padH = family == .systemSmall ? CGFloat(8) : 16
+        return ZStack {
+            Image("Croissante00001")
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: side, height: side)
 
-                Text("Croissante Plus")
-                    .font(.system(size: family == .systemSmall ? 17 : 19, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .foregroundStyle(headlineColor)
-            }
-
-            Text(entry.exampleFr)
-                .font(.system(size: family == .systemSmall ? 12 : 14, weight: .regular))
-                .lineLimit(family == .systemSmall ? 3 : 2)
-                .foregroundStyle(exampleColor)
-
-            Spacer(minLength: 0)
+            Text(entry.word)
+                .font(.system(size: titleSize, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(headlineColor)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, family == .systemSmall ? 6 : 8)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, padH)
     }
 
     private var scaledCardView: some View {

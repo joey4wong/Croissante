@@ -38,6 +38,7 @@
 		W10000000000000000000001 /* CroissanteWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000011 /* CroissanteWidgetBundle.swift */; };
 		W10000000000000000000002 /* DailyWordWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000012 /* DailyWordWidget.swift */; };
 		W10000000000000000000003 /* CroissanteWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = W10000000000000000000005 /* CroissanteWidgetExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		W10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -349,6 +350,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				W10000000000000000000004 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -576,8 +578,6 @@
 		W1000000000000000000000E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -609,8 +609,6 @@
 		W1000000000000000000000F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;

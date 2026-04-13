@@ -71,6 +71,7 @@ public struct ContentView: View {
     @State private var settingsGearSpinToken = 0
     @State private var spotlightWord: SimpleWord?
     @State private var widgetOpenedWordId: String?
+    @State private var pendingSettingsMemberPaywall = false
     @State private var isGalaxyVisibleInExplore = false
     @State private var isGestureOnboardingPending = false
     @State private var gestureOnboardingStep: GestureOnboardingStep = .swipeRight
@@ -162,7 +163,7 @@ public struct ContentView: View {
     }
 
     private var settingsView: some View {
-        SettingsScreen()
+        SettingsScreen(pendingMemberPaywall: $pendingSettingsMemberPaywall)
             .environmentObject(appState)
             .background {
                 wallpaperBackground
@@ -257,6 +258,12 @@ public struct ContentView: View {
             guard loaded else { return }
             presentSpotlightWordIfAvailable(appState.spotlightSelectedWordId)
             presentWidgetWordIfAvailable(appState.widgetSelectedWordId)
+        }
+        .onChange(of: appState.openMemberPaywallFromDeepLink) { _, open in
+            guard open else { return }
+            appState.openMemberPaywallFromDeepLink = false
+            selectedTab = .settings
+            pendingSettingsMemberPaywall = true
         }
         #if os(iOS)
         .fullScreenCover(item: $spotlightWord) { word in
@@ -3726,11 +3733,16 @@ private struct ProgressWordRow: View {
 }
 
 private struct SettingsScreen: View {
+    @Binding private var pendingMemberPaywall: Bool
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var storeKitManager: StoreKitManager
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
+
+    init(pendingMemberPaywall: Binding<Bool> = .constant(false)) {
+        _pendingMemberPaywall = pendingMemberPaywall
+    }
     @StateObject private var appIconManager = AppIconManager.shared
     @State private var showingAvatarPicker = false
     @State private var showingFAQ = false
@@ -3966,6 +3978,15 @@ private struct SettingsScreen: View {
     private let memberPaywallExpandedDetentHeight: CGFloat = 618
     private var memberPaywallDetentHeight: CGFloat {
         memberPaywallShowingAllPlans ? memberPaywallExpandedDetentHeight : memberPaywallCollapsedDetentHeight
+    }
+
+    private func consumePendingMemberPaywallFromDeepLink() {
+        guard pendingMemberPaywall else { return }
+        pendingMemberPaywall = false
+        guard !appState.memberUnlocked else { return }
+        DispatchQueue.main.async {
+            showingMemberUnlock = true
+        }
     }
 
     private var avatarMetalRingGradient: [Color] {
@@ -4267,6 +4288,7 @@ private struct SettingsScreen: View {
                     }
                     .buttonStyle(.plain)
                 }
+                .padding(.top, 22)
                 .padding(.horizontal, 20)
 
                 SettingsGroupCard {
@@ -4381,17 +4403,6 @@ private struct SettingsScreen: View {
                 .padding(.horizontal, 20)
 
                 SettingsGroupCard {
-                    NotificationReminderSettingsCard(
-                        title: notificationRowTitle,
-                        displayTime: reminderTimeText,
-                        stepIndex: reminderStepIndex,
-                        isEnabled: reminderToggleBinding,
-                        onChangeStep: setReminderStepIndex
-                    )
-                }
-                .padding(.horizontal, 20)
-
-                SettingsGroupCard {
                         SettingsCardRow(
                             icon: "globe",
                             title: appState.localized("Language", "语言", "भाषा"),
@@ -4490,6 +4501,17 @@ private struct SettingsScreen: View {
                         }
 
                         appIconOptionsSection
+                }
+                .padding(.horizontal, 20)
+
+                SettingsGroupCard {
+                    NotificationReminderSettingsCard(
+                        title: notificationRowTitle,
+                        displayTime: reminderTimeText,
+                        stepIndex: reminderStepIndex,
+                        isEnabled: reminderToggleBinding,
+                        onChangeStep: setReminderStepIndex
+                    )
                 }
                 .padding(.horizontal, 20)
 
@@ -4654,12 +4676,20 @@ private struct SettingsScreen: View {
                             EmptyView()
                         }
 
-                        SettingsActionButtonsRow(labels: [
-                            appState.localized("Report", "报错", "रिपोर्ट"),
-                            "X",
-                            appState.localized("Rate", "评分", "रेट"),
-                            appState.localized("Share", "分享", "शेयर")
-                        ]) { index in
+                        SettingsActionButtonsRow(
+                            labels: [
+                                "SF:flag.circle.fill",
+                                "X",
+                                "SF:star.leadinghalf.filled",
+                                "SF:square.and.arrow.up.circle"
+                            ],
+                            accessibilityLabels: [
+                                appState.localized("Report", "报错", "रिपोर्ट"),
+                                "X",
+                                appState.localized("Rate", "评分", "रेट"),
+                                appState.localized("Share", "分享", "शेयर")
+                            ]
+                        ) { index in
                             switch index {
                             case 0:
                                 contactDeveloper()
@@ -4697,6 +4727,12 @@ private struct SettingsScreen: View {
                 .presentationDetents([.height(memberPaywallDetentHeight)])
                 .presentationDragIndicator(.visible)
             #endif
+        }
+        .onChange(of: pendingMemberPaywall) { _, _ in
+            consumePendingMemberPaywallFromDeepLink()
+        }
+        .onAppear {
+            consumePendingMemberPaywallFromDeepLink()
         }
         .sheet(isPresented: $showingAppIconPicker) {
             appIconPickerSheet
@@ -6801,8 +6837,15 @@ private actor DailyReminderService {
 
 private struct SettingsActionButtonsRow: View {
     let labels: [String]
+    let accessibilityLabels: [String]
     let onTap: (Int) -> Void
     @Environment(\.colorScheme) private var colorScheme
+
+    init(labels: [String], accessibilityLabels: [String]? = nil, onTap: @escaping (Int) -> Void) {
+        self.labels = labels
+        self.accessibilityLabels = accessibilityLabels ?? labels
+        self.onTap = onTap
+    }
 
     private var actionColor: Color {
         colorScheme == .dark
@@ -6819,7 +6862,7 @@ private struct SettingsActionButtonsRow: View {
     }
 
     @ViewBuilder
-    private func actionLabel(_ label: String) -> some View {
+    private func actionLabel(_ label: String, accessibilityLabel: String) -> some View {
         if label == "X" {
             Image("XSocialIcon")
                 .renderingMode(.template)
@@ -6827,7 +6870,15 @@ private struct SettingsActionButtonsRow: View {
                 .scaledToFit()
                 .frame(width: 17, height: 17)
                 .foregroundStyle(xIconColor)
-                .accessibilityLabel("X")
+                .accessibilityLabel(accessibilityLabel)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        } else if label.hasPrefix("SF:") {
+            let name = String(label.dropFirst(3))
+            Image(systemName: name)
+                .font(.system(size: 20, weight: .medium, design: .rounded))
+                .foregroundStyle(actionColor)
+                .accessibilityLabel(accessibilityLabel)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
         } else {
@@ -6836,6 +6887,7 @@ private struct SettingsActionButtonsRow: View {
                 .foregroundStyle(actionColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
+                .accessibilityLabel(accessibilityLabel)
         }
     }
 
@@ -6851,7 +6903,7 @@ private struct SettingsActionButtonsRow: View {
                     Button(action: {
                         onTap(idx)
                     }) {
-                        actionLabel(label)
+                        actionLabel(label, accessibilityLabel: accessibilityLabels.indices.contains(idx) ? accessibilityLabels[idx] : label)
                     }
                     .buttonStyle(.plain)
                 }

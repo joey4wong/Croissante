@@ -90,8 +90,12 @@ struct CroissanteApp: App {
     }
 
     private func handleIncomingURL(_ url: URL) {
-        guard url.scheme == "croissante",
-              url.host == "word",
+        guard url.scheme == "croissante" else { return }
+        if url.host == "paywall" {
+            appState.openMemberPaywallFromDeepLink = true
+            return
+        }
+        guard url.host == "word",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let rawWordId = components.queryItems?.first(where: { $0.name == "id" })?.value else {
             return
