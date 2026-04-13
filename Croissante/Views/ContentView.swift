@@ -4159,6 +4159,19 @@ private struct SettingsScreen: View {
                 )
             ),
             FAQItem(
+                id: "blurry-forgot-review",
+                question: appState.localized(
+                    "How do Blurry and Forgot affect reviews?",
+                    "“模糊”和“忘记”会怎样影响复习？",
+                    "Blurry और Forgot से रिव्यू कैसे बदलता है?"
+                ),
+                answer: appState.localized(
+                    "Blurry and Forgot do not add extra cards to today's goal. The word stays in today's set until you can mark it Mastered, and both are scheduled for a short review tomorrow. Forgot resets consecutive corrects to 0; Blurry only reduces them by 1. If you mark it Mastered later on the same day, today's goal can count it as passed, but long-term progress still treats it as unsettled. It returns to Mastered only after a later scheduled review is also marked Mastered.",
+                    "“模糊”和“忘记”不会给今天额外加卡。这个词会留在今天的目标池里，直到你今天把它标记为“掌握”；两者都会安排到明天短期复习。区别是：“忘记”会把连续正确数归 0，“模糊”只会让连续正确数减 1。如果同一天后面又标记“掌握”，今天的目标可以把它算作通过，但长期进度仍会把它视为未稳固；只有之后到期复习也标记“掌握”，它才会真正回到“掌握”。",
+                    "Blurry और Forgot आज के लक्ष्य में अतिरिक्त कार्ड नहीं जोड़ते। शब्द आज के सेट में तब तक रहता है जब तक आप उसे Mastered नहीं कर देते, और दोनों को कल छोटे रिव्यू के लिए रखा जाता है। Forgot लगातार सही जवाबों को 0 कर देता है; Blurry उन्हें सिर्फ 1 घटाता है। अगर आप उसी दिन बाद में Mastered कर दें, तो आज का लक्ष्य उसे पास मान सकता है, लेकिन लंबी अवधि की प्रगति उसे अभी भी अस्थिर मानती है। वह बाद की scheduled review में फिर से Mastered होने पर ही Mastered में लौटता है."
+                )
+            ),
+            FAQItem(
                 id: "progress-buckets",
                 question: appState.localized(
                     "Why can a word stay Blurry after I mark it Mastered?",
