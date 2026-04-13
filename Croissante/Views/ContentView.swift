@@ -2932,7 +2932,7 @@ private struct CardBody: View {
         switch word.nounUICorner {
         case "green": return .green
         case "red": return .red
-        case "dual", "neutral": return .lavender
+        case "dual", "neutral", "lavender": return .lavender
         case "not_applicable": return nil
         default: return nil
         }
@@ -3221,7 +3221,7 @@ private struct TransitionDiscoverCard: View {
             return .green
         case "red":
             return .red
-        case "dual", "neutral":
+        case "dual", "neutral", "lavender":
             return .lavender
         case "not_applicable":
             return nil
