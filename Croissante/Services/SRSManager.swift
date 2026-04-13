@@ -1066,10 +1066,17 @@ public final class SRSManager: ObservableObject {
         guard let appState = appState else { return }
         var resolved = learningQueueIds.compactMap { appState.getWordById($0) }
         if resolved.isEmpty,
+           isInfinitePracticeActive,
+           !learningQueueIds.isEmpty {
+            learningQueueIds = []
+            refillInfiniteQueueIfNeeded(now: Date())
+            resolved = learningQueueIds.compactMap { appState.getWordById($0) }
+        }
+        if resolved.isEmpty,
            !isInfinitePracticeActive,
            todayStudyState == .completed,
            hasReachedDailyMasteryGoal {
-            startInfinitePractice()
+            completeDailyGoalAndEnterInfinitePractice()
             resolved = learningQueueIds.compactMap { appState.getWordById($0) }
         }
         if resolved.isEmpty,
@@ -1225,28 +1232,36 @@ public final class SRSManager: ObservableObject {
         return true
     }
 
-    public func applyLevelPromotionIfNeededThenStartInfinite() {
+    public func completeDailyGoalAndEnterInfinitePractice() {
+        guard hasReachedDailyMasteryGoal else { return }
         guard let appState else { return }
-        if hasReachedDailyMasteryGoal,
-           targetLevel != "All",
-           isCurrentLevelLexiconFullyGraduated(allWords: appState.words),
-           let next = Self.nextProficiencyLevel(after: targetLevel) {
-            appState.level = next
-            activateInfinitePracticeAndRefill()
-            return
+
+        let sourceLevel = infinitePracticeSourceLevel(afterCompleting: targetLevel, allWords: appState.words)
+        if sourceLevel != targetLevel {
+            targetLevel = sourceLevel
         }
-        startInfinitePractice()
+        if appState.level != sourceLevel {
+            appState.level = sourceLevel
+        }
+
+        activateInfinitePracticeAndRefill()
+    }
+
+    private func infinitePracticeSourceLevel(afterCompleting level: String, allWords: [SimpleWord]) -> String {
+        let normalizedLevel = canonicalTargetLevel(level)
+        guard normalizedLevel != "All",
+              isCurrentLevelLexiconFullyGraduated(allWords: allWords),
+              let next = Self.nextProficiencyLevel(after: normalizedLevel) else {
+            return normalizedLevel
+        }
+        return next
     }
 
     private func activateInfinitePracticeAndRefill() {
+        learningQueueIds = []
         isInfinitePracticeActive = true
         refillInfiniteQueueIfNeeded(now: Date())
         saveLearningState(touchMutation: true)
-    }
-
-    public func startInfinitePractice() {
-        guard hasReachedDailyMasteryGoal else { return }
-        activateInfinitePracticeAndRefill()
     }
 
     var todayMasteryProgressRatio: Double {

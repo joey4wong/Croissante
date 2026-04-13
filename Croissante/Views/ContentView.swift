@@ -969,7 +969,7 @@ private struct DiscoverScreen: View {
         pendingAutoInfiniteTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
-            srsManager.startInfinitePractice()
+            srsManager.completeDailyGoalAndEnterInfinitePractice()
             pendingAutoInfiniteTask = nil
         }
     }
