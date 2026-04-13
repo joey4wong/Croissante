@@ -210,9 +210,9 @@ private struct WidgetCardMetrics {
     let isSmall: Bool
 
     init(family: WidgetFamily, size: CGSize, word: String) {
-        // Mirrors the homepage card content baseline: 393pt card width minus 26pt side padding.
-        let referenceContentWidth: CGFloat = 341
-        let referenceContentHeight: CGFloat = 252
+        // Mirrors the homepage card baseline: 393pt width, 24pt side padding, width - 72 content height.
+        let referenceContentWidth: CGFloat = 345
+        let referenceContentHeight: CGFloat = 321
         let availableWidth = max(size.width, 1)
         let availableHeight = max(size.height, 1)
         scale = min(availableWidth / referenceContentWidth, availableHeight / referenceContentHeight)
@@ -239,21 +239,24 @@ private struct WidgetCardMetrics {
         max(scaled(value), minimum)
     }
 
-    var horizontalPadding: CGFloat { max(4, scaled(26)) }
-    var verticalPadding: CGFloat { max(4, scaled(14)) }
-    var headerBottomPadding: CGFloat { max(2, scaled(6)) }
-    var titleBottomPadding: CGFloat { max(2, scaled(6)) }
-    var dividerBottomPadding: CGFloat { max(3, scaled(8)) }
-    var exampleTopPadding: CGFloat { max(4, scaled(8)) }
+    var horizontalPadding: CGFloat { max(4, scaled(24)) }
+    var verticalPadding: CGFloat { max(4, scaled(24)) }
+    var headerSpacing: CGFloat { max(1, scaled(4)) }
+    var headerBottomPadding: CGFloat { max(2, scaled(16)) }
+    var titleBottomPadding: CGFloat { max(2, scaled(20)) }
+    var dividerBottomPadding: CGFloat { max(3, scaled(20)) }
+    var exampleTopPadding: CGFloat { max(4, scaled(18)) }
     var exampleSpacing: CGFloat { max(2, scaled(4)) }
     var detailSpacing: CGFloat { max(6, scaled(10)) }
-    var levelFontSize: CGFloat { fontSize(11, minimum: isSmall ? 9 : 10) }
+    var levelFontSize: CGFloat { fontSize(10, minimum: isSmall ? 8.5 : 9.5) }
     var titleFontSize: CGFloat { fontSize(titleBaseFontSize, minimum: isSmall ? 24 : 30) }
     var posFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
     var translationFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
     var exampleFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
     var exampleTranslationFontSize: CGFloat { fontSize(15, minimum: isSmall ? 9.5 : 11.5) }
     var titleTracking: CGFloat { scaled(0.2) }
+    var levelTracking: CGFloat { scaled(0.7) }
+    var levelOpacity: Double { 0.78 }
     var dividerOpacity: Double { 0.64 }
 }
 
@@ -361,12 +364,14 @@ struct DailyWordWidgetView: View {
             let metrics = WidgetCardMetrics(family: family, size: proxy.size, word: entry.word)
 
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: metrics.headerSpacing) {
                     Text("\(entry.level.uppercased()).\(posLabelWidget(entry.tag))")
                         .font(.system(size: metrics.levelFontSize, weight: .semibold, design: .rounded))
+                        .tracking(metrics.levelTracking)
                         .foregroundStyle(levelColor)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                        .opacity(metrics.levelOpacity)
 
                     Text(entry.word)
                         .font(.system(size: metrics.titleFontSize, weight: .bold, design: .rounded))

@@ -9,14 +9,27 @@ final class SpotlightService {
     
     private let domainIdentifier = "daily_french_word"
     private let chunkSize = 120
+    private var reindexTask: Task<Void, Never>?
     
     func indexAllWords(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]], spotlightEnabled: Bool) {
         guard spotlightEnabled else { return }
-        indexItemsInChunks(makeSearchableItems(words, conjugationFormsByLemma: conjugationFormsByLemma))
+        let previousTask = reindexTask
+        previousTask?.cancel()
+        reindexTask = Task { @MainActor [words, conjugationFormsByLemma, previousTask] in
+            await previousTask?.value
+            guard !Task.isCancelled else { return }
+            await replaceAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma)
+        }
     }
     
     func removeAllWords() {
-        CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { _ in }
+        let previousTask = reindexTask
+        previousTask?.cancel()
+        reindexTask = Task { @MainActor [previousTask] in
+            await previousTask?.value
+            guard !Task.isCancelled else { return }
+            await deleteAllWordsAwaiting()
+        }
     }
     
     func handleUserActivity(_ userActivity: NSUserActivity) -> String? {
@@ -45,13 +58,12 @@ final class SpotlightService {
         let description = word.translationEn.trimmingCharacters(in: .whitespacesAndNewlines)
         let lemma = SearchTextNormalizer.normalize(word.word)
         let forms = conjugationFormsByLemma[lemma] ?? []
-        let formsText = forms.isEmpty ? "" : " • \(forms.prefix(12).joined(separator: " "))"
 
         let attributeSet = CSSearchableItemAttributeSet(contentType: .text)
         attributeSet.title = word.word
         attributeSet.contentDescription = description.isEmpty
-            ? "\(word.level)\(formsText)"
-            : "\(description) · \(word.level)\(formsText)"
+            ? word.level
+            : "\(description) · \(word.level)"
         attributeSet.keywords = [
             word.word,
             word.translationEn,
@@ -74,5 +86,20 @@ final class SpotlightService {
     private func indexItems(_ items: [CSSearchableItem]) {
         guard !items.isEmpty else { return }
         CSSearchableIndex.default().indexSearchableItems(items) { _ in }
+    }
+
+    private func replaceAllWords(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) async {
+        await deleteAllWordsAwaiting()
+        guard !Task.isCancelled else { return }
+        indexItemsInChunks(makeSearchableItems(words, conjugationFormsByLemma: conjugationFormsByLemma))
+    }
+
+    @discardableResult
+    private func deleteAllWordsAwaiting() async -> Bool {
+        await withCheckedContinuation { continuation in
+            CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { error in
+                continuation.resume(returning: error == nil)
+            }
+        }
     }
 }

@@ -1659,6 +1659,12 @@ private struct ActiveDiscoverCardHost: View {
     @State private var hasCompletedTransition = false
 
     private let transitionDuration: Double = 0.48
+    private var restingCardYOffset: CGFloat {
+        -min(56, max(36, containerSize.height * 0.06))
+    }
+    private var restingCardContentHeight: CGFloat {
+        max(containerSize.width - 72, 0)
+    }
 
     var body: some View {
         Group {
@@ -1701,6 +1707,7 @@ private struct ActiveDiscoverCardHost: View {
         let isTransitioning = transitionRequest != nil
         let glowStrength = isTransitioning ? min(1.0, detailProgress) : 1.0
         let interactionEnabled = !isTransitioning && allowsInteractions
+        let cardYOffset = restingCardYOffset * CGFloat(detailProgress)
         let state: SelectedGalaxyCardState = transitionRequest.map {
             transitionRenderState(for: $0, targetCardWidth: containerSize.width, progress: progress)
         } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
@@ -1709,7 +1716,7 @@ private struct ActiveDiscoverCardHost: View {
             word: word,
             screenWidth: containerSize.width,
             cardWidth: containerSize.width,
-            cardHeight: max(containerSize.width - 48, 0),
+            cardHeight: restingCardContentHeight,
             isActiveTab: isActiveTab && interactionEnabled,
             detailProgress: detailProgress,
             glowStrength: glowStrength,
@@ -1721,7 +1728,7 @@ private struct ActiveDiscoverCardHost: View {
         )
         .id(word.id)
         .frame(width: containerSize.width, height: containerSize.height)
-        .position(x: containerSize.width / 2, y: containerSize.height / 2)
+        .position(x: containerSize.width / 2, y: containerSize.height / 2 + cardYOffset)
         .allowsHitTesting(!isTransitioning)
         .rotation3DEffect(
             .degrees(state.tiltY),
@@ -2965,7 +2972,7 @@ private struct CardBody: View {
 
     var body: some View {
         cardContent
-            .padding(.horizontal, 26)
+            .padding(.horizontal, 24)
             .padding(.vertical, 24)
             .frame(width: cardWidth, alignment: .top)
             .overlay(alignment: .topTrailing) {
@@ -2981,14 +2988,17 @@ private struct CardBody: View {
 
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(word.level.uppercased())
                     if !word.auxiliary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(word.auxiliary)
                     }
                 }
-                .opacity(primaryReveal)
+                .font(cardFont(size: 10, weight: .semibold))
+                .tracking(0.7)
+                .foregroundStyle(levelTextColor)
+                .opacity(primaryReveal * 0.78)
                 Text(word.displayWord)
                     .font(cardFont(size: titleBaseFontSize, weight: .bold))
                     .tracking(0.2)
@@ -2997,10 +3007,8 @@ private struct CardBody: View {
                     .allowsTightening(true)
                     .foregroundStyle(headlineTextColor)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 22)
+                    .padding(.bottom, 20)
             }
-            .font(cardFont(size: 11, weight: .semibold))
-            .foregroundStyle(levelTextColor)
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(OptionalTapModifier(action: onTitleTap))
@@ -3782,7 +3790,8 @@ private struct SettingsScreen: View {
         ]
     }
     private let settingsToggleScale: CGFloat = 0.84
-    private let compactSettingsRowVerticalPadding: CGFloat = 13
+    private let settingsOptionRowVerticalPadding: CGFloat = 12
+    private let settingsMenuControlHeight: CGFloat = 34
     private let chevronTrailingInset: CGFloat = 12
     private let appIconPickerDetentFraction: CGFloat = 0.5
     private let appIconPickerContentInset: CGFloat = 16
@@ -4242,7 +4251,7 @@ private struct SettingsScreen: View {
                             title: "Croissante Plus",
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: false,
                             matchPickerFont: true
@@ -4250,6 +4259,7 @@ private struct SettingsScreen: View {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                 .padding(.trailing, chevronTrailingInset)
                         }
                     }
@@ -4263,7 +4273,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Level", "等级", "स्तर"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4285,6 +4295,7 @@ private struct SettingsScreen: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.88)
                             .frame(minWidth: 112, alignment: .trailing)
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4292,7 +4303,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Daily Goal", "每日目标", "दैनिक लक्ष्य"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4311,6 +4322,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         if appState.memberUnlocked {
@@ -4319,7 +4331,7 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
                                 subtitle: "",
                                 titleFontSize: 13,
-                                rowVerticalPadding: 12,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsSubtitle: false,
                                 showsDivider: false,
                                 matchPickerFont: true
@@ -4338,6 +4350,7 @@ private struct SettingsScreen: View {
                                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 .pickerStyle(.menu)
                                 .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                             }
                         } else {
                             Button {
@@ -4348,7 +4361,7 @@ private struct SettingsScreen: View {
                                     title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
                                     subtitle: "",
                                     titleFontSize: 13,
-                                    rowVerticalPadding: 12,
+                                    rowVerticalPadding: settingsOptionRowVerticalPadding,
                                     showsSubtitle: false,
                                     showsDivider: false,
                                     matchPickerFont: true
@@ -4356,6 +4369,7 @@ private struct SettingsScreen: View {
                                     Image(systemName: "lock.fill")
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundStyle(isDarkMode ? Color.white.opacity(0.40) : Color.black.opacity(0.32))
+                                        .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                         .padding(.trailing, chevronTrailingInset)
                                 }
                             }
@@ -4381,7 +4395,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Language", "语言", "भाषा"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4400,6 +4414,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4407,7 +4422,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Theme", "主题", "थीम"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4442,6 +4457,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4449,7 +4465,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Card Font", "卡片字体", "कार्ड फ़ॉन्ट"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4468,6 +4484,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         appIconOptionsSection
@@ -4480,7 +4497,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Spotlight Search", "聚焦搜索", "स्पॉटलाइट खोज"),
                             subtitle: appState.localized("Search words from iOS Spotlight", "在 iOS 聚焦中搜索单词", "iOS स्पॉटलाइट में शब्द खोजें"),
                             titleFontSize: 13,
-                            rowVerticalPadding: compactSettingsRowVerticalPadding,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsDivider: true,
                             matchPickerFont: true
                         ) {
@@ -4488,6 +4505,7 @@ private struct SettingsScreen: View {
                                 .labelsHidden()
                                 .toggleStyle(SwitchToggleStyle(tint: .green))
                                 .scaleEffect(settingsToggleScale)
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4499,7 +4517,7 @@ private struct SettingsScreen: View {
                                 "अपने सभी डिवाइस में सीखने की प्रगति सिंक करें"
                             ),
                             titleFontSize: 13,
-                            rowVerticalPadding: compactSettingsRowVerticalPadding,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsDivider: true,
                             matchPickerFont: true
                         ) {
@@ -4507,6 +4525,7 @@ private struct SettingsScreen: View {
                                 .labelsHidden()
                                 .toggleStyle(SwitchToggleStyle(tint: .green))
                                 .scaleEffect(settingsToggleScale)
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4514,7 +4533,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Auto-play", "自动播放", "ऑटो-प्ले"),
                             subtitle: appState.localized("Speak the word automatically", "自动朗读单词", "शब्द अपने आप बोलें"),
                             titleFontSize: 13,
-                            rowVerticalPadding: compactSettingsRowVerticalPadding,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsDivider: true,
                             matchPickerFont: true
                         ) {
@@ -4522,6 +4541,7 @@ private struct SettingsScreen: View {
                                 .labelsHidden()
                                 .toggleStyle(SwitchToggleStyle(tint: .green))
                                 .scaleEffect(settingsToggleScale)
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         Button {
@@ -4532,14 +4552,15 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Reset Data", "重置数据", "डेटा रीसेट"),
                                 subtitle: appState.localized("Reset learning progress", "重置学习进度", "सीखने की प्रगति रीसेट करें"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
-                                showsSubtitle: true,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
+                                showsSubtitle: false,
                                 showsDivider: false,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
@@ -4556,13 +4577,14 @@ private struct SettingsScreen: View {
                                 title: appState.localized("FAQ", "常见问题", "सामान्य प्रश्न"),
                                 subtitle: appState.localized("Frequently asked questions", "常见问题解答", "अक्सर पूछे जाने वाले सवाल"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsDivider: true,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
@@ -4578,13 +4600,14 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Terms of Use", "使用条款", "उपयोग की शर्तें"),
                                 subtitle: appState.localized("Terms and conditions", "条款与条件", "नियम और शर्तें"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsDivider: true,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
@@ -4600,13 +4623,14 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Privacy Policy", "隐私政策", "गोपनीयता नीति"),
                                 subtitle: appState.localized("How we handle your data", "我们如何处理你的数据", "हम आपके डेटा को कैसे संभालते हैं"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsDivider: false,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
@@ -4869,7 +4893,7 @@ private struct SettingsScreen: View {
                 title: appState.localized("App Icon", "应用图标", "ऐप आइकन"),
                 subtitle: "",
                 titleFontSize: 13,
-                rowVerticalPadding: 12,
+                rowVerticalPadding: settingsOptionRowVerticalPadding,
                 showsDivider: false,
                 matchPickerFont: true
             ) {
@@ -4880,6 +4904,7 @@ private struct SettingsScreen: View {
                             ? (isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
                             : (isDarkMode ? Color.white.opacity(0.40) : Color.black.opacity(0.32))
                     )
+                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                     .padding(.trailing, chevronTrailingInset)
             }
         }
@@ -6154,6 +6179,7 @@ private struct SettingsCardRow<Trailing: View>: View {
     let subtitle: String
     let titleFontSize: CGFloat
     let rowVerticalPadding: CGFloat
+    let contentMinHeight: CGFloat
     let showsSubtitle: Bool
     let showsDivider: Bool
     let matchPickerFont: Bool
@@ -6168,6 +6194,7 @@ private struct SettingsCardRow<Trailing: View>: View {
         subtitle: String,
         titleFontSize: CGFloat = 13,
         rowVerticalPadding: CGFloat = 16,
+        contentMinHeight: CGFloat = 34,
         showsSubtitle: Bool = false,
         showsDivider: Bool,
         matchPickerFont: Bool = false,
@@ -6180,6 +6207,7 @@ private struct SettingsCardRow<Trailing: View>: View {
         self.subtitle = subtitle
         self.titleFontSize = titleFontSize
         self.rowVerticalPadding = rowVerticalPadding
+        self.contentMinHeight = contentMinHeight
         self.showsSubtitle = showsSubtitle
         self.showsDivider = showsDivider
         self.matchPickerFont = matchPickerFont
@@ -6212,45 +6240,24 @@ private struct SettingsCardRow<Trailing: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Group {
-                    if let iconAssetName, let customIcon = loadCustomIcon(named: iconAssetName) {
-                        customIcon
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 26, height: 26)
-                    } else {
-                        Image(systemName: icon)
-                            .font(.system(size: 17, weight: .regular))
-                    }
-                }
-                .foregroundStyle(iconAssetName == nil ? iconColor : customIconColor)
-                .frame(width: 26, alignment: .center)
-
-                if showsSubtitle {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 6) {
-                            Text(title)
-                                .font(resolvedTitleFont)
-                                .foregroundStyle(titleColor)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.84)
-
-                            if let titleTrailingSymbol {
-                                Image(systemName: titleTrailingSymbol)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(subtitleColor)
-                            }
-                        }
-                        Text(subtitle)
-                            .font(resolvedSubtitleFont)
-                            .foregroundStyle(subtitleColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.84)
-                    }
+        HStack(spacing: 14) {
+            Group {
+                if let iconAssetName, let customIcon = loadCustomIcon(named: iconAssetName) {
+                    customIcon
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 26, height: 26)
                 } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 17, weight: .regular))
+                }
+            }
+            .foregroundStyle(iconAssetName == nil ? iconColor : customIconColor)
+            .frame(width: 26, alignment: .center)
+
+            if showsSubtitle {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
                         Text(title)
                             .font(resolvedTitleFont)
@@ -6264,15 +6271,38 @@ private struct SettingsCardRow<Trailing: View>: View {
                                 .foregroundStyle(subtitleColor)
                         }
                     }
+                    Text(subtitle)
+                        .font(resolvedSubtitleFont)
+                        .foregroundStyle(subtitleColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.84)
                 }
+            } else {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(resolvedTitleFont)
+                        .foregroundStyle(titleColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.84)
 
-                Spacer(minLength: 10)
-
-                trailing
+                    if let titleTrailingSymbol {
+                        Image(systemName: titleTrailingSymbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(subtitleColor)
+                    }
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, rowVerticalPadding)
 
+            Spacer(minLength: 10)
+
+            trailing
+        }
+        .frame(minHeight: contentMinHeight, alignment: .center)
+        .padding(.horizontal, 16)
+        .padding(.vertical, rowVerticalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay(alignment: .bottom) {
             if showsDivider {
                 Rectangle()
                     .fill(dividerColor)
@@ -6281,8 +6311,6 @@ private struct SettingsCardRow<Trailing: View>: View {
                     .padding(.trailing, 14)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
 
     private func loadCustomIcon(named name: String) -> Image? {
