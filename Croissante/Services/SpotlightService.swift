@@ -8,7 +8,7 @@ final class SpotlightService {
     private init() {}
     
     private let domainIdentifier = "daily_french_word"
-    private let chunkSize = 120
+    private let chunkSize = 500
     private var reindexTask: Task<Void, Never>?
     
     func indexAllWords(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) {
@@ -40,11 +40,12 @@ final class SpotlightService {
         return String(identifier.dropFirst("word_".count))
     }
 
-    private func indexItemsInChunks(_ items: [CSSearchableItem]) {
+    private func indexItemsInChunks(_ items: [CSSearchableItem]) async {
         guard !items.isEmpty else { return }
         for start in stride(from: 0, to: items.count, by: chunkSize) {
+            guard !Task.isCancelled else { return }
             let end = min(start + chunkSize, items.count)
-            CSSearchableIndex.default().indexSearchableItems(Array(items[start..<end])) { _ in }
+            await indexItemsAwaiting(Array(items[start..<end]))
         }
     }
 
@@ -64,7 +65,7 @@ final class SpotlightService {
             word.translationEn,
             word.translationZh,
             word.level
-        ] + forms.prefix(5)
+        ] + forms
 
         let alternateNames = Array(forms.prefix(3))
         if !alternateNames.isEmpty {
@@ -82,7 +83,15 @@ final class SpotlightService {
         await deleteAllWordsAwaiting()
         guard !Task.isCancelled else { return }
         let items = words.map { makeSearchableItem(for: $0, conjugationFormsByLemma: conjugationFormsByLemma) }
-        indexItemsInChunks(items)
+        await indexItemsInChunks(items)
+    }
+
+    private func indexItemsAwaiting(_ items: [CSSearchableItem]) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            CSSearchableIndex.default().indexSearchableItems(items) { _ in
+                continuation.resume()
+            }
+        }
     }
 
     private func deleteAllWordsAwaiting() async {

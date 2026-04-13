@@ -17,7 +17,6 @@ struct SearchSheetView: View {
     @FocusState private var isSearchFieldFocused: Bool
     @AppStorage("search_recent_word_ids") private var recentWordIDsStorage: String = ""
     
-    private let allWords: [SimpleWord]
     private let wordById: [String: SimpleWord]
     private let searchIndex: WordSearchIndex
     let presentationStyle: SearchPresentationStyle
@@ -72,7 +71,6 @@ struct SearchSheetView: View {
     ) {
         self._isPresented = isPresented
         self.presentationStyle = presentationStyle
-        self.allWords = allWords
         self.wordById = Dictionary(uniqueKeysWithValues: allWords.map { ($0.id, $0) })
         self.searchIndex = searchIndex ?? WordSearchIndex.build(words: allWords, conjugationMap: conjugationMap)
         self.onWordSelected = onWordSelected
@@ -432,93 +430,7 @@ struct SearchSheetView: View {
     // MARK: - 辅助函数
     
     private func performSearch(for rawQuery: String) {
-        let query = normalizeSearchText(rawQuery)
-        if query.isEmpty {
-            searchResults = []
-            return
-        }
-
-        if searchIndex.indexedWords.isEmpty {
-            searchResults = fallbackSearchResults(for: query)
-            return
-        }
-
-        var scored: [(word: SimpleWord, score: Int)] = []
-        scored.reserveCapacity(searchIndex.indexedWords.count)
-
-        for indexed in searchIndex.indexedWords {
-            let word = indexed.word
-            let french = indexed.normalizedWord
-            let examples = indexed.normalizedExamples
-
-            var score: Int?
-            if french == query {
-                score = 0
-            } else if french.hasPrefix(query) {
-                score = 1
-            } else if french.contains(query) {
-                score = 2
-            } else if examples.contains(query) {
-                score = 5
-            }
-
-            if let score {
-                scored.append((word, score))
-            }
-        }
-
-        let sorted = scored
-            .sorted { lhs, rhs in
-                if lhs.score != rhs.score { return lhs.score < rhs.score }
-                if lhs.word.word.count != rhs.word.word.count { return lhs.word.word.count < rhs.word.word.count }
-                return lhs.word.word < rhs.word.word
-            }
-            .map(\.word)
-
-        var finalResults = sorted
-
-        for bridgeWord in searchIndex.bridgeWords(for: rawQuery).reversed() {
-            finalResults.removeAll { $0.id == bridgeWord.id }
-            finalResults.insert(bridgeWord, at: 0)
-        }
-
-        searchResults = finalResults
-    }
-
-    private func fallbackSearchResults(for query: String) -> [SimpleWord] {
-        var scored: [(word: SimpleWord, score: Int)] = []
-        scored.reserveCapacity(allWords.count)
-
-        for word in allWords {
-            let french = normalizeSearchText(word.word.isEmpty ? word.displayWord : word.word)
-            let examples = normalizeSearchText(
-                "\(word.exampleFr) \(word.exampleEn) \(word.exampleZh) \(word.exampleHi)"
-            )
-
-            let score: Int?
-            if french == query {
-                score = 0
-            } else if french.hasPrefix(query) {
-                score = 1
-            } else if french.contains(query) {
-                score = 2
-            } else if examples.contains(query) {
-                score = 5
-            } else {
-                score = nil
-            }
-
-            if let score {
-                scored.append((word: word, score: score))
-            }
-        }
-        
-        return scored.sorted { lhs, rhs in
-            if lhs.score != rhs.score { return lhs.score < rhs.score }
-            if lhs.word.word.count != rhs.word.word.count { return lhs.word.word.count < rhs.word.word.count }
-            return lhs.word.word < rhs.word.word
-        }
-        .map(\.word)
+        searchResults = searchIndex.searchResults(for: rawQuery)
     }
     
     private func pasteFromClipboard() {
