@@ -273,6 +273,13 @@ public final class SRSManager: ObservableObject {
     // 用户可选的每日发牌数量。
     private let supportedDailyDeckLimits: Set<Int> = [5, 10, 15, 20, 50]
     private let supportedTargetLevels: Set<String> = ["All", "A1", "A2", "B1", "B2", "C1", "C2"]
+    private static let orderedProficiencyLevels: [String] = ["A1", "A2", "B1", "B2", "C1", "C2"]
+
+    private static func nextProficiencyLevel(after level: String) -> String? {
+        guard let idx = orderedProficiencyLevels.firstIndex(of: level),
+              idx + 1 < orderedProficiencyLevels.count else { return nil }
+        return orderedProficiencyLevels[idx + 1]
+    }
     // 每日发牌中，新词的最低保障比例（20%）。
     private let newCardQuotaRatio = 0.20
     // “模糊/忘记”后的固定复习间隔（天）。
@@ -1057,7 +1064,14 @@ public final class SRSManager: ObservableObject {
     public func ensureLearningQueueReady() {
         refillInfiniteQueueIfNeeded(now: Date())
         guard let appState = appState else { return }
-        let resolved = learningQueueIds.compactMap { appState.getWordById($0) }
+        var resolved = learningQueueIds.compactMap { appState.getWordById($0) }
+        if resolved.isEmpty,
+           !isInfinitePracticeActive,
+           todayStudyState == .completed,
+           hasReachedDailyMasteryGoal {
+            startInfinitePractice()
+            resolved = learningQueueIds.compactMap { appState.getWordById($0) }
+        }
         if resolved.isEmpty,
            !isInfinitePracticeActive,
            todayStudyState == .inProgress {
@@ -1197,15 +1211,42 @@ public final class SRSManager: ObservableObject {
         return todayDeckMasteredCount >= goalCount
     }
 
-    var canStartInfinitePractice: Bool {
-        hasReachedDailyMasteryGoal && !isInfinitePracticeActive
+    public func isCurrentLevelLexiconFullyGraduated(allWords: [SimpleWord]) -> Bool {
+        let level = targetLevel
+        guard level != "All" else { return false }
+        let levelWords = allWords.filter { $0.level == level }
+        guard !levelWords.isEmpty else { return false }
+        for word in levelWords {
+            guard let record = learningRecords[word.id],
+                  record.consecutiveCorrects >= masteryThreshold else {
+                return false
+            }
+        }
+        return true
+    }
+
+    public func applyLevelPromotionIfNeededThenStartInfinite() {
+        guard let appState else { return }
+        if hasReachedDailyMasteryGoal,
+           targetLevel != "All",
+           isCurrentLevelLexiconFullyGraduated(allWords: appState.words),
+           let next = Self.nextProficiencyLevel(after: targetLevel) {
+            appState.level = next
+            activateInfinitePracticeAndRefill()
+            return
+        }
+        startInfinitePractice()
+    }
+
+    private func activateInfinitePracticeAndRefill() {
+        isInfinitePracticeActive = true
+        refillInfiniteQueueIfNeeded(now: Date())
+        saveLearningState(touchMutation: true)
     }
 
     public func startInfinitePractice() {
         guard hasReachedDailyMasteryGoal else { return }
-        isInfinitePracticeActive = true
-        refillInfiniteQueueIfNeeded(now: Date())
-        saveLearningState(touchMutation: true)
+        activateInfinitePracticeAndRefill()
     }
 
     var todayMasteryProgressRatio: Double {
@@ -1265,18 +1306,19 @@ public final class SRSManager: ObservableObject {
         guard let appState = appState else { return }
 
         let batchSize = max(12, dailyDeckLimit)
-        let batch = buildInfinitePracticeBatch(from: appState.words, now: now, batchSize: batchSize)
-        learningQueueIds = batch.map(\.id)
-    }
+        let levelWords = wordsForTargetLevel(from: appState.words)
+        guard !levelWords.isEmpty else { return }
 
-    private func buildInfinitePracticeBatch(from allWords: [SimpleWord], now: Date, batchSize: Int) -> [SimpleWord] {
-        let levelFilteredWords = wordsForTargetLevel(from: allWords)
-        return scheduler.buildInfinitePracticeBatch(
-            from: levelFilteredWords,
+        var batch = scheduler.buildInfinitePracticeBatch(
+            from: levelWords,
             records: learningRecords,
             now: now,
             batchSize: batchSize
         )
+        if batch.isEmpty {
+            batch = Array(levelWords.shuffled().prefix(batchSize))
+        }
+        learningQueueIds = batch.map(\.id)
     }
 
     private func buildPreviewContinuation(from allWords: [SimpleWord], now: Date, excluding excludedIds: Set<String>) -> [SimpleWord] {

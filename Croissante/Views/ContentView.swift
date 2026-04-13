@@ -969,7 +969,6 @@ private struct DiscoverScreen: View {
         pendingAutoInfiniteTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
-            guard srsManager.canStartInfinitePractice else { return }
             srsManager.startInfinitePractice()
             pendingAutoInfiniteTask = nil
         }
@@ -4267,31 +4266,33 @@ private struct SettingsScreen: View {
                     cancelAvatarImageLoading()
                 }
 
-                SettingsGroupCard {
-                    Button {
-                        showingMemberUnlock = true
-                    } label: {
-                        SettingsCardRow(
-                            icon: "crown",
-                            title: "Croissante Plus",
-                            subtitle: "",
-                            titleFontSize: 13,
-                            rowVerticalPadding: settingsOptionRowVerticalPadding,
-                            showsSubtitle: false,
-                            showsDivider: false,
-                            matchPickerFont: true
-                        ) {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
-                                .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
-                                .padding(.trailing, chevronTrailingInset)
+                if storeKitManager.purchasedProduct != .some(.lifetime) {
+                    SettingsGroupCard {
+                        Button {
+                            showingMemberUnlock = true
+                        } label: {
+                            SettingsCardRow(
+                                icon: "crown",
+                                title: "Croissante Plus",
+                                subtitle: "",
+                                titleFontSize: 13,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
+                                showsSubtitle: false,
+                                showsDivider: false,
+                                matchPickerFont: true
+                            ) {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
+                                    .padding(.trailing, chevronTrailingInset)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.top, 22)
+                    .padding(.horizontal, 20)
                 }
-                .padding(.top, 22)
-                .padding(.horizontal, 20)
 
                 SettingsGroupCard {
                         SettingsCardRow(
@@ -4507,17 +4508,6 @@ private struct SettingsScreen: View {
                 .padding(.horizontal, 20)
 
                 SettingsGroupCard {
-                    NotificationReminderSettingsCard(
-                        title: notificationRowTitle,
-                        displayTime: reminderTimeText,
-                        stepIndex: reminderStepIndex,
-                        isEnabled: reminderToggleBinding,
-                        onChangeStep: setReminderStepIndex
-                    )
-                }
-                .padding(.horizontal, 20)
-
-                SettingsGroupCard {
                         SettingsCardRow(
                             icon: "magnifyingglass",
                             title: appState.localized("Spotlight Search", "聚焦搜索", "स्पॉटलाइट खोज"),
@@ -4592,6 +4582,17 @@ private struct SettingsScreen: View {
                         }
                         .buttonStyle(.plain)
                     }
+                .padding(.horizontal, 20)
+
+                SettingsGroupCard {
+                    NotificationReminderSettingsCard(
+                        title: notificationRowTitle,
+                        displayTime: reminderTimeText,
+                        stepIndex: reminderStepIndex,
+                        isEnabled: reminderToggleBinding,
+                        onChangeStep: setReminderStepIndex
+                    )
+                }
                 .padding(.horizontal, 20)
 
                 SettingsGroupCard {
