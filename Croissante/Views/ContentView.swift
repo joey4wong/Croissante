@@ -280,8 +280,11 @@ public struct ContentView: View {
     }
 
     private func presentSpotlightWordIfAvailable(_ wordId: String?) {
-        guard let wordId,
-              let word = appState.getWordById(wordId) ?? appState.words.first(where: { $0.id == wordId }) else {
+        guard let wordId else {
+            return
+        }
+        guard let word = appState.getWordById(wordId) else {
+            appState.spotlightSelectedWordId = nil
             return
         }
 
@@ -3924,8 +3927,7 @@ private struct SettingsScreen: View {
                 if newValue {
                     SpotlightService.shared.indexAllWords(
                         appState.words,
-                        conjugationFormsByLemma: appState.conjugationFormsByLemma,
-                        spotlightEnabled: true
+                        conjugationFormsByLemma: appState.conjugationFormsByLemma
                     )
                 } else {
                     SpotlightService.shared.removeAllWords()

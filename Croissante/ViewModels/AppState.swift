@@ -604,7 +604,7 @@ public final class AppState: ObservableObject {
         pendingSpotlightIndexTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 900_000_000)
             guard !Task.isCancelled, spotlightEnabled else { return }
-            SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma, spotlightEnabled: true)
+            SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma)
         }
     }
 }

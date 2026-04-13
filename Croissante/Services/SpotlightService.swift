@@ -11,8 +11,7 @@ final class SpotlightService {
     private let chunkSize = 120
     private var reindexTask: Task<Void, Never>?
     
-    func indexAllWords(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]], spotlightEnabled: Bool) {
-        guard spotlightEnabled else { return }
+    func indexAllWords(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) {
         let previousTask = reindexTask
         previousTask?.cancel()
         reindexTask = Task { @MainActor [words, conjugationFormsByLemma, previousTask] in
@@ -41,15 +40,11 @@ final class SpotlightService {
         return String(identifier.dropFirst("word_".count))
     }
 
-    private func makeSearchableItems(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) -> [CSSearchableItem] {
-        words.map { makeSearchableItem(for: $0, conjugationFormsByLemma: conjugationFormsByLemma) }
-    }
-
     private func indexItemsInChunks(_ items: [CSSearchableItem]) {
         guard !items.isEmpty else { return }
         for start in stride(from: 0, to: items.count, by: chunkSize) {
             let end = min(start + chunkSize, items.count)
-            indexItems(Array(items[start..<end]))
+            CSSearchableIndex.default().indexSearchableItems(Array(items[start..<end])) { _ in }
         }
     }
 
@@ -83,22 +78,17 @@ final class SpotlightService {
         )
     }
     
-    private func indexItems(_ items: [CSSearchableItem]) {
-        guard !items.isEmpty else { return }
-        CSSearchableIndex.default().indexSearchableItems(items) { _ in }
-    }
-
     private func replaceAllWords(_ words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) async {
         await deleteAllWordsAwaiting()
         guard !Task.isCancelled else { return }
-        indexItemsInChunks(makeSearchableItems(words, conjugationFormsByLemma: conjugationFormsByLemma))
+        let items = words.map { makeSearchableItem(for: $0, conjugationFormsByLemma: conjugationFormsByLemma) }
+        indexItemsInChunks(items)
     }
 
-    @discardableResult
-    private func deleteAllWordsAwaiting() async -> Bool {
-        await withCheckedContinuation { continuation in
-            CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { error in
-                continuation.resume(returning: error == nil)
+    private func deleteAllWordsAwaiting() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { _ in
+                continuation.resume()
             }
         }
     }
