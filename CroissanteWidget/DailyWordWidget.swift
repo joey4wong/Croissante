@@ -214,9 +214,6 @@ struct DailyWordWidgetView: View {
     private var levelColor: Color {
         isDark ? Color.white.opacity(0.48) : Color.black.opacity(0.30)
     }
-    private var bodyColor: Color {
-        isDark ? Color.white.opacity(0.80) : Color.black.opacity(0.78)
-    }
     private var secondaryColor: Color {
         isDark ? Color.white.opacity(0.64) : Color.black.opacity(0.42)
     }
@@ -265,69 +262,91 @@ struct DailyWordWidgetView: View {
 
     private var smallLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(entry.word)
-                .font(.system(size: 36, weight: .bold, design: .rounded))
-                .tracking(0.2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.4)
-                .allowsTightening(true)
-                .foregroundStyle(headlineColor)
-                .padding(.bottom, 10)
+            titleBlock
+                .frame(height: 34, alignment: .topLeading)
+                .padding(.bottom, 3)
 
             Rectangle()
                 .fill(dividerColor)
                 .frame(height: 1)
-                .padding(.bottom, 10)
+                .padding(.bottom, 4)
 
-            if !entry.tag.isEmpty || !entry.translation.isEmpty {
-                HStack(alignment: .top, spacing: 7) {
-                    if !entry.tag.isEmpty {
-                        Text(posLabelWidget(entry.tag))
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(secondaryColor)
-                            .padding(.top, 1)
-                    }
-                    if !entry.translation.isEmpty {
-                        Text(entry.translation)
-                            .font(.system(size: 13, weight: .regular))
-                            .lineSpacing(4)
-                            .lineLimit(2)
-                            .foregroundStyle(bodyColor)
-                    }
-                }
-                .padding(.bottom, 8)
+            translationBlock
+                .frame(height: 14, alignment: .topLeading)
+                .padding(.bottom, 5)
+
+            exampleBlock
+                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .layoutPriority(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            levelAuxLabel
+                .padding(.top, 3)
+                .padding(.leading, 8)
+        }
+    }
+
+    private var titleBlock: some View {
+        Text(entry.word)
+            .font(.system(size: 26, weight: .bold, design: .rounded))
+            .tracking(0.2)
+            .lineLimit(1)
+            .minimumScaleFactor(0.42)
+            .allowsTightening(true)
+            .foregroundStyle(headlineColor)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var translationBlock: some View {
+        HStack(alignment: .top, spacing: 5) {
+            if !entry.tag.isEmpty {
+                Text(posLabelWidget(entry.tag))
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundStyle(secondaryColor)
+                    .padding(.top, 1)
             }
+            if !entry.translation.isEmpty {
+                Text(entry.translation)
+                    .font(.system(size: 10, weight: .regular))
+                    .lineSpacing(1)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .allowsTightening(true)
+                    .foregroundStyle(secondaryColor)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
+    private var exampleBlock: some View {
+        VStack(alignment: .leading, spacing: 3) {
             if !entry.exampleFr.isEmpty {
                 Text(entry.exampleFr)
-                    .font(.system(size: 12, weight: .regular))
-                    .lineSpacing(3)
+                    .font(.system(size: 10, weight: .regular))
+                    .lineSpacing(1)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                    .allowsTightening(true)
                     .foregroundStyle(exampleColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 4)
             }
 
             if !entry.exampleTranslation.isEmpty {
                 Text(entry.exampleTranslation)
-                    .font(.system(size: 11, weight: .regular))
-                    .lineSpacing(2)
+                    .font(.system(size: 9, weight: .regular))
+                    .lineSpacing(1)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                    .allowsTightening(true)
                     .foregroundStyle(secondaryColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 15)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .overlay(alignment: .topLeading) {
-            levelAuxLabel
-                .padding(.top, 5)
-                .padding(.leading, 10)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var lockedView: some View {
@@ -402,5 +421,6 @@ struct DailyWordWidget: Widget {
         .configurationDisplayName("Daily Word")
         .description("A Croissante Plus daily word at a glance.")
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
