@@ -5,6 +5,7 @@ struct WidgetWordData: Codable {
     let word: String
     let tag: String
     let level: String
+    let auxiliary: String?
     let translationEn: String
     let translationZh: String
     let translationHi: String?
@@ -101,6 +102,7 @@ enum WidgetDataService {
                     word: word.word,
                     tag: word.tag,
                     level: word.level,
+                    auxiliary: word.auxiliary,
                     translationEn: word.translationEn,
                     translationZh: word.translationZh,
                     translationHi: word.translationHi,

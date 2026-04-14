@@ -1652,6 +1652,24 @@ private func galaxyAccentBorder(isDarkMode: Bool) -> LinearGradient {
     )
 }
 
+private enum DiscoverCardLayout {
+    static let horizontalInset: CGFloat = 20
+    static let horizontalInsetTotal: CGFloat = horizontalInset * 2
+    private static let cardBodyVerticalPaddingTotal: CGFloat = 48
+
+    static func contentWidth(forScreenWidth width: CGFloat) -> CGFloat {
+        max(width - horizontalInsetTotal, 0)
+    }
+
+    static func cardHeight(forCardWidth width: CGFloat) -> CGFloat {
+        max(width - cardBodyVerticalPaddingTotal, 0)
+    }
+
+    static func restingCardYOffset(containerHeight: CGFloat) -> CGFloat {
+        -min(56, max(36, containerHeight * 0.06))
+    }
+}
+
 private struct ActiveDiscoverCardHost: View {
     let word: SimpleWord
     let transitionRequest: GalaxySelectedCardTransitionRequest?
@@ -1669,10 +1687,10 @@ private struct ActiveDiscoverCardHost: View {
 
     private let transitionDuration: Double = 0.48
     private var restingCardYOffset: CGFloat {
-        -min(56, max(36, containerSize.height * 0.06))
+        DiscoverCardLayout.restingCardYOffset(containerHeight: containerSize.height)
     }
     private var restingCardContentHeight: CGFloat {
-        max(containerSize.width - 72, 0)
+        DiscoverCardLayout.cardHeight(forCardWidth: containerSize.width)
     }
 
     var body: some View {
@@ -2049,6 +2067,7 @@ struct SearchSelectedWordCardView: View {
     let themeMode: ThemeMode
     let allowsBlurrySwipe: Bool
     let dismissOnTap: Bool
+    let embeddedInTabView: Bool
     let onDismiss: () -> Void
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
@@ -2059,6 +2078,7 @@ struct SearchSelectedWordCardView: View {
         themeMode: ThemeMode = .system,
         allowsBlurrySwipe: Bool = true,
         dismissOnTap: Bool = false,
+        embeddedInTabView: Bool = false,
         onDismiss: @escaping () -> Void,
         onSwipeForgot: @escaping (String) -> Void,
         onSwipeMastered: @escaping (String) -> Void,
@@ -2068,6 +2088,7 @@ struct SearchSelectedWordCardView: View {
         self.themeMode = themeMode
         self.allowsBlurrySwipe = allowsBlurrySwipe
         self.dismissOnTap = dismissOnTap
+        self.embeddedInTabView = embeddedInTabView
         self.onDismiss = onDismiss
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
@@ -2075,35 +2096,50 @@ struct SearchSelectedWordCardView: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
-    private var backgroundGradient: LinearGradient {
-        AppColors.appBackgroundGradient(themeMode: themeMode, isDarkMode: colorScheme == .dark)
+
+    private var showHomeWallpaper: Bool {
+        themeMode == .steppe
     }
+
+    #if os(iOS)
+    private static let exploreTabBarHeight: CGFloat = 49
+    #endif
 
     var body: some View {
         GeometryReader { geo in
-            let availableWidth = max(geo.size.width - 40, 0)
-            let discoverCardWidth = availableWidth
-            let discoverCardHeight = max(discoverCardWidth - 48, 0)
+            let contentWidth = DiscoverCardLayout.contentWidth(forScreenWidth: geo.size.width)
+            let cardHeight = DiscoverCardLayout.cardHeight(forCardWidth: contentWidth)
+            #if os(iOS)
+            let containerHeight: CGFloat = {
+                if embeddedInTabView { return geo.size.height }
+                return max(0, geo.size.height - Self.exploreTabBarHeight)
+            }()
+            #else
+            let containerHeight = geo.size.height
+            #endif
+            let cardYOffset = DiscoverCardLayout.restingCardYOffset(containerHeight: containerHeight)
             ZStack {
                 if dismissOnTap {
                     ThemedBackgroundView(
                         themeMode: themeMode,
-                        isDarkMode: colorScheme == .dark
+                        isDarkMode: colorScheme == .dark,
+                        showWallpaper: showHomeWallpaper
                     )
                         .contentShape(Rectangle())
                         .onTapGesture { onDismiss() }
                 } else {
                     ThemedBackgroundView(
                         themeMode: themeMode,
-                        isDarkMode: colorScheme == .dark
+                        isDarkMode: colorScheme == .dark,
+                        showWallpaper: showHomeWallpaper
                     )
                 }
 
                 DiscoverCard(
                     word: word,
-                    screenWidth: geo.size.width,
-                    cardWidth: discoverCardWidth,
-                    cardHeight: discoverCardHeight,
+                    screenWidth: contentWidth,
+                    cardWidth: contentWidth,
+                    cardHeight: cardHeight,
                     isActiveTab: true,
                     resetTransformAfterSwipe: false,
                     allowsBlurrySwipe: allowsBlurrySwipe,
@@ -2127,10 +2163,12 @@ struct SearchSelectedWordCardView: View {
                         }
                     }
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 20)
+                .id(word.id)
+                .frame(width: contentWidth, height: containerHeight)
+                .position(x: geo.size.width / 2, y: containerHeight / 2 + cardYOffset)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .interactiveDismissDisabled()
     }
 }
@@ -2440,7 +2478,7 @@ private struct DiscoverCard: View {
         max(cardWidth ?? screenWidth, 0)
     }
     private var resolvedCardHeight: CGFloat {
-        max(cardHeight ?? max(resolvedCardWidth - 48, 0), 0)
+        max(cardHeight ?? DiscoverCardLayout.cardHeight(forCardWidth: resolvedCardWidth), 0)
     }
     private var isDarkMode: Bool { colorScheme == .dark }
     private var secondaryTextColor: Color {
@@ -3407,7 +3445,7 @@ private struct NounCornerAccentShape: Shape {
             nounUIEntityType: "named_entity"
         ),
         screenWidth: 390,
-        cardHeight: 320,
+        cardHeight: 342,
         isActiveTab: true,
         onSwipeForgot: { _ in },
         onSwipeMastered: { _ in },
@@ -3556,6 +3594,7 @@ private struct ProgressScreen: View {
                         themeMode: appState.themeMode,
                         allowsBlurrySwipe: true,
                         dismissOnTap: true,
+                        embeddedInTabView: true,
                         onDismiss: { dismissWordCard() },
                         onSwipeForgot: {
                             srsManager.markWordForgot(

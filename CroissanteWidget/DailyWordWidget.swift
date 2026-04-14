@@ -17,6 +17,7 @@ struct DailyWordEntry: TimelineEntry {
     let word: String
     let tag: String
     let level: String
+    let auxiliary: String
     let translation: String
     let exampleFr: String
     let exampleTranslation: String
@@ -34,6 +35,7 @@ struct DailyWordProvider: TimelineProvider {
             word: "bonjour",
             tag: "INTJ",
             level: "A1",
+            auxiliary: "",
             translation: "hello",
             exampleFr: "Bonjour, comment allez-vous ?",
             exampleTranslation: "Hello, how are you?",
@@ -119,6 +121,7 @@ struct DailyWordProvider: TimelineProvider {
             word: word.word,
             tag: word.tag,
             level: word.level,
+            auxiliary: word.auxiliary ?? "",
             translation: translation(for: word, language: language),
             exampleFr: word.exampleFr,
             exampleTranslation: exampleTranslation(for: word, language: language),
@@ -134,6 +137,7 @@ struct DailyWordProvider: TimelineProvider {
             word: "croissant",
             tag: "N",
             level: "A1",
+            auxiliary: "",
             translation: "",
             exampleFr: "",
             exampleTranslation: "",
@@ -149,6 +153,7 @@ struct DailyWordProvider: TimelineProvider {
             word: "Croissante Plus",
             tag: "",
             level: "",
+            auxiliary: "",
             translation: "",
             exampleFr: "",
             exampleTranslation: "",
@@ -187,6 +192,7 @@ struct WidgetWordData: Codable {
     let word: String
     let tag: String
     let level: String
+    let auxiliary: String?
     let translationEn: String
     let translationZh: String
     let translationHi: String?
@@ -196,65 +202,8 @@ struct WidgetWordData: Codable {
     let exampleHi: String?
 }
 
-private struct WidgetCardMetrics {
-    let scale: CGFloat
-    let titleBaseFontSize: CGFloat
-    let isSmall: Bool
-
-    init(family: WidgetFamily, size: CGSize, word: String) {
-        // Mirrors the homepage card baseline: 393pt width, 24pt side padding, width - 72 content height.
-        let referenceContentWidth: CGFloat = 345
-        let referenceContentHeight: CGFloat = 321
-        let availableWidth = max(size.width, 1)
-        let availableHeight = max(size.height, 1)
-        scale = min(availableWidth / referenceContentWidth, availableHeight / referenceContentHeight)
-
-        let count = word.count
-        if count >= 24 {
-            titleBaseFontSize = 42
-        } else if count >= 20 {
-            titleBaseFontSize = 46
-        } else if count >= 16 {
-            titleBaseFontSize = 50
-        } else {
-            titleBaseFontSize = 56
-        }
-
-        isSmall = family == .systemSmall
-    }
-
-    func scaled(_ value: CGFloat) -> CGFloat {
-        value * scale
-    }
-
-    func fontSize(_ value: CGFloat, minimum: CGFloat) -> CGFloat {
-        max(scaled(value), minimum)
-    }
-
-    var horizontalPadding: CGFloat { max(4, scaled(24)) }
-    var verticalPadding: CGFloat { max(4, scaled(24)) }
-    var headerSpacing: CGFloat { max(1, scaled(4)) }
-    var headerBottomPadding: CGFloat { max(2, scaled(16)) }
-    var titleBottomPadding: CGFloat { max(2, scaled(20)) }
-    var dividerBottomPadding: CGFloat { max(3, scaled(20)) }
-    var exampleTopPadding: CGFloat { max(4, scaled(18)) }
-    var exampleSpacing: CGFloat { max(2, scaled(4)) }
-    var detailSpacing: CGFloat { max(6, scaled(10)) }
-    var levelFontSize: CGFloat { fontSize(10, minimum: isSmall ? 8.5 : 9.5) }
-    var titleFontSize: CGFloat { fontSize(titleBaseFontSize, minimum: isSmall ? 24 : 30) }
-    var posFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
-    var translationFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
-    var exampleFontSize: CGFloat { fontSize(16, minimum: isSmall ? 10.5 : 12.5) }
-    var exampleTranslationFontSize: CGFloat { fontSize(15, minimum: isSmall ? 9.5 : 11.5) }
-    var titleTracking: CGFloat { scaled(0.2) }
-    var levelTracking: CGFloat { scaled(0.7) }
-    var levelOpacity: Double { 0.78 }
-    var dividerOpacity: Double { 0.64 }
-}
-
 struct DailyWordWidgetView: View {
     var entry: DailyWordEntry
-    @Environment(\.widgetFamily) var family
     @Environment(\.colorScheme) var colorScheme
 
     private var isDark: Bool { colorScheme == .dark }
@@ -277,6 +226,7 @@ struct DailyWordWidgetView: View {
     private var dividerColor: Color {
         isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.14)
     }
+    private let levelAuxFont = Font.system(size: 5, weight: .semibold, design: .rounded)
     private var bgGradient: LinearGradient {
         LinearGradient(
             colors: isDark
@@ -306,114 +256,122 @@ struct DailyWordWidgetView: View {
             if entry.isLocked {
                 lockedView
             } else {
-                scaledCardView
+                smallLayout
             }
         }
         .containerBackground(for: .widget) { bgGradient }
         .widgetURL(deepLinkURL)
     }
 
+    private var smallLayout: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(entry.word)
+                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .tracking(0.2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .allowsTightening(true)
+                .foregroundStyle(headlineColor)
+                .padding(.bottom, 10)
+
+            Rectangle()
+                .fill(dividerColor)
+                .frame(height: 1)
+                .padding(.bottom, 10)
+
+            if !entry.tag.isEmpty || !entry.translation.isEmpty {
+                HStack(alignment: .top, spacing: 7) {
+                    if !entry.tag.isEmpty {
+                        Text(posLabelWidget(entry.tag))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(secondaryColor)
+                            .padding(.top, 1)
+                    }
+                    if !entry.translation.isEmpty {
+                        Text(entry.translation)
+                            .font(.system(size: 13, weight: .regular))
+                            .lineSpacing(4)
+                            .lineLimit(2)
+                            .foregroundStyle(bodyColor)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+
+            if !entry.exampleFr.isEmpty {
+                Text(entry.exampleFr)
+                    .font(.system(size: 12, weight: .regular))
+                    .lineSpacing(3)
+                    .lineLimit(2)
+                    .foregroundStyle(exampleColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 4)
+            }
+
+            if !entry.exampleTranslation.isEmpty {
+                Text(entry.exampleTranslation)
+                    .font(.system(size: 11, weight: .regular))
+                    .lineSpacing(2)
+                    .lineLimit(2)
+                    .foregroundStyle(secondaryColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 15)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            levelAuxLabel
+                .padding(.top, 5)
+                .padding(.leading, 10)
+        }
+    }
+
     private var lockedView: some View {
-        let side = family == .systemSmall ? CGFloat(56) : 72
-        let titleSize = family == .systemSmall ? CGFloat(17) : 22
-        let padH = family == .systemSmall ? CGFloat(8) : 16
-        return ZStack {
+        ZStack {
             Image("Croissante00001")
                 .renderingMode(.original)
                 .resizable()
                 .scaledToFit()
-                .frame(width: side, height: side)
-
+                .frame(width: 56, height: 56)
             Text(entry.word)
-                .font(.system(size: titleSize, weight: .bold, design: .rounded))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(headlineColor)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, family == .systemSmall ? 6 : 8)
+                .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, padH)
+        .padding(.horizontal, 8)
     }
 
-    private var scaledCardView: some View {
-        GeometryReader { proxy in
-            let metrics = WidgetCardMetrics(family: family, size: proxy.size, word: entry.word)
+    // MARK: - Shared helpers
 
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: metrics.headerSpacing) {
-                    Text("\(entry.level.uppercased()).\(posLabelWidget(entry.tag))")
-                        .font(.system(size: metrics.levelFontSize, weight: .semibold, design: .rounded))
-                        .tracking(metrics.levelTracking)
-                        .foregroundStyle(levelColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .opacity(metrics.levelOpacity)
-
-                    Text(entry.word)
-                        .font(.system(size: metrics.titleFontSize, weight: .bold, design: .rounded))
-                        .tracking(metrics.titleTracking)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.42)
-                        .allowsTightening(true)
-                        .foregroundStyle(headlineColor)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, metrics.titleBottomPadding)
+    @ViewBuilder
+    private var levelAuxLabel: some View {
+        let aux = entry.auxiliary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !entry.level.isEmpty || !aux.isEmpty {
+            HStack(spacing: 2.5) {
+                if !entry.level.isEmpty {
+                    Text(entry.level.uppercased())
+                        .font(levelAuxFont)
                 }
-                .padding(.bottom, metrics.headerBottomPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Rectangle()
-                    .fill(dividerColor)
-                    .frame(height: max(0.5, metrics.scaled(1)))
-                    .opacity(metrics.dividerOpacity)
-                    .padding(.bottom, metrics.dividerBottomPadding)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    if !entry.translation.isEmpty || !entry.tag.isEmpty {
-                        HStack(alignment: .top, spacing: metrics.detailSpacing) {
-                            Text(posLabelWidget(entry.tag))
-                                .font(.system(size: metrics.posFontSize, weight: .medium, design: .rounded))
-                                .foregroundStyle(secondaryColor)
-                                .padding(.top, max(0.5, metrics.scaled(1)))
-
-                            Text(entry.translation)
-                                .font(.system(size: metrics.translationFontSize, weight: .regular))
-                                .lineSpacing(metrics.scaled(5))
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .foregroundStyle(bodyColor)
-                        }
-                    }
-
-                    if !entry.exampleFr.isEmpty {
-                        Text(entry.exampleFr)
-                            .font(.system(size: metrics.exampleFontSize, weight: .regular))
-                            .lineSpacing(metrics.scaled(3))
-                            .lineLimit(entry.exampleTranslation.isEmpty ? 3 : 2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(exampleColor)
-                            .padding(.top, metrics.exampleTopPadding)
-                    }
-
-                    if !entry.exampleTranslation.isEmpty {
-                        Text(entry.exampleTranslation)
-                            .font(.system(size: metrics.exampleTranslationFontSize, weight: .regular))
-                            .lineSpacing(metrics.scaled(2))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(secondaryColor)
-                            .padding(.top, entry.exampleFr.isEmpty ? metrics.exampleTopPadding : metrics.exampleSpacing)
-                    }
-
-                    Spacer(minLength: 0)
+                if !aux.isEmpty {
+                    Text("·")
+                        .font(levelAuxFont)
+                        .opacity(0.6)
+                    Text(aux)
+                        .font(levelAuxFont)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, metrics.horizontalPadding)
-            .padding(.vertical, metrics.verticalPadding)
+            .tracking(0.35)
+            .foregroundStyle(levelColor)
+            .lineLimit(1)
         }
     }
 
@@ -443,6 +401,6 @@ struct DailyWordWidget: Widget {
         }
         .configurationDisplayName("Daily Word")
         .description("A Croissante Plus daily word at a glance.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall])
     }
 }
