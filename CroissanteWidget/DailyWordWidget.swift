@@ -307,8 +307,8 @@ struct DailyWordWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .overlay(alignment: .topLeading) {
             levelAuxLabel
-                .padding(.top, 7)
-                .padding(.leading, 9)
+                .padding(.top, 13)
+                .padding(.leading, 13)
         }
     }
 
@@ -327,7 +327,7 @@ struct DailyWordWidgetView: View {
                     Text(aux)
                 }
             }
-            .font(.system(size: 8, weight: .semibold, design: .rounded))
+            .font(.system(size: 6, weight: .semibold, design: .rounded))
             .tracking(0.3)
             .foregroundStyle(Color.secondary.opacity(0.6))
             .lineLimit(1)
