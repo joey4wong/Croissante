@@ -272,7 +272,7 @@ struct DailyWordWidgetView: View {
                         .foregroundStyle(Color.secondary)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 6)
 
             // example fr

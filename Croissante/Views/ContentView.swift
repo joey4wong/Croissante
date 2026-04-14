@@ -39,21 +39,10 @@ private struct AppIconPickerLayout {
     }
 }
 
-private enum GestureOnboardingState: String {
-    case pending
-    case seen
-}
-
-private enum GestureOnboardingDefaults {
-    static let stateKey = "gesture_onboarding_state"
-}
-
-
 public struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(GestureOnboardingDefaults.stateKey) private var gestureOnboardingStateRaw = ""
     @State private var discoverQueueIndex = 0
     @State private var searchSheetShowing = false
     @State private var selectedTab: MainTab = .explore
@@ -63,23 +52,10 @@ public struct ContentView: View {
     @State private var widgetOpenedWordId: String?
     @State private var pendingSettingsMemberPaywall = false
     @State private var isGalaxyVisibleInExplore = false
-    @State private var isGestureOnboardingPending = false
     @State private var pendingGalaxyTabBarRevealTask: Task<Void, Never>? = nil
     private let galaxyTabBarRevealDelay: UInt64 = 180_000_000
 
-    public init() {
-        let defaults = UserDefaults.standard
-        let resolvedState: String
-
-        if let savedState = defaults.string(forKey: GestureOnboardingDefaults.stateKey), !savedState.isEmpty {
-            resolvedState = savedState
-        } else {
-            resolvedState = GestureOnboardingState.pending.rawValue
-            defaults.set(resolvedState, forKey: GestureOnboardingDefaults.stateKey)
-        }
-
-        _isGestureOnboardingPending = State(initialValue: resolvedState == GestureOnboardingState.pending.rawValue)
-    }
+    public init() {}
 
     private var discoverWords: [SimpleWord] {
         srsManager.getLearningQueueWordsSnapshot()
@@ -106,26 +82,13 @@ public struct ContentView: View {
         appState.themeMode == .steppe
     }
 
-    private var shouldShowGestureOnboarding: Bool {
-        isGestureOnboardingPending &&
-        selectedTab == .explore &&
-        !discoverWords.isEmpty &&
-        appState.hasCompletedInitialResourceLoad &&
-        !searchSheetShowing &&
-        spotlightWord == nil
-    }
-
     private var exploreView: some View {
         DiscoverScreen(
             words: discoverWords,
             queueIndex: $discoverQueueIndex,
             isActiveTab: selectedTab == .explore,
-            showPinchOnboarding: shouldShowGestureOnboarding,
             onGalaxyVisibilityChanged: { [self] visible in
                 setExploreGalaxyVisibility(visible)
-                if visible && shouldShowGestureOnboarding {
-                    finishGestureOnboarding()
-                }
             },
             onSwipeForgot: { [self] id in
                 markDiscoverWordForgot(id)
@@ -179,7 +142,7 @@ public struct ContentView: View {
             SettingsTabGearAnimationBridge(
                 settingsIndex: 2,
                 spinToken: settingsGearSpinToken,
-                isTabBarHidden: isGalaxyVisibleInExplore || shouldShowGestureOnboarding
+                isTabBarHidden: isGalaxyVisibleInExplore
             )
                 .frame(width: 0, height: 0)
         )
@@ -218,9 +181,6 @@ public struct ContentView: View {
         .onChange(of: appState.level) { _, newLevel in
             srsManager.setTargetLevel(newLevel)
             advanceDiscover()
-        }
-        .onChange(of: gestureOnboardingStateRaw) { _, newValue in
-            isGestureOnboardingPending = newValue == GestureOnboardingState.pending.rawValue
         }
         .onChange(of: appState.spotlightSelectedWordId) { _, wordId in
             presentSpotlightWordIfAvailable(wordId)
@@ -345,11 +305,6 @@ public struct ContentView: View {
             affectsDailyProgress: !isInfinitePractice
         )
         advanceDiscover()
-    }
-
-    private func finishGestureOnboarding() {
-        gestureOnboardingStateRaw = GestureOnboardingState.seen.rawValue
-        isGestureOnboardingPending = false
     }
 
     private func setExploreGalaxyVisibility(_ visible: Bool, delayReveal: Bool? = nil) {
@@ -671,7 +626,6 @@ private struct DiscoverScreen: View {
     let words: [SimpleWord]
     @Binding var queueIndex: Int
     let isActiveTab: Bool
-    let showPinchOnboarding: Bool
     let onGalaxyVisibilityChanged: (Bool) -> Void
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
@@ -690,7 +644,6 @@ private struct DiscoverScreen: View {
     @State private var pendingWidgetWriteTask: Task<Void, Never>? = nil
     @State private var pendingInitialDiscoverPreparationTask: Task<Void, Never>? = nil
     @State private var isPreparingInitialDiscoverContent = true
-    @State private var animatePinchDemo = false
     @State private var pendingAutoInfiniteTask: Task<Void, Never>? = nil
     private let galaxyTargetCount = 22
     private let galaxyActivationCompression: CGFloat = 0.16
@@ -814,13 +767,6 @@ private struct DiscoverScreen: View {
                 #endif
             }
             .padding(.horizontal, 20)
-            .overlay(alignment: .center) {
-                if showPinchOnboarding && !isGalaxyVisible {
-                    OnboardingPinchDemoView(animate: animatePinchDemo, isDarkMode: isDarkMode)
-                        .offset(y: 240)
-                        .transition(.opacity)
-                }
-            }
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .onAppear {
@@ -831,7 +777,6 @@ private struct DiscoverScreen: View {
             if !words.isEmpty {
                 hasSeenCardsInSession = true
             }
-            syncPinchDemo()
         }
         .onChange(of: words.map(\.id).sorted()) { _, ids in
             if !ids.isEmpty {
@@ -842,9 +787,6 @@ private struct DiscoverScreen: View {
         .onChange(of: word?.id) { _, newWordId in
             if activeGalaxyTransition == nil, transitionPinnedWord?.id == newWordId {
                 transitionPinnedWord = nil
-            }
-            if showPinchOnboarding, newWordId != nil {
-                syncPinchDemo()
             }
         }
         .onChange(of: appState.level) { _, _ in
@@ -1028,14 +970,6 @@ private struct DiscoverScreen: View {
         onGalaxyVisibilityChanged(false)
         galaxyPinchLatched = false
         galaxyWords = []
-    }
-
-    private func syncPinchDemo() {
-        animatePinchDemo = false
-        guard showPinchOnboarding, word != nil else { return }
-        withAnimation(.easeInOut(duration: 1.05).repeatForever(autoreverses: true)) {
-            animatePinchDemo = true
-        }
     }
 
     #if os(iOS)
@@ -1795,6 +1729,7 @@ private struct GalaxyWordCard: View {
         case .sfPro: return .system(size: 9.5, weight: .bold, design: .default)
         case .sfRounded: return .system(size: 9.5, weight: .bold, design: .rounded)
         case .avenirNext: return .custom("AvenirNext-Bold", size: 9.5)
+        case .newYork: return .system(size: 9.5, weight: .bold, design: .serif)
         }
     }
 
@@ -2086,19 +2021,6 @@ struct SearchSelectedWordCardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .interactiveDismissDisabled()
-    }
-}
-
-private struct OnboardingPinchDemoView: View {
-    let animate: Bool
-    let isDarkMode: Bool
-
-    var body: some View {
-        Image(systemName: "hand.pinch")
-            .font(.system(size: 52, weight: .thin))
-            .foregroundStyle(isDarkMode ? Color.white.opacity(0.45) : Color.black.opacity(0.25))
-            .scaleEffect(animate ? 0.8 : 1.1)
-            .allowsHitTesting(false)
     }
 }
 
@@ -2784,6 +2706,8 @@ private struct CardBody: View {
             return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
         case .avenirNext:
             return .custom(avenirNextFontName(for: weight), size: size)
+        case .newYork:
+            return .system(size: size, weight: systemFontWeight(for: weight), design: .serif)
         }
     }
 
@@ -2901,7 +2825,7 @@ private struct CardBody: View {
                 .opacity(primaryReveal * 0.78 * layerOpacity(delay: 0.0))
                 .offset(y: -8)
                 Text(word.displayWord)
-                    .font(cardFont(size: titleBaseFontSize, weight: .bold))
+                    .font(cardFont(size: titleBaseFontSize, weight: .semibold))
                     .tracking(0.2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.42)
@@ -3068,6 +2992,8 @@ private struct TransitionDiscoverCard: View {
             return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
         case .avenirNext:
             return .custom(avenirNextFontName(for: weight), size: size)
+        case .newYork:
+            return .system(size: size, weight: systemFontWeight(for: weight), design: .serif)
         }
     }
 
@@ -3191,7 +3117,7 @@ private struct TransitionDiscoverCard: View {
                 .opacity(detailProgress)
                 .offset(y: -8)
                 Text(word.displayWord)
-                    .font(cardFont(size: titleBaseFontSize, weight: .bold))
+                    .font(cardFont(size: titleBaseFontSize, weight: .semibold))
                     .tracking(0.2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.42)
@@ -3681,7 +3607,8 @@ private struct SettingsScreen: View {
     private let cardFontOptions: [(style: CardFontStyle, label: String)] = [
         (.sfPro, "SF Pro"),
         (.sfRounded, "SF R"),
-        (.avenirNext, "Avenir N")
+        (.avenirNext, "Avenir N"),
+        (.newYork, "New York")
     ]
     private var appShareMessage: String {
         appState.localized(
@@ -4797,10 +4724,6 @@ private struct SettingsScreen: View {
     private func resetLearningData() {
         srsManager.resetLearningData()
         UserDefaults.standard.removeObject(forKey: "search_recent_word_ids")
-        UserDefaults.standard.set(
-            GestureOnboardingState.pending.rawValue,
-            forKey: GestureOnboardingDefaults.stateKey
-        )
         themeApplyTask?.cancel()
         themeSelectionOverride = nil
         appState.themeMode = .system
