@@ -1635,7 +1635,7 @@ private struct ActiveDiscoverCardHost: View {
                 swipeInOffsetY = 0
                 swipeInScale = 1.0
             }
-            withAnimation(.easeIn(duration: 0.45)) {
+            withAnimation(.easeIn(duration: 0.7)) {
                 swipeInOpacity = 1.0
             }
         }
@@ -2865,9 +2865,13 @@ private struct CardBody: View {
         }
     }
 
+    private func layerOpacity(delay: Double) -> Double {
+        guard contentOpacity < 1.0 else { return 1.0 }
+        return min(1.0, max(0.0, (contentOpacity - delay) / max(0.01, 1.0 - delay)))
+    }
+
     var body: some View {
         cardContent
-            .opacity(contentOpacity)
             .padding(.horizontal, 24)
             .padding(.vertical, 24)
             .frame(width: cardWidth, alignment: .top)
@@ -2894,7 +2898,7 @@ private struct CardBody: View {
                 .font(cardFont(size: 10 * (2.0 / 3.0), weight: .semibold))
                 .tracking(0.7)
                 .foregroundStyle(levelTextColor)
-                .opacity(primaryReveal * 0.78)
+                .opacity(primaryReveal * 0.78 * layerOpacity(delay: 0.0))
                 .offset(y: -8)
                 Text(word.displayWord)
                     .font(cardFont(size: titleBaseFontSize, weight: .bold))
@@ -2905,6 +2909,7 @@ private struct CardBody: View {
                     .foregroundStyle(headlineTextColor)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 20)
+                    .opacity(layerOpacity(delay: 0.18))
             }
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2914,7 +2919,7 @@ private struct CardBody: View {
                 .fill(dividerColor)
                 .frame(height: 1)
                 .padding(.bottom, 20)
-                .opacity(0.18 + primaryReveal * 0.82)
+                .opacity((0.18 + primaryReveal * 0.82) * layerOpacity(delay: 0.36))
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
@@ -2931,7 +2936,7 @@ private struct CardBody: View {
                         .foregroundStyle(bodyTextColor)
                 }
                 .multilineTextAlignment(.leading)
-                .opacity(primaryReveal)
+                .opacity(primaryReveal * layerOpacity(delay: 0.54))
 
                 let translatedExample = appState.translatedExampleText(for: word)
                 if !word.exampleFr.isEmpty || !translatedExample.isEmpty {
@@ -2958,7 +2963,7 @@ private struct CardBody: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 18)
-                    .opacity(secondaryReveal)
+                    .opacity(secondaryReveal * layerOpacity(delay: 0.70))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
