@@ -33,7 +33,6 @@
 		B10000000000000000000035 /* OpenAITTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000127 /* OpenAITTSService.swift */; };
 		B10000000000000000000036 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000128 /* NetworkMonitor.swift */; };
 		B10000000000000000000037 /* WidgetDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000129 /* WidgetDataService.swift */; };
-		B10000000000000000000038 /* GestureOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000131 /* GestureOnboardingView.swift */; };
 		B10000000000000000000039 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000132 /* StoreKitManager.swift */; };
 		W10000000000000000000001 /* CroissanteWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000011 /* CroissanteWidgetBundle.swift */; };
 		W10000000000000000000002 /* DailyWordWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000012 /* DailyWordWidget.swift */; };
@@ -94,7 +93,6 @@
 		B10000000000000000000128 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		B10000000000000000000129 /* WidgetDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataService.swift; sourceTree = "<group>"; };
 		B10000000000000000000130 /* AppAlternateIconsInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AppAlternateIconsInfo.plist; sourceTree = "<group>"; };
-		B10000000000000000000131 /* GestureOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureOnboardingView.swift; sourceTree = "<group>"; };
 		B10000000000000000000132 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
 		CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteDebug.entitlements; sourceTree = "<group>"; };
 		CB1004D62F6E0757009C269E /* CroissanteWidgetExtensionDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteWidgetExtensionDebug.entitlements; sourceTree = "<group>"; };
@@ -229,7 +227,6 @@
 				B1000000000000000000011E /* PolysemousWordView.swift */,
 				B1000000000000000000011F /* SearchSheetView.swift */,
 				B10000000000000000000121 /* WordCardView.swift */,
-				B10000000000000000000131 /* GestureOnboardingView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -383,7 +380,6 @@
 				B10000000000000000000035 /* OpenAITTSService.swift in Sources */,
 				B10000000000000000000036 /* NetworkMonitor.swift in Sources */,
 				B10000000000000000000037 /* WidgetDataService.swift in Sources */,
-				B10000000000000000000038 /* GestureOnboardingView.swift in Sources */,
 				B10000000000000000000039 /* StoreKitManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

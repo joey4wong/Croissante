@@ -48,16 +48,6 @@ private enum GestureOnboardingDefaults {
     static let stateKey = "gesture_onboarding_state"
 }
 
-enum GestureOnboardingStep: Int, CaseIterable {
-    case swipeRight
-    case swipeLeft
-    case swipeDown
-    case pinch
-
-    var next: Self? {
-        Self(rawValue: rawValue + 1)
-    }
-}
 
 public struct ContentView: View {
     @EnvironmentObject private var appState: AppState
@@ -74,7 +64,6 @@ public struct ContentView: View {
     @State private var pendingSettingsMemberPaywall = false
     @State private var isGalaxyVisibleInExplore = false
     @State private var isGestureOnboardingPending = false
-    @State private var gestureOnboardingStep: GestureOnboardingStep = .swipeRight
     @State private var pendingGalaxyTabBarRevealTask: Task<Void, Never>? = nil
     private let galaxyTabBarRevealDelay: UInt64 = 180_000_000
 
@@ -131,23 +120,20 @@ public struct ContentView: View {
             words: discoverWords,
             queueIndex: $discoverQueueIndex,
             isActiveTab: selectedTab == .explore,
-            gestureOnboardingStep: shouldShowGestureOnboarding ? gestureOnboardingStep : nil,
+            showPinchOnboarding: shouldShowGestureOnboarding,
             onGalaxyVisibilityChanged: { [self] visible in
                 setExploreGalaxyVisibility(visible)
-                if visible && shouldShowGestureOnboarding && gestureOnboardingStep == .pinch {
+                if visible && shouldShowGestureOnboarding {
                     finishGestureOnboarding()
                 }
             },
             onSwipeForgot: { [self] id in
-                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
                 markDiscoverWordForgot(id)
             },
             onSwipeMastered: { [self] id in
-                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
                 markDiscoverWordMastered(id)
             },
             onSwipeBlurry: { [self] id in
-                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
                 markDiscoverWordBlurry(id)
             }
         )
@@ -186,14 +172,6 @@ public struct ContentView: View {
                     Color.clear
                         .ignoresSafeArea()
                 }
-            }
-            if shouldShowGestureOnboarding {
-                GestureOnboardingView(
-                    step: gestureOnboardingStep,
-                    onFinish: finishGestureOnboarding
-                )
-                .transition(.opacity)
-                .zIndex(1)
             }
         }
         #if os(iOS)
@@ -242,11 +220,7 @@ public struct ContentView: View {
             advanceDiscover()
         }
         .onChange(of: gestureOnboardingStateRaw) { _, newValue in
-            let isPending = newValue == GestureOnboardingState.pending.rawValue
-            isGestureOnboardingPending = isPending
-            if isPending {
-                gestureOnboardingStep = .swipeRight
-            }
+            isGestureOnboardingPending = newValue == GestureOnboardingState.pending.rawValue
         }
         .onChange(of: appState.spotlightSelectedWordId) { _, wordId in
             presentSpotlightWordIfAvailable(wordId)
@@ -373,20 +347,9 @@ public struct ContentView: View {
         advanceDiscover()
     }
 
-    private func advanceGestureOnboarding() {
-        if let next = gestureOnboardingStep.next {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                gestureOnboardingStep = next
-            }
-            return
-        }
-        finishGestureOnboarding()
-    }
-
     private func finishGestureOnboarding() {
         gestureOnboardingStateRaw = GestureOnboardingState.seen.rawValue
         isGestureOnboardingPending = false
-        gestureOnboardingStep = .swipeRight
     }
 
     private func setExploreGalaxyVisibility(_ visible: Bool, delayReveal: Bool? = nil) {
@@ -704,17 +667,11 @@ extension SettingsTabGearAnimationBridge.Coordinator: UIGestureRecognizerDelegat
 }
 #endif
 
-private enum DiscoverCardDemoGesture: Equatable {
-    case swipeRight
-    case swipeLeft
-    case swipeDown
-}
-
 private struct DiscoverScreen: View {
     let words: [SimpleWord]
     @Binding var queueIndex: Int
     let isActiveTab: Bool
-    let gestureOnboardingStep: GestureOnboardingStep?
+    let showPinchOnboarding: Bool
     let onGalaxyVisibilityChanged: (Bool) -> Void
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
@@ -732,10 +689,7 @@ private struct DiscoverScreen: View {
     @State private var pendingGalaxyQueueCommitTask: Task<Void, Never>? = nil
     @State private var pendingWidgetWriteTask: Task<Void, Never>? = nil
     @State private var pendingInitialDiscoverPreparationTask: Task<Void, Never>? = nil
-    @State private var pendingOnboardingGalaxyRevealTask: Task<Void, Never>? = nil
     @State private var isPreparingInitialDiscoverContent = true
-    @State private var onboardingGalaxyWords: [SimpleWord] = []
-    @State private var isOnboardingGalaxyVisible = false
     @State private var animatePinchDemo = false
     @State private var pendingAutoInfiniteTask: Task<Void, Never>? = nil
     private let galaxyTargetCount = 22
@@ -765,26 +719,8 @@ private struct DiscoverScreen: View {
         hasSeenCardsInSession && words.isEmpty && srsManager.hasReachedDailyMasteryGoal
     }
 
-    private var demoGesture: DiscoverCardDemoGesture? {
-        switch gestureOnboardingStep {
-        case .swipeRight:
-            return .swipeRight
-        case .swipeLeft:
-            return .swipeLeft
-        case .swipeDown:
-            return .swipeDown
-        default:
-            return nil
-        }
-    }
-
-    private var isShowingOnboardingGalaxy: Bool {
-        gestureOnboardingStep == .pinch && isOnboardingGalaxyVisible && !onboardingGalaxyWords.isEmpty
-    }
-
     private var presentedWord: SimpleWord? {
-        guard !isShowingOnboardingGalaxy else { return nil }
-        return activeGalaxyTransition?.word ?? transitionPinnedWord ?? (!isGalaxyVisible ? word : nil)
+        activeGalaxyTransition?.word ?? transitionPinnedWord ?? (!isGalaxyVisible ? word : nil)
     }
 
     var body: some View {
@@ -806,16 +742,6 @@ private struct DiscoverScreen: View {
                         .transition(.identity)
                     }
 
-                    if isShowingOnboardingGalaxy {
-                        WordGalaxyOverlay(
-                            words: onboardingGalaxyWords,
-                            onSelectCard: { _ in },
-                            onDismiss: {}
-                        )
-                        .allowsHitTesting(false)
-                        .transition(.identity)
-                    }
-
                     if !appState.hasCompletedInitialResourceLoad || isPreparingInitialDiscoverContent {
                         ProgressView()
                             .progressViewStyle(.circular)
@@ -826,9 +752,8 @@ private struct DiscoverScreen: View {
                             word: presentedWord,
                             transitionRequest: activeGalaxyTransition,
                             containerSize: geo.size,
-                            allowsInteractions: (gestureOnboardingStep == nil || gestureOnboardingStep == .swipeRight || gestureOnboardingStep == .swipeLeft || gestureOnboardingStep == .swipeDown) && activeGalaxyTransition == nil && transitionPinnedWord == nil,
-                            isActiveTab: isActiveTab && gestureOnboardingStep == nil,
-                            scriptedGesture: demoGesture,
+                            allowsInteractions: activeGalaxyTransition == nil && transitionPinnedWord == nil,
+                            isActiveTab: isActiveTab,
                             onSwipeForgot: {
                                 onSwipeForgot($0)
                                 finishGalaxyTransition()
@@ -843,14 +768,14 @@ private struct DiscoverScreen: View {
                             },
                             onTransitionComplete: completeGalaxyTransition
                         )
-                    } else if !isGalaxyVisible, gestureOnboardingStep == nil, shouldShowCompletionCelebration {
+                    } else if !isGalaxyVisible, shouldShowCompletionCelebration {
                         DeckCompletionCelebrationView(
                             showContinueInfiniteButton: false,
                             onContinueInfinite: {}
                         )
                         .frame(width: geo.size.width, height: geo.size.height)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                    } else if !isGalaxyVisible, gestureOnboardingStep == nil {
+                    } else if !isGalaxyVisible {
                         Group {
                             if srsManager.todayStudyState == .completed {
                                 DiscoverEmptyStateView(
@@ -881,7 +806,7 @@ private struct DiscoverScreen: View {
                 .animation(.easeInOut(duration: 0.26), value: words.isEmpty)
                 #if os(iOS)
                 .background(
-                    ExplorePinchGestureBridge(isEnabled: isActiveTab && word != nil && !isGalaxyVisible && activeGalaxyTransition == nil && (gestureOnboardingStep == nil || gestureOnboardingStep == .pinch)) { event in
+                    ExplorePinchGestureBridge(isEnabled: isActiveTab && word != nil && !isGalaxyVisible && activeGalaxyTransition == nil) { event in
                         handleGalaxyPinch(event, containerFrame: geo.frame(in: .global))
                     }
                     .frame(width: 0, height: 0)
@@ -890,7 +815,7 @@ private struct DiscoverScreen: View {
             }
             .padding(.horizontal, 20)
             .overlay(alignment: .center) {
-                if gestureOnboardingStep == .pinch && !isGalaxyVisible {
+                if showPinchOnboarding && !isGalaxyVisible {
                     OnboardingPinchDemoView(animate: animatePinchDemo, isDarkMode: isDarkMode)
                         .offset(y: 240)
                         .transition(.opacity)
@@ -906,7 +831,7 @@ private struct DiscoverScreen: View {
             if !words.isEmpty {
                 hasSeenCardsInSession = true
             }
-            syncGestureOnboardingDemo(for: gestureOnboardingStep)
+            syncPinchDemo()
         }
         .onChange(of: words.map(\.id).sorted()) { _, ids in
             if !ids.isEmpty {
@@ -918,8 +843,8 @@ private struct DiscoverScreen: View {
             if activeGalaxyTransition == nil, transitionPinnedWord?.id == newWordId {
                 transitionPinnedWord = nil
             }
-            if gestureOnboardingStep == .pinch, newWordId != nil {
-                syncGestureOnboardingDemo(for: gestureOnboardingStep)
+            if showPinchOnboarding, newWordId != nil {
+                syncPinchDemo()
             }
         }
         .onChange(of: appState.level) { _, _ in
@@ -942,9 +867,6 @@ private struct DiscoverScreen: View {
             dismissGalaxyBackdrop()
             transitionPinnedWord = nil
         }
-        .onChange(of: gestureOnboardingStep) { _, newValue in
-            syncGestureOnboardingDemo(for: newValue)
-        }
         .onChange(of: shouldShowCompletionCelebration) { _, showing in
             if showing {
                 scheduleAutoInfinitePractice()
@@ -956,11 +878,6 @@ private struct DiscoverScreen: View {
         .onDisappear {
             pendingAutoInfiniteTask?.cancel()
             pendingAutoInfiniteTask = nil
-            pendingOnboardingGalaxyRevealTask?.cancel()
-            pendingOnboardingGalaxyRevealTask = nil
-            if isOnboardingGalaxyVisible {
-                onGalaxyVisibilityChanged(false)
-            }
         }
     }
 
@@ -1113,28 +1030,9 @@ private struct DiscoverScreen: View {
         galaxyWords = []
     }
 
-    private func syncGestureOnboardingDemo(for step: GestureOnboardingStep?) {
-        pendingOnboardingGalaxyRevealTask?.cancel()
-        pendingOnboardingGalaxyRevealTask = nil
-
-        if isOnboardingGalaxyVisible {
-            onGalaxyVisibilityChanged(false)
-        }
-        isOnboardingGalaxyVisible = false
-
-        guard step == .pinch, let word else {
-            onboardingGalaxyWords = []
-            return
-        }
-
-        let generatedWords = buildGalaxyWords(excluding: word.id)
-        if generatedWords.isEmpty {
-            onboardingGalaxyWords = Array(appState.words.filter { $0.id != word.id }.prefix(galaxyTargetCount))
-        } else {
-            onboardingGalaxyWords = generatedWords
-        }
-
+    private func syncPinchDemo() {
         animatePinchDemo = false
+        guard showPinchOnboarding, word != nil else { return }
         withAnimation(.easeInOut(duration: 1.05).repeatForever(autoreverses: true)) {
             animatePinchDemo = true
         }
@@ -1676,7 +1574,6 @@ private struct ActiveDiscoverCardHost: View {
     let containerSize: CGSize
     let allowsInteractions: Bool
     let isActiveTab: Bool
-    let scriptedGesture: DiscoverCardDemoGesture?
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
@@ -1748,7 +1645,6 @@ private struct ActiveDiscoverCardHost: View {
             detailProgress: detailProgress,
             glowStrength: glowStrength,
             interactionsEnabled: interactionEnabled,
-            scriptedGesture: scriptedGesture,
             onSwipeForgot: onSwipeForgot,
             onSwipeMastered: onSwipeMastered,
             onSwipeBlurry: onSwipeBlurry
@@ -2373,7 +2269,6 @@ private struct DiscoverCard: View {
     let detailProgress: Double
     let glowStrength: Double
     let interactionsEnabled: Bool
-    let scriptedGesture: DiscoverCardDemoGesture?
     let resetTransformAfterSwipe: Bool
     let allowsBlurrySwipe: Bool
     let onSwipeDownAction: (() -> Void)?
@@ -2388,7 +2283,6 @@ private struct DiscoverCard: View {
     @State private var dragRotation: Angle = .zero
     @State private var isSwipeCompleting = false
     @State private var pendingSpeechTask: Task<Void, Never>?
-    @State private var demoLoopTask: Task<Void, Never>?
     @State private var displayedWord: SimpleWord
     @State private var allSenses: [SimpleWord] = []
     @State private var currentSensePosition: Int = 0
@@ -2402,7 +2296,6 @@ private struct DiscoverCard: View {
         detailProgress: Double = 1,
         glowStrength: Double = 1,
         interactionsEnabled: Bool = true,
-        scriptedGesture: DiscoverCardDemoGesture? = nil,
         resetTransformAfterSwipe: Bool = true,
         allowsBlurrySwipe: Bool = true,
         onSwipeDownAction: (() -> Void)? = nil,
@@ -2419,7 +2312,6 @@ private struct DiscoverCard: View {
         self.detailProgress = detailProgress
         self.glowStrength = glowStrength
         self.interactionsEnabled = interactionsEnabled
-        self.scriptedGesture = scriptedGesture
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
         self.allowsBlurrySwipe = allowsBlurrySwipe
         self.onSwipeDownAction = onSwipeDownAction
@@ -2483,67 +2375,6 @@ private struct DiscoverCard: View {
     private var isDarkMode: Bool { colorScheme == .dark }
     private var secondaryTextColor: Color {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.42)
-    }
-
-    private func demoTargetOffset(for gesture: DiscoverCardDemoGesture) -> CGSize {
-        switch gesture {
-        case .swipeRight:
-            return CGSize(width: min(resolvedCardWidth * 0.38, 140), height: 0)
-        case .swipeLeft:
-            return CGSize(width: -min(resolvedCardWidth * 0.38, 140), height: 0)
-        case .swipeDown:
-            return CGSize(width: 0, height: min(resolvedCardHeight * 0.24, 96))
-        }
-    }
-
-    private func demoTargetRotation(for gesture: DiscoverCardDemoGesture) -> Angle {
-        switch gesture {
-        case .swipeRight:
-            return .degrees(7)
-        case .swipeLeft:
-            return .degrees(-7)
-        case .swipeDown:
-            return .zero
-        }
-    }
-
-    @MainActor
-    private func stopDemoLoop(resetTransform: Bool) {
-        demoLoopTask?.cancel()
-        demoLoopTask = nil
-        guard resetTransform else { return }
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-            dragOffset = .zero
-            dragRotation = .zero
-        }
-    }
-
-    @MainActor
-    private func restartDemoLoopIfNeeded() {
-        guard let scriptedGesture, !isSwipeCompleting else {
-            stopDemoLoop(resetTransform: true)
-            return
-        }
-
-        demoLoopTask?.cancel()
-        demoLoopTask = Task { @MainActor in
-            dragOffset = .zero
-            dragRotation = .zero
-
-            while !Task.isCancelled {
-                withAnimation(.easeInOut(duration: 0.9)) {
-                    dragOffset = demoTargetOffset(for: scriptedGesture)
-                    dragRotation = demoTargetRotation(for: scriptedGesture)
-                }
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                guard !Task.isCancelled else { return }
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-                    dragOffset = .zero
-                    dragRotation = .zero
-                }
-                try? await Task.sleep(nanoseconds: 800_000_000)
-            }
-        }
     }
 
     private var bottomMetaReveal: Double {
@@ -2731,9 +2562,6 @@ private struct DiscoverCard: View {
                     DragGesture(minimumDistance: 15)
                         .onChanged { v in
                             guard interactionsEnabled, !isSwipeCompleting else { return }
-                            if scriptedGesture != nil {
-                                stopDemoLoop(resetTransform: false)
-                            }
                             dragOffset = v.translation
                             dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
                         }
@@ -2790,7 +2618,6 @@ private struct DiscoverCard: View {
                     }
                 }
                 .onDisappear {
-                    stopDemoLoop(resetTransform: false)
                     stopSpeechPlayback()
                 }
                 .onAppear {
@@ -2801,10 +2628,6 @@ private struct DiscoverCard: View {
                     if interactionsEnabled && isActiveTab && appState.autoPlay {
                         scheduleAutoPlay()
                     }
-                    restartDemoLoopIfNeeded()
-                }
-                .onChange(of: scriptedGesture) { _, _ in
-                    restartDemoLoopIfNeeded()
                 }
         }
     }
