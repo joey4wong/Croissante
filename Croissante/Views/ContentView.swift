@@ -1581,6 +1581,9 @@ private struct ActiveDiscoverCardHost: View {
 
     @State private var animationStart = Date()
     @State private var hasCompletedTransition = false
+    @State private var swipeInOffsetY: CGFloat = 0
+    @State private var swipeInScale: CGFloat = 1.0
+    @State private var swipeInOpacity: Double = 1.0
 
     private let transitionDuration: Double = 0.48
     private var restingCardYOffset: CGFloat {
@@ -1623,6 +1626,19 @@ private struct ActiveDiscoverCardHost: View {
             animationStart = Date()
             hasCompletedTransition = false
         }
+        .onChange(of: word.id) { _, _ in
+            guard transitionRequest == nil else { return }
+            swipeInOffsetY = 44
+            swipeInScale = 0.94
+            swipeInOpacity = 0
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.70)) {
+                swipeInOffsetY = 0
+                swipeInScale = 1.0
+            }
+            withAnimation(.easeIn(duration: 0.45)) {
+                swipeInOpacity = 1.0
+            }
+        }
     }
 
     @ViewBuilder
@@ -1630,6 +1646,7 @@ private struct ActiveDiscoverCardHost: View {
         let detailProgress = transitionDetailProgress(progress: progress, transitionRequest: transitionRequest)
         let isTransitioning = transitionRequest != nil
         let glowStrength = isTransitioning ? min(1.0, detailProgress) : 1.0
+        let cardContentOpacity = isTransitioning ? 1.0 : swipeInOpacity
         let interactionEnabled = !isTransitioning && allowsInteractions
         let cardYOffset = restingCardYOffset * CGFloat(detailProgress)
         let state: SelectedGalaxyCardState = transitionRequest.map {
@@ -1644,6 +1661,7 @@ private struct ActiveDiscoverCardHost: View {
             isActiveTab: isActiveTab && interactionEnabled,
             detailProgress: detailProgress,
             glowStrength: glowStrength,
+            contentOpacity: cardContentOpacity,
             interactionsEnabled: interactionEnabled,
             onSwipeForgot: onSwipeForgot,
             onSwipeMastered: onSwipeMastered,
@@ -1663,6 +1681,8 @@ private struct ActiveDiscoverCardHost: View {
         .offset(state.offset)
         .opacity(state.opacity)
         .modifier(ConditionalBlur(radius: state.blur))
+        .offset(y: swipeInOffsetY)
+        .scaleEffect(swipeInScale)
     }
 
     private func transitionDetailProgress(progress: Double, transitionRequest: GalaxySelectedCardTransitionRequest?) -> Double {
@@ -2268,6 +2288,7 @@ private struct DiscoverCard: View {
     let isActiveTab: Bool
     let detailProgress: Double
     let glowStrength: Double
+    let contentOpacity: Double
     let interactionsEnabled: Bool
     let resetTransformAfterSwipe: Bool
     let allowsBlurrySwipe: Bool
@@ -2295,6 +2316,7 @@ private struct DiscoverCard: View {
         isActiveTab: Bool,
         detailProgress: Double = 1,
         glowStrength: Double = 1,
+        contentOpacity: Double = 1,
         interactionsEnabled: Bool = true,
         resetTransformAfterSwipe: Bool = true,
         allowsBlurrySwipe: Bool = true,
@@ -2311,6 +2333,7 @@ private struct DiscoverCard: View {
         self.isActiveTab = isActiveTab
         self.detailProgress = detailProgress
         self.glowStrength = glowStrength
+        self.contentOpacity = contentOpacity
         self.interactionsEnabled = interactionsEnabled
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
         self.allowsBlurrySwipe = allowsBlurrySwipe
@@ -2545,6 +2568,7 @@ private struct DiscoverCard: View {
                 cardWidth: cardWidth ?? 0,
                 cardHeight: cardHeight ?? 0,
                 detailProgress: detailProgress,
+                contentOpacity: contentOpacity,
                 onTitleTap: { [self] in cancelScheduledSpeech(); speakWord() },
                 onDetailTap: { [self] in cancelScheduledSpeech(); speakExampleSentence() }
             )
@@ -2709,6 +2733,7 @@ private struct CardBody: View {
     let cardWidth: CGFloat
     let cardHeight: CGFloat
     let detailProgress: Double
+    var contentOpacity: Double = 1.0
     var onTitleTap: (() -> Void)? = nil
     var onDetailTap: (() -> Void)? = nil
 
@@ -2842,12 +2867,13 @@ private struct CardBody: View {
 
     var body: some View {
         cardContent
+            .opacity(contentOpacity)
             .padding(.horizontal, 24)
             .padding(.vertical, 24)
             .frame(width: cardWidth, alignment: .top)
             .overlay(alignment: .topTrailing) {
                 nounCornerBadge
-                    .opacity(primaryReveal)
+                    .opacity(primaryReveal * contentOpacity)
             }
             .background(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
