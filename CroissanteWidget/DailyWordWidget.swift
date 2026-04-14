@@ -25,6 +25,21 @@ struct DailyWordEntry: TimelineEntry {
     let isEmpty: Bool
 }
 
+struct WidgetWordData: Codable {
+    let id: String
+    let word: String
+    let tag: String
+    let level: String
+    let auxiliary: String?
+    let translationEn: String
+    let translationZh: String
+    let translationHi: String?
+    let exampleFr: String
+    let exampleEn: String
+    let exampleZh: String
+    let exampleHi: String?
+}
+
 struct DailyWordProvider: TimelineProvider {
     private static let entryIntervalMinutes = 5
 
@@ -36,9 +51,9 @@ struct DailyWordProvider: TimelineProvider {
             tag: "INTJ",
             level: "A1",
             auxiliary: "",
-            translation: "hello",
+            translation: "你好",
             exampleFr: "Bonjour, comment allez-vous ?",
-            exampleTranslation: "Hello, how are you?",
+            exampleTranslation: "你好，请问你怎么样？",
             isLocked: false,
             isEmpty: false
         )
@@ -55,47 +70,38 @@ struct DailyWordProvider: TimelineProvider {
             return
         }
 
-        var entries: [DailyWordEntry] = []
         let pool = loadPool()
         let language = currentLanguage
         let now = Date()
+        var entries: [DailyWordEntry] = []
+
         for i in 0..<max(pool.count, 1) {
             let entryDate = Calendar.current.date(byAdding: .minute, value: Self.entryIntervalMinutes * i, to: now) ?? now
             if pool.isEmpty {
                 entries.append(emptyEntry(date: entryDate))
             } else {
-                let w = pool[i % pool.count]
-                entries.append(entry(for: w, date: entryDate, language: language))
+                entries.append(entry(for: pool[i % pool.count], date: entryDate, language: language))
             }
         }
+
         let next = Calendar.current.date(byAdding: .minute, value: Self.entryIntervalMinutes * entries.count, to: now) ?? now
         completion(Timeline(entries: entries, policy: .after(next)))
     }
 
     private func loadEntry() -> DailyWordEntry {
-        guard isMemberUnlocked else {
-            return lockedEntry(date: .now)
-        }
-
+        guard isMemberUnlocked else { return lockedEntry(date: .now) }
         let pool = loadPool()
-        guard !pool.isEmpty else {
-            return emptyEntry(date: .now)
-        }
-        let w = pool.randomElement()!
-        return entry(for: w, date: .now, language: currentLanguage)
+        guard !pool.isEmpty else { return emptyEntry(date: .now) }
+        return entry(for: pool.randomElement()!, date: .now, language: currentLanguage)
     }
 
     private var isMemberUnlocked: Bool {
         guard let defaults = sharedDefaults,
-              defaults.bool(forKey: DailyWordWidgetDefaults.memberUnlockedKey) else {
-            return false
-        }
-        if defaults.bool(forKey: DailyWordWidgetDefaults.memberAccessNeverExpiresKey) {
-            return true
-        }
-        let expirationInterval = defaults.double(forKey: DailyWordWidgetDefaults.memberAccessExpiresAtKey)
-        guard expirationInterval > 0 else { return false }
-        return Date(timeIntervalSince1970: expirationInterval) > Date()
+              defaults.bool(forKey: DailyWordWidgetDefaults.memberUnlockedKey) else { return false }
+        if defaults.bool(forKey: DailyWordWidgetDefaults.memberAccessNeverExpiresKey) { return true }
+        let exp = defaults.double(forKey: DailyWordWidgetDefaults.memberAccessExpiresAtKey)
+        guard exp > 0 else { return false }
+        return Date(timeIntervalSince1970: exp) > Date()
     }
 
     private var sharedDefaults: UserDefaults? {
@@ -122,9 +128,9 @@ struct DailyWordProvider: TimelineProvider {
             tag: word.tag,
             level: word.level,
             auxiliary: word.auxiliary ?? "",
-            translation: translation(for: word, language: language),
+            translation: resolvedTranslation(word, language: language),
             exampleFr: word.exampleFr,
-            exampleTranslation: exampleTranslation(for: word, language: language),
+            exampleTranslation: resolvedExampleTranslation(word, language: language),
             isLocked: false,
             isEmpty: false
         )
@@ -132,222 +138,83 @@ struct DailyWordProvider: TimelineProvider {
 
     private func emptyEntry(date: Date) -> DailyWordEntry {
         DailyWordEntry(
-            date: date,
-            wordId: "",
-            word: "croissant",
-            tag: "N",
-            level: "A1",
-            auxiliary: "",
-            translation: "",
-            exampleFr: "",
-            exampleTranslation: "",
-            isLocked: false,
-            isEmpty: true
+            date: date, wordId: "", word: "croissant", tag: "N", level: "A1",
+            auxiliary: "", translation: "", exampleFr: "", exampleTranslation: "",
+            isLocked: false, isEmpty: true
         )
     }
 
     private func lockedEntry(date: Date) -> DailyWordEntry {
         DailyWordEntry(
-            date: date,
-            wordId: "",
-            word: "Croissante Plus",
-            tag: "",
-            level: "",
-            auxiliary: "",
-            translation: "",
-            exampleFr: "",
-            exampleTranslation: "",
-            isLocked: true,
-            isEmpty: false
+            date: date, wordId: "", word: "Croissante Plus", tag: "", level: "",
+            auxiliary: "", translation: "", exampleFr: "", exampleTranslation: "",
+            isLocked: true, isEmpty: false
         )
     }
 
-    private func translation(for word: WidgetWordData, language: String) -> String {
+    private func resolvedTranslation(_ word: WidgetWordData, language: String) -> String {
         switch language {
         case "zh": return firstNonEmpty(word.translationZh, word.translationEn, word.translationHi)
         case "hi": return firstNonEmpty(word.translationHi, word.translationEn, word.translationZh)
-        default: return firstNonEmpty(word.translationEn, word.translationZh, word.translationHi)
+        default:   return firstNonEmpty(word.translationEn, word.translationZh, word.translationHi)
         }
     }
 
-    private func exampleTranslation(for word: WidgetWordData, language: String) -> String {
+    private func resolvedExampleTranslation(_ word: WidgetWordData, language: String) -> String {
         switch language {
         case "zh": return firstNonEmpty(word.exampleZh, word.exampleEn, word.exampleHi)
         case "hi": return firstNonEmpty(word.exampleHi, word.exampleEn, word.exampleZh)
-        default: return firstNonEmpty(word.exampleEn, word.exampleZh, word.exampleHi)
+        default:   return firstNonEmpty(word.exampleEn, word.exampleZh, word.exampleHi)
         }
     }
 
     private func firstNonEmpty(_ values: String?...) -> String {
         for v in values {
-            let t = v?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !t.isEmpty { return t }
+            if let t = v?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return t }
         }
         return ""
     }
 }
 
-struct WidgetWordData: Codable {
-    let id: String
-    let word: String
-    let tag: String
-    let level: String
-    let auxiliary: String?
-    let translationEn: String
-    let translationZh: String
-    let translationHi: String?
-    let exampleFr: String
-    let exampleEn: String
-    let exampleZh: String
-    let exampleHi: String?
-}
+// MARK: - View
 
 struct DailyWordWidgetView: View {
     var entry: DailyWordEntry
-    @Environment(\.colorScheme) var colorScheme
-
-    private var isDark: Bool { colorScheme == .dark }
-
-    private var headlineColor: Color {
-        isDark ? Color.white.opacity(0.92) : Color(red: 0.08, green: 0.11, blue: 0.20)
-    }
-    private var levelColor: Color {
-        isDark ? Color.white.opacity(0.48) : Color.black.opacity(0.30)
-    }
-    private var secondaryColor: Color {
-        isDark ? Color.white.opacity(0.64) : Color.black.opacity(0.42)
-    }
-    private var exampleColor: Color {
-        isDark ? Color.white.opacity(0.64) : Color.black.opacity(0.72)
-    }
-    private var dividerColor: Color {
-        isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.14)
-    }
-    private let levelAuxFont = Font.system(size: 5, weight: .semibold, design: .rounded)
-    private var bgGradient: LinearGradient {
-        LinearGradient(
-            colors: isDark
-                ? [Color(red: 0.11, green: 0.10, blue: 0.11), Color(red: 0.05, green: 0.05, blue: 0.06)]
-                : [Color(red: 0.96, green: 0.97, blue: 0.99), Color(red: 0.93, green: 0.95, blue: 0.97)],
-            startPoint: .top, endPoint: .bottom
-        )
-    }
 
     private var deepLinkURL: URL? {
-        if entry.isLocked {
-            return URL(string: "croissante://paywall")
-        }
-        guard !entry.isEmpty else { return nil }
-        let wordId = entry.wordId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !wordId.isEmpty else { return nil }
-
-        var components = URLComponents()
-        components.scheme = "croissante"
-        components.host = "word"
-        components.queryItems = [URLQueryItem(name: "id", value: wordId)]
-        return components.url
+        if entry.isLocked { return URL(string: "croissante://paywall") }
+        guard !entry.isEmpty, !entry.wordId.isEmpty else { return nil }
+        var c = URLComponents()
+        c.scheme = "croissante"; c.host = "word"
+        c.queryItems = [URLQueryItem(name: "id", value: entry.wordId)]
+        return c.url
     }
 
     var body: some View {
-        Group {
-            if entry.isLocked {
-                lockedView
-            } else {
-                smallLayout
+        mainContent
+            .containerBackground(for: .widget) {
+                LinearGradient(
+                    colors: [
+                        Color(uiColor: .systemBackground),
+                        Color(uiColor: .secondarySystemBackground)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             }
-        }
-        .containerBackground(for: .widget) { bgGradient }
-        .widgetURL(deepLinkURL)
+            .widgetURL(deepLinkURL)
     }
 
-    private var smallLayout: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            titleBlock
-                .frame(height: 34, alignment: .topLeading)
-                .padding(.bottom, 3)
-
-            Rectangle()
-                .fill(dividerColor)
-                .frame(height: 1)
-                .padding(.bottom, 4)
-
-            translationBlock
-                .frame(height: 14, alignment: .topLeading)
-                .padding(.bottom, 5)
-
-            exampleBlock
-                .frame(maxHeight: .infinity, alignment: .topLeading)
-                .layoutPriority(1)
-        }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .overlay(alignment: .topLeading) {
-            levelAuxLabel
-                .padding(.top, 3)
-                .padding(.leading, 8)
+    @ViewBuilder
+    private var mainContent: some View {
+        if entry.isLocked {
+            lockedView
+        } else {
+            wordView
         }
     }
 
-    private var titleBlock: some View {
-        Text(entry.word)
-            .font(.system(size: 26, weight: .bold, design: .rounded))
-            .tracking(0.2)
-            .lineLimit(1)
-            .minimumScaleFactor(0.42)
-            .allowsTightening(true)
-            .foregroundStyle(headlineColor)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var translationBlock: some View {
-        HStack(alignment: .top, spacing: 5) {
-            if !entry.tag.isEmpty {
-                Text(posLabelWidget(entry.tag))
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(secondaryColor)
-                    .padding(.top, 1)
-            }
-            if !entry.translation.isEmpty {
-                Text(entry.translation)
-                    .font(.system(size: 10, weight: .regular))
-                    .lineSpacing(1)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .allowsTightening(true)
-                    .foregroundStyle(secondaryColor)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var exampleBlock: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            if !entry.exampleFr.isEmpty {
-                Text(entry.exampleFr)
-                    .font(.system(size: 10, weight: .regular))
-                    .lineSpacing(1)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.82)
-                    .allowsTightening(true)
-                    .foregroundStyle(exampleColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if !entry.exampleTranslation.isEmpty {
-                Text(entry.exampleTranslation)
-                    .font(.system(size: 9, weight: .regular))
-                    .lineSpacing(1)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.82)
-                    .allowsTightening(true)
-                    .foregroundStyle(secondaryColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    // MARK: Locked
 
     private var lockedView: some View {
         ZStack {
@@ -361,7 +228,7 @@ struct DailyWordWidgetView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .multilineTextAlignment(.center)
-                .foregroundStyle(headlineColor)
+                .foregroundStyle(Color.primary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .padding(.top, 6)
         }
@@ -369,47 +236,122 @@ struct DailyWordWidgetView: View {
         .padding(.horizontal, 8)
     }
 
-    // MARK: - Shared helpers
+    // MARK: Main
+
+    private var wordView: some View {
+        VStack(alignment: .center, spacing: 0) {
+            // French word — centered, large
+            Text(entry.word)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .tracking(0.2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.38)
+                .allowsTightening(true)
+                .foregroundStyle(Color.primary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 22)
+
+            Color(uiColor: .separator)
+                .frame(height: 1)
+                .padding(.top, 5)
+                .padding(.bottom, 5)
+
+            // pos + translation
+            HStack(alignment: .center, spacing: 4) {
+                if !entry.tag.isEmpty {
+                    Text(posLabel(entry.tag))
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.secondary)
+                }
+                if !entry.translation.isEmpty {
+                    Text(entry.translation)
+                        .font(.system(size: 10, weight: .regular))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.70)
+                        .allowsTightening(true)
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.bottom, 6)
+
+            // example fr
+            if !entry.exampleFr.isEmpty {
+                Text(entry.exampleFr)
+                    .font(.system(size: 9.5, weight: .regular))
+                    .lineSpacing(1.2)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.80)
+                    .allowsTightening(true)
+                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 2)
+            }
+
+            // example translation
+            if !entry.exampleTranslation.isEmpty {
+                Text(entry.exampleTranslation)
+                    .font(.system(size: 9, weight: .regular))
+                    .lineSpacing(1.0)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.80)
+                    .allowsTightening(true)
+                    .foregroundStyle(Color.secondary.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay(alignment: .topLeading) {
+            levelAuxLabel
+                .padding(.top, 7)
+                .padding(.leading, 9)
+        }
+    }
+
+    // MARK: Helpers
 
     @ViewBuilder
     private var levelAuxLabel: some View {
         let aux = entry.auxiliary.trimmingCharacters(in: .whitespacesAndNewlines)
         if !entry.level.isEmpty || !aux.isEmpty {
-            HStack(spacing: 2.5) {
+            HStack(spacing: 2) {
                 if !entry.level.isEmpty {
                     Text(entry.level.uppercased())
-                        .font(levelAuxFont)
                 }
                 if !aux.isEmpty {
-                    Text("·")
-                        .font(levelAuxFont)
-                        .opacity(0.6)
+                    Text("·").opacity(0.5)
                     Text(aux)
-                        .font(levelAuxFont)
                 }
             }
-            .tracking(0.35)
-            .foregroundStyle(levelColor)
+            .font(.system(size: 8, weight: .semibold, design: .rounded))
+            .tracking(0.3)
+            .foregroundStyle(Color.secondary.opacity(0.6))
             .lineLimit(1)
         }
     }
 
-    private func posLabelWidget(_ tag: String) -> String {
+    private func posLabel(_ tag: String) -> String {
         switch tag.uppercased() {
-        case "N": return "n."
-        case "V": return "v."
-        case "A": return "adj."
-        case "ADV": return "adv."
+        case "N":    return "n."
+        case "V":    return "v."
+        case "A":    return "adj."
+        case "ADV":  return "adv."
         case "INTJ": return "intj."
         case "PREP": return "prep."
         case "CONJ": return "conj."
         case "PRON": return "pron."
-        case "DET": return "det."
-        case "ART": return "art."
-        default: return tag
+        case "DET":  return "det."
+        case "ART":  return "art."
+        default:     return tag
         }
     }
 }
+
+// MARK: - Widget
 
 struct DailyWordWidget: Widget {
     let kind = "DailyWordWidget"
