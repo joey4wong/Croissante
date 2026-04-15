@@ -3671,9 +3671,9 @@ private struct SettingsScreen: View {
                     "5 / 10 / 15 दैनिक लक्ष्य का क्या मतलब है?"
                 ),
                 answer: appState.localized(
-                    "It is a today-pass goal, not a swipe count. Completion is measured by how many cards in today's target pool you can eventually mark Mastered today. That does not mean every card is permanently mastered in memory.",
-                    "这代表“今日通过目标”，不是“滑动次数”。系统按“今天目标池里有多少张最终能被你标记为掌握”来判断完成度，但这不等于这些词已经在长期记忆里永久掌握。",
-                    "It is a today-pass goal, not a swipe count. Completion is measured by how many cards in today's target pool you can eventually mark Mastered today. That does not mean every card is permanently mastered in memory."
+                    "It is a swipe count, not a mastery requirement. Swiping any card with Mastered, Blurry, or Forgot counts toward the goal — no card ever comes back to force a second pass on the same day. Once you have swiped all cards in today's set, the goal is complete.",
+                    "这代表“今天要刷的卡片数量”，不要求强制掌握。对每张卡片标资“掌握”“模糊”或“忘记”都会计入进度，标过的卡片当天不会再次出现。刷完今天全部卡片，即为完成目标。",
+                    "It is a swipe count, not a mastery requirement. Swiping any card with Mastered, Blurry, or Forgot counts toward the goal — no card ever comes back to force a second pass on the same day. Once you have swiped all cards in today's set, the goal is complete."
                 )
             ),
             FAQItem(
@@ -3692,14 +3692,14 @@ private struct SettingsScreen: View {
             FAQItem(
                 id: "reappearing-card",
                 question: appState.localized(
-                    "Why does a card come back after I already swiped it away?",
-                    "为什么我已经划走了一张卡，它后面又出现了？",
-                    "Why does a card come back after I already swiped it away?"
+                    "Once I swipe a card, does it come back today?",
+                    "刷过一张卡片，当天还会再次出现吗？",
+                    "Once I swipe a card, does it come back today?"
                 ),
                 answer: appState.localized(
-                    "After Blurry or Forgot, the card stays in today's target set until you can pass it today. If you later mark it Mastered on the same day, today's goal can move forward, but the long-term memory state stays unsettled and the word is scheduled for a short-term review.",
-                    "当你标记“模糊/忘记”后，这张卡仍会留在今天的目标池里，直到你今天能把它通过。若你同一天后面又标记“掌握”，今日目标可以继续推进，但长期记忆状态仍会保留为未稳固，并安排短期复习。",
-                    "After Blurry or Forgot, the card stays in today's target set until you can pass it today. If you later mark it Mastered on the same day, today's goal can move forward, but the long-term memory state stays unsettled and the word is scheduled for a short-term review."
+                    "No. Each card in today's set appears exactly once. Forgot or Blurry counts as your answer for today — the card is done and removed from the queue. The SRS engine schedules it for a short-term review tomorrow, and your Progress page will show its memory state honestly.",
+                    "不会。今天的每张卡片只会出现一次。忘记或模糊就是你今天对这张卡的回答，卡片立即完成并移出队列。SRS 引擎会安排明天的短期复习，进度页也会如实展示该词的记忆状态。",
+                    "No. Each card in today's set appears exactly once. Forgot or Blurry counts as your answer for today — the card is done and removed from the queue. The SRS engine schedules it for a short-term review tomorrow, and your Progress page will show its memory state honestly."
                 )
             ),
             FAQItem(
@@ -3710,9 +3710,9 @@ private struct SettingsScreen: View {
                     "When is today's Explore session actually complete?"
                 ),
                 answer: appState.localized(
-                    "The day is complete when every card in today's base target pool has been passed today. A card that was Blurry or Forgot earlier can still count after you later mark it Mastered, but its Progress state may remain Blurry until a future review confirms it.",
-                    "只有当“今天基础目标池”里的每张卡都在今天通过后，首页才算完成。某张卡今天早些时候被标记过“模糊/忘记”，后面再标记“掌握”也可以计入今日完成，但它在进度页里可能仍会保持“模糊”，直到未来复习再次确认。",
-                    "The day is complete when every card in today's base target pool has been passed today. A card that was Blurry or Forgot earlier can still count after you later mark it Mastered, but its Progress state may remain Blurry until a future review confirms it."
+                    "The day is complete when every card in today's set has been swiped with any of Mastered, Blurry, or Forgot. You do not need to re-swipe anything — one honest swipe per card is enough, and the SRS engine handles the rest automatically.",
+                    "今天的每张卡片，用“掌握”“模糊”“忘记”任意一种滑动后，首页即为完成。无需重复滑卡——每张卡只需一次真实作答，SRS 引擎会自动安排后续复习。",
+                    "The day is complete when every card in today's set has been swiped with any of Mastered, Blurry, or Forgot. You do not need to re-swipe anything — one honest swipe per card is enough, and the SRS engine handles the rest automatically."
                 )
             ),
             FAQItem(
@@ -3723,9 +3723,9 @@ private struct SettingsScreen: View {
                     "What is Continue ∞ and when does it appear?"
                 ),
                 answer: appState.localized(
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap.",
+                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap.",
                     "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。这里的滑动会写入记忆状态、进度分类和下次复习安排，但不会改动今日基础目标的完成状态或热力图。",
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap."
+                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap."
                 )
             ),
             FAQItem(
@@ -3788,9 +3788,9 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "On today's base deck, swipe right means passed today, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. Progress uses long-term memory state: if a word was Blurry or Forgot earlier today, a later right swipe completes today's card but keeps it unsettled for review.",
-                    "在今天的基础牌堆里，右滑表示“今天通过”，下滑是“模糊”，左滑是“忘记”，上滑不记录任何操作。进度页看的是长期记忆状态：如果一个词今天早些时候被标记过“模糊/忘记”，后面再右滑可以完成今日卡片，但它仍会保持未稳固并等待复习。",
-                    "On today's base deck, swipe right means passed today, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. Progress uses long-term memory state: if a word was Blurry or Forgot earlier today, a later right swipe completes today's card but keeps it unsettled for review."
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. All three count toward today's goal and complete the card for the day. Your Progress page tracks the long-term memory state, so a word marked Blurry or Forgot will show as unsettled even if you later swipe it Mastered.",
+                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑不记录。三种滑动都计入今日目标并完成当天该张卡片。进度页跟踪的是长期记忆状态，因此被标记“模糊”或“忘记”的单词在进度页中仍会显示为未稳固状态。",
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. All three count toward today's goal and complete the card for the day. Your Progress page tracks the long-term memory state, so a word marked Blurry or Forgot will show as unsettled even if you later swipe it Mastered."
                 )
             ),
             FAQItem(
@@ -3801,9 +3801,9 @@ private struct SettingsScreen: View {
                     "Blurry और Forgot से रिव्यू कैसे बदलता है?"
                 ),
                 answer: appState.localized(
-                    "Blurry and Forgot do not add extra cards to today's goal. The word stays in today's set until you can mark it Mastered, and both are scheduled for a short review tomorrow. Forgot resets consecutive corrects to 0; Blurry only reduces them by 1. If you mark it Mastered later on the same day, today's goal can count it as passed, but long-term progress still treats it as unsettled. It returns to Mastered only after a later scheduled review is also marked Mastered.",
+                    "Both count toward today's goal immediately — the card is done after one swipe. Forgot resets consecutive corrects to 0 and schedules a short review tomorrow; Blurry reduces consecutive corrects by 1 and does the same. Your Progress page will record the word as unsettled. It returns to Mastered only after a future scheduled review is also marked Mastered.",
                     "“模糊”和“忘记”不会给今天额外加卡。这个词会留在今天的目标池里，直到你今天把它标记为“掌握”；两者都会安排到明天短期复习。区别是：“忘记”会把连续正确数归 0，“模糊”只会让连续正确数减 1。如果同一天后面又标记“掌握”，今天的目标可以把它算作通过，但长期进度仍会把它视为未稳固；只有之后到期复习也标记“掌握”，它才会真正回到“掌握”。",
-                    "Blurry और Forgot आज के लक्ष्य में अतिरिक्त कार्ड नहीं जोड़ते। शब्द आज के सेट में तब तक रहता है जब तक आप उसे Mastered नहीं कर देते, और दोनों को कल छोटे रिव्यू के लिए रखा जाता है। Forgot लगातार सही जवाबों को 0 कर देता है; Blurry उन्हें सिर्फ 1 घटाता है। अगर आप उसी दिन बाद में Mastered कर दें, तो आज का लक्ष्य उसे पास मान सकता है, लेकिन लंबी अवधि की प्रगति उसे अभी भी अस्थिर मानती है। वह बाद की scheduled review में फिर से Mastered होने पर ही Mastered में लौटता है."
+                    "Both count toward today's goal immediately. Forgot resets consecutive corrects to 0; Blurry reduces them by 1. Both schedule a short review tomorrow. शब्द आज के सेट में तब तक रहता है जब तक आप उसे Mastered नहीं कर देते, और दोनों को कल छोटे रिव्यू के लिए रखा जाता है। Forgot लगातार सही जवाबों को 0 कर देता है; Blurry उन्हें सिर्फ 1 घटाता है। अगर आप उसी दिन बाद में Mastered कर दें, तो आज का लक्ष्य उसे पास मान सकता है, लेकिन लंबी अवधि की प्रगति उसे अभी भी अस्थिर मानती है। वह बाद की scheduled review में फिर से Mastered होने पर ही Mastered में लौटता है."
                 )
             ),
             FAQItem(
