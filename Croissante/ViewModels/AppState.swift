@@ -11,6 +11,7 @@ public enum CardFontStyle: String, Codable {
     case sfPro
     case sfRounded
     case avenirNext
+    case newYork
 }
 
 enum SearchTextNormalizer {

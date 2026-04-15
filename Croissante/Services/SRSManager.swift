@@ -1317,23 +1317,29 @@ public final class SRSManager: ObservableObject {
 
     private func refillInfiniteQueueIfNeeded(now: Date) {
         guard isInfinitePracticeActive else { return }
-        guard learningQueueIds.isEmpty else { return }
+        guard learningQueueIds.count <= 1 else { return }
         guard let appState = appState else { return }
 
         let batchSize = max(12, dailyDeckLimit)
         let levelWords = wordsForTargetLevel(from: appState.words)
         guard !levelWords.isEmpty else { return }
 
+        // Exclude whatever is still in the queue to avoid duplicates
+        let currentIds = Set(learningQueueIds)
+        let candidateWords = levelWords.filter { !currentIds.contains($0.id) }
+        guard !candidateWords.isEmpty else { return }
+
         var batch = scheduler.buildInfinitePracticeBatch(
-            from: levelWords,
+            from: candidateWords,
             records: learningRecords,
             now: now,
             batchSize: batchSize
         )
         if batch.isEmpty {
-            batch = Array(levelWords.shuffled().prefix(batchSize))
+            batch = Array(candidateWords.shuffled().prefix(batchSize))
         }
-        learningQueueIds = batch.map(\.id)
+        // Append behind any remaining card rather than replacing it
+        learningQueueIds = learningQueueIds + batch.map(\.id)
     }
 
     private func buildPreviewContinuation(from allWords: [SimpleWord], now: Date, excluding excludedIds: Set<String>) -> [SimpleWord] {
