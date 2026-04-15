@@ -226,19 +226,11 @@ public final class SRSManager: ObservableObject {
             self.infinitePracticeActive = infinitePracticeActive
         }
 
-        private enum CodingKeys: String, CodingKey {
-            case date
-            case deckWordIds
-            case swipedDeckWordIds = "masteredDeckWordIds"
-            case learningQueueIds
-            case infinitePracticeActive
-        }
-
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             date = try container.decode(String.self, forKey: .date)
             deckWordIds = try container.decode([String].self, forKey: .deckWordIds)
-            swipedDeckWordIds = try container.decode([String].self, forKey: .swipedDeckWordIds)
+            swipedDeckWordIds = (try? container.decode([String].self, forKey: .swipedDeckWordIds)) ?? []
             learningQueueIds = try container.decode([String].self, forKey: .learningQueueIds)
             infinitePracticeActive = try container.decodeIfPresent(Bool.self, forKey: .infinitePracticeActive) ?? false
         }
@@ -253,7 +245,7 @@ public final class SRSManager: ObservableObject {
         let targetLevel: String
         let dailyDeckLimit: Int
         let dailyDeckWordIds: [String]
-        let dailyMasteredDeckWordIds: [String]
+        let dailySwipedWordIds: [String]
         let learningQueueIds: [String]
         let levelDailyDeckSnapshots: [String: LevelDailyDeckSnapshot]
         let forgotWordIds: [String]?
@@ -299,7 +291,7 @@ public final class SRSManager: ObservableObject {
         static let dailyDeckDate = "daily_deck_date"
         static let dailyDeckWordIds = "daily_deck_word_ids"
         static let learningQueueIds = "learning_queue_ids"
-        static let dailyMasteredDeckWordIds = "daily_mastered_deck_word_ids"
+        static let dailySwipedWordIds = "daily_swiped_word_ids"
         static let levelDailyDeckSnapshots = "level_daily_deck_snapshots_v1"
         static let forgotWordIds = "forgot_word_ids"
         static let blurryWordIds = "blurry_word_ids"
@@ -462,7 +454,7 @@ public final class SRSManager: ObservableObject {
         // Preserve the previous day's snapshot before rotating to a new deck.
         if savedDeckDate != today, !savedDeckDate.isEmpty {
             let savedDeckIds = userDefaults.stringArray(forKey: Keys.dailyDeckWordIds) ?? []
-            let savedSwipedIds = Set(userDefaults.stringArray(forKey: Keys.dailyMasteredDeckWordIds) ?? [])
+            let savedSwipedIds = Set(userDefaults.stringArray(forKey: Keys.dailySwipedWordIds) ?? [])
             persistHeatmapSnapshotIfNeeded(
                 dateKey: savedDeckDate,
                 deckWordIds: savedDeckIds,
@@ -473,7 +465,7 @@ public final class SRSManager: ObservableObject {
 
         if savedDeckDate == today,
            let savedDeckIds = userDefaults.stringArray(forKey: Keys.dailyDeckWordIds) {
-            let savedSwipedIds = userDefaults.stringArray(forKey: Keys.dailyMasteredDeckWordIds) ?? []
+            let savedSwipedIds = userDefaults.stringArray(forKey: Keys.dailySwipedWordIds) ?? []
             let savedQueueIds = userDefaults.stringArray(forKey: Keys.learningQueueIds) ?? []
             let existingSnapshot = levelDailyDeckSnapshots[targetLevel]
             levelDailyDeckSnapshots[targetLevel] = LevelDailyDeckSnapshot(
@@ -490,7 +482,7 @@ public final class SRSManager: ObservableObject {
                 if let savedDeckIds = userDefaults.stringArray(forKey: Keys.dailyDeckWordIds) {
                     dailyDeckWordIds = Array(savedDeckIds.prefix(dailyDeckLimit))
                 }
-                if let savedSwipedIds = userDefaults.stringArray(forKey: Keys.dailyMasteredDeckWordIds) {
+                if let savedSwipedIds = userDefaults.stringArray(forKey: Keys.dailySwipedWordIds) {
                     dailySwipedWordIds = Set(savedSwipedIds)
                 }
                 sanitizeDeckState(preferredQueueIds: userDefaults.stringArray(forKey: Keys.learningQueueIds))
@@ -525,7 +517,7 @@ public final class SRSManager: ObservableObject {
         userDefaults.set(today, forKey: Keys.dailyDeckDate)
         userDefaults.set(dailyDeckWordIds, forKey: Keys.dailyDeckWordIds)
         userDefaults.set(learningQueueIds, forKey: Keys.learningQueueIds)
-        userDefaults.set(Array(dailySwipedWordIds), forKey: Keys.dailyMasteredDeckWordIds)
+        userDefaults.set(Array(dailySwipedWordIds), forKey: Keys.dailySwipedWordIds)
         
         clearLegacyProgressBucketDefaults()
         userDefaults.set(dailyCompletionRatios, forKey: Keys.dailyCompletionRatios)
@@ -1518,7 +1510,7 @@ public final class SRSManager: ObservableObject {
             targetLevel: targetLevel,
             dailyDeckLimit: dailyDeckLimit,
             dailyDeckWordIds: dailyDeckWordIds,
-            dailyMasteredDeckWordIds: Array(dailySwipedWordIds).sorted(),
+            dailySwipedWordIds: Array(dailySwipedWordIds).sorted(),
             learningQueueIds: learningQueueIds,
             levelDailyDeckSnapshots: levelDailyDeckSnapshots,
             forgotWordIds: nil,
@@ -1557,7 +1549,7 @@ public final class SRSManager: ObservableObject {
             ? payload.dailyDeckLimit
             : defaultDailyDeckLimit
         dailyDeckWordIds = payload.dailyDeckWordIds
-        dailySwipedWordIds = Set(payload.dailyMasteredDeckWordIds)
+        dailySwipedWordIds = Set(payload.dailySwipedWordIds)
         learningQueueIds = payload.learningQueueIds
         levelDailyDeckSnapshots = payload.levelDailyDeckSnapshots
         migrateLegacyProgressBucketsIntoLearningRecords(
