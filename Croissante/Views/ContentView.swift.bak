@@ -1598,8 +1598,8 @@ private struct ActiveDiscoverCardHost: View {
 
         let showPeekUnderlay = transitionRequest == nil && peekNextWord != nil
         let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
-        let t = min(1.0, dragMagnitude / (containerSize.width * 0.65))
-        let peekProgress = t * t * t
+        let t = min(1.0, dragMagnitude / 150.0)
+        let peekProgress = t * t  // scale + offset + opacity：二次，中期到位
 
         ZStack {
             if showPeekUnderlay, let peek = peekNextWord {
