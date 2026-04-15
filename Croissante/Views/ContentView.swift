@@ -2440,7 +2440,7 @@ private struct DiscoverCard: View {
                     isActiveTab: false,
                     detailProgress: 1,
                     glowStrength: 0.32,
-                    contentOpacity: 1,
+                    contentOpacity: peekProgress,
                     interactionsEnabled: false,
                     onSwipeForgot: { _ in },
                     onSwipeMastered: { _ in },
@@ -2448,7 +2448,7 @@ private struct DiscoverCard: View {
                 )
                 .id(peek.id)
                 .scaleEffect(0.94 + 0.06 * peekProgress)
-                .offset(y: 44.0 * (1.0 - peekProgress))
+                .offset(y: 58.0 * (1.0 - peekProgress))
                 .opacity(peekProgress)
                 .allowsHitTesting(false)
             }
@@ -2482,7 +2482,7 @@ private struct DiscoverCard: View {
                             .padding(.bottom, 12)
                             .opacity(bottomMetaReveal)
                     }
-                    .modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
+                    .modifier(CardGlowModifier(strength: isSwipeCompleting ? 0 : glowStrength, isDarkMode: isDarkMode))
 
                 ZStack {
                     if forgotHintOpacity > 0 {
@@ -2664,7 +2664,6 @@ private struct CardGlowModifier: ViewModifier {
                         .stroke(glowColor.opacity((isDarkMode ? 0.64 : 0.42) * strength), lineWidth: isDarkMode ? 1.8 : 1.6)
                         .blur(radius: isDarkMode ? 1.8 : 2)
                 )
-                .drawingGroup()
                 .shadow(color: glowColor.opacity((isDarkMode ? 0.30 : 0.22) * strength), radius: isDarkMode ? 8 : 12, x: 0, y: 0)
                 .shadow(color: glowColor.opacity((isDarkMode ? 0.18 : 0.12) * strength), radius: isDarkMode ? 18 : 24, x: 0, y: 0)
                 .shadow(color: glowColor.opacity((isDarkMode ? 0.11 : 0.07) * strength), radius: isDarkMode ? 34 : 38, x: 0, y: 0)
