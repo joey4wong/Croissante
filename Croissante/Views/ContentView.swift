@@ -2683,6 +2683,7 @@ private struct CardGlowModifier: ViewModifier {
                         .stroke(glowColor.opacity((isDarkMode ? 0.64 : 0.42) * strength), lineWidth: isDarkMode ? 1.8 : 1.6)
                         .blur(radius: isDarkMode ? 1.8 : 2)
                 )
+                .drawingGroup()
                 .shadow(color: glowColor.opacity((isDarkMode ? 0.30 : 0.22) * strength), radius: isDarkMode ? 8 : 12, x: 0, y: 0)
                 .shadow(color: glowColor.opacity((isDarkMode ? 0.18 : 0.12) * strength), radius: isDarkMode ? 18 : 24, x: 0, y: 0)
                 .shadow(color: glowColor.opacity((isDarkMode ? 0.11 : 0.07) * strength), radius: isDarkMode ? 34 : 38, x: 0, y: 0)
@@ -5591,8 +5592,8 @@ private struct FAQHeroCard: View {
         AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode)
     }
     private var fillColor: Color {
-        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
-            return AppColors.porcelainCard
+        if AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
+            return AppColors.lightCard
         }
         return isDarkMode ? AppColors.nocturneSurface.opacity(0.72) : Color.white.opacity(0.82)
     }
@@ -5656,7 +5657,7 @@ private struct FAQAccordionCard: View {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.56)
     }
     private var borderColor: Color {
-        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
+        if AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
             return Color.black.opacity(0.08)
         }
         return isDarkMode ? AppColors.nocturneBorder : Color.white.opacity(0.68)
@@ -5665,8 +5666,8 @@ private struct FAQAccordionCard: View {
         isDarkMode ? AppColors.nocturneBorderSoft : Color.black.opacity(0.08)
     }
     private var fillColor: Color {
-        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
-            return AppColors.porcelainCard
+        if AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: isDarkMode) {
+            return AppColors.lightCard
         }
         return isDarkMode ? AppColors.nocturneSurface.opacity(0.74) : Color.white.opacity(0.84)
     }
@@ -6049,21 +6050,21 @@ private struct SettingsGroupCard<Content: View>: View {
     }
 
     private var borderColor: Color {
-        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
+        if AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
             return Color.black.opacity(0.08)
         }
         return colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.07)
     }
 
     private var fillColor: Color {
-        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
-            return AppColors.porcelainCard
+        if AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
+            return AppColors.lightCard
         }
         return colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.95)
     }
 
     private var cardShadowColor: Color {
-        if AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
+        if AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
             return Color.black.opacity(0.06)
         }
         return colorScheme == .dark ? Color.clear : Color.black.opacity(0.04)

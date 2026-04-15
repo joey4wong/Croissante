@@ -26,8 +26,8 @@ struct SearchSheetView: View {
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.colorScheme) private var colorScheme
     private var isDark: Bool { colorScheme == .dark }
-    private var isPorcelainTheme: Bool {
-        AppColors.usesPorcelainStyle(themeMode: appState.themeMode, isDarkMode: isDark)
+    private var isLightAppearance: Bool {
+        AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: isDark)
     }
     private var normalizedQuery: String {
         normalizeSearchText(searchQuery)
@@ -48,15 +48,15 @@ struct SearchSheetView: View {
         isDark ? .ultraThinMaterial : .regularMaterial
     }
     private var fullScreenControlFill: Color {
-        if isPorcelainTheme { return AppColors.porcelainCard }
+        if isLightAppearance { return AppColors.lightCard }
         return isDark ? AppColors.nocturneSurface.opacity(0.74) : Color.white.opacity(0.40)
     }
     private var fullScreenControlBorder: Color {
-        if isPorcelainTheme { return Color.black.opacity(0.08) }
+        if isLightAppearance { return Color.black.opacity(0.08) }
         return isDark ? AppColors.nocturneBorder : Color.white.opacity(0.88)
     }
     private var fullScreenControlInnerBorder: Color {
-        if isPorcelainTheme { return Color.black.opacity(0.04) }
+        if isLightAppearance { return Color.black.opacity(0.04) }
         return isDark ? AppColors.nocturneBorderSoft : Color.white.opacity(0.52)
     }
     private let maxRecentWordCount = 40
