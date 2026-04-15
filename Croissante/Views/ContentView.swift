@@ -1493,6 +1493,19 @@ private enum DiscoverCardLayout {
     static func restingCardYOffset(containerHeight: CGFloat) -> CGFloat {
         -min(56, max(36, containerHeight * 0.06))
     }
+
+    static let peekDragNorm: CGFloat = 0.80
+    static let peekScaleMin: CGFloat = 0.94
+    static let peekScaleRange: CGFloat = 0.06
+    static let peekLift: CGFloat = 58
+
+    static let swipeInOffsetY: CGFloat = 44
+    static let swipeInScaleStart: CGFloat = 0.94
+    static let swipeInSpringResponse: Double = 0.38
+    static let swipeInSpringDamping: Double = 0.70
+    static let swipeInContentFade: Double = 0.55
+    static let swipeInGlowLinearFactor: Double = 0.92
+    static let swipeInGlowMinRemaining: Double = 0.04
 }
 
 private struct ActiveDiscoverCardHost: View {
@@ -1512,6 +1525,8 @@ private struct ActiveDiscoverCardHost: View {
     @State private var swipeInOffsetY: CGFloat = 0
     @State private var swipeInScale: CGFloat = 1.0
     @State private var swipeInOpacity: Double = 1.0
+    @State private var swipeInGlowProgress: Double = 1.0
+    @State private var lastPeekGlowProgress: Double = 0
     @State private var didFlyAway = false
 
     private let transitionDuration: Double = 0.48
@@ -1560,16 +1575,28 @@ private struct ActiveDiscoverCardHost: View {
             let wasFullyRevealed = didFlyAway
             didFlyAway = false
             guard !wasFullyRevealed else { return }
-            swipeInOffsetY = 44
-            swipeInScale = 0.94
-            swipeInOpacity = 0
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.70)) {
-                swipeInOffsetY = 0
-                swipeInScale = 1.0
-            }
-            withAnimation(.easeIn(duration: 0.7)) {
-                swipeInOpacity = 1.0
-            }
+            let carriedGlow = lastPeekGlowProgress
+            lastPeekGlowProgress = 0
+            applySwipeInForNewWord(carriedGlow: carriedGlow)
+        }
+    }
+
+    private func applySwipeInForNewWord(carriedGlow: Double) {
+        swipeInOffsetY = DiscoverCardLayout.swipeInOffsetY
+        swipeInScale = DiscoverCardLayout.swipeInScaleStart
+        swipeInOpacity = 0
+        swipeInGlowProgress = carriedGlow > 0 ? carriedGlow : 1.0
+        withAnimation(.spring(response: DiscoverCardLayout.swipeInSpringResponse, dampingFraction: DiscoverCardLayout.swipeInSpringDamping)) {
+            swipeInOffsetY = 0
+            swipeInScale = 1.0
+        }
+        withAnimation(.easeOut(duration: DiscoverCardLayout.swipeInContentFade)) {
+            swipeInOpacity = 1.0
+        }
+        guard swipeInGlowProgress < 1.0 else { return }
+        let remaining = max(DiscoverCardLayout.swipeInGlowMinRemaining, 1.0 - swipeInGlowProgress)
+        withAnimation(.linear(duration: DiscoverCardLayout.swipeInGlowLinearFactor * remaining)) {
+            swipeInGlowProgress = 1.0
         }
     }
 
@@ -1577,7 +1604,7 @@ private struct ActiveDiscoverCardHost: View {
     private func renderedCard(progress: Double, transitionRequest: GalaxySelectedCardTransitionRequest?) -> some View {
         let detailProgress = transitionDetailProgress(progress: progress, transitionRequest: transitionRequest)
         let isTransitioning = transitionRequest != nil
-        let glowStrength = isTransitioning ? min(1.0, detailProgress) : 1.0
+        let glowStrength = isTransitioning ? min(1.0, detailProgress) : swipeInGlowProgress
         let cardContentOpacity = isTransitioning ? 1.0 : swipeInOpacity
         let interactionEnabled = !isTransitioning && allowsInteractions
         let cardYOffset = restingCardYOffset * CGFloat(detailProgress)
@@ -1599,7 +1626,8 @@ private struct ActiveDiscoverCardHost: View {
             onSwipeMastered: onSwipeMastered,
             onSwipeBlurry: onSwipeBlurry,
             onFlyAwayStart: { didFlyAway = true },
-            peekNextWord: transitionRequest == nil ? peekNextWord : nil
+            peekNextWord: transitionRequest == nil ? peekNextWord : nil,
+            onPeekGlowProgress: { lastPeekGlowProgress = $0 }
         )
         .id(word.id)
         .offset(y: swipeInOffsetY)
@@ -2196,6 +2224,7 @@ private struct DiscoverCard: View {
     let onSwipeBlurry: (String) -> Void
     let onFlyAwayStart: (() -> Void)?
     let peekNextWord: SimpleWord?
+    let onPeekGlowProgress: ((Double) -> Void)?
 
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
@@ -2226,7 +2255,8 @@ private struct DiscoverCard: View {
         onSwipeMastered: @escaping (String) -> Void,
         onSwipeBlurry: @escaping (String) -> Void,
         onFlyAwayStart: (() -> Void)? = nil,
-        peekNextWord: SimpleWord? = nil
+        peekNextWord: SimpleWord? = nil,
+        onPeekGlowProgress: ((Double) -> Void)? = nil
     ) {
         self.word = word
         self.screenWidth = screenWidth
@@ -2245,6 +2275,7 @@ private struct DiscoverCard: View {
         self.onSwipeBlurry = onSwipeBlurry
         self.onFlyAwayStart = onFlyAwayStart
         self.peekNextWord = peekNextWord
+        self.onPeekGlowProgress = onPeekGlowProgress
         _displayedWord = State(initialValue: word)
     }
 
@@ -2325,10 +2356,37 @@ private struct DiscoverCard: View {
         galaxySmoothStep((detailProgress - 0.10) / 0.72)
     }
 
-    private var peekProgress: Double {
-        let mag = sqrt(dragOffset.width * dragOffset.width + dragOffset.height * dragOffset.height)
-        let t = min(1.0, mag / max(resolvedCardWidth * 0.80, 1))
-        return t * t * t
+    private var peekLinearProgress: Double {
+        let mag = hypot(dragOffset.width, dragOffset.height)
+        return min(1.0, mag / max(resolvedCardWidth * DiscoverCardLayout.peekDragNorm, 1))
+    }
+
+    private var peekSmoothProgress: Double {
+        let t = peekLinearProgress
+        return t * t * (3.0 - 2.0 * t)
+    }
+
+    @ViewBuilder
+    private func peekBehindWordCard(peek: SimpleWord, progress: Double) -> some View {
+        DiscoverCard(
+            word: peek,
+            screenWidth: screenWidth,
+            cardWidth: cardWidth,
+            cardHeight: cardHeight,
+            isActiveTab: false,
+            detailProgress: 1,
+            glowStrength: progress,
+            contentOpacity: progress,
+            interactionsEnabled: false,
+            onSwipeForgot: { _ in },
+            onSwipeMastered: { _ in },
+            onSwipeBlurry: { _ in }
+        )
+        .id(peek.id)
+        .scaleEffect(DiscoverCardLayout.peekScaleMin + DiscoverCardLayout.peekScaleRange * progress)
+        .offset(y: DiscoverCardLayout.peekLift * (1.0 - progress))
+        .opacity(progress)
+        .allowsHitTesting(false)
     }
 
     private func speakWord() {
@@ -2432,25 +2490,7 @@ private struct DiscoverCard: View {
     var body: some View {
         ZStack {
             if let peek = peekNextWord {
-                DiscoverCard(
-                    word: peek,
-                    screenWidth: screenWidth,
-                    cardWidth: cardWidth,
-                    cardHeight: cardHeight,
-                    isActiveTab: false,
-                    detailProgress: 1,
-                    glowStrength: 0.32,
-                    contentOpacity: peekProgress,
-                    interactionsEnabled: false,
-                    onSwipeForgot: { _ in },
-                    onSwipeMastered: { _ in },
-                    onSwipeBlurry: { _ in }
-                )
-                .id(peek.id)
-                .scaleEffect(0.94 + 0.06 * peekProgress)
-                .offset(y: 58.0 * (1.0 - peekProgress))
-                .opacity(peekProgress)
-                .allowsHitTesting(false)
+                peekBehindWordCard(peek: peek, progress: peekSmoothProgress)
             }
 
             VStack(spacing: 10) {
@@ -2482,7 +2522,10 @@ private struct DiscoverCard: View {
                             .padding(.bottom, 12)
                             .opacity(bottomMetaReveal)
                     }
-                    .modifier(CardGlowModifier(strength: isSwipeCompleting ? 0 : glowStrength, isDarkMode: isDarkMode))
+                    .modifier(CardGlowModifier(
+                        strength: glowStrength,
+                        isDarkMode: isDarkMode
+                    ))
 
                 ZStack {
                     if forgotHintOpacity > 0 {
@@ -2519,9 +2562,13 @@ private struct DiscoverCard: View {
                         let dx = v.translation.width
                         let dy = v.translation.height
                         if dragLockedAxis == nil {
-                            let mag = sqrt(dx * dx + dy * dy)
+                            let mag = hypot(dx, dy)
                             if mag > 8 {
-                                dragLockedAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
+                                if onSwipeUpWithoutAction != nil, dy < 0, abs(dy) >= abs(dx) {
+                                    dragLockedAxis = .vertical
+                                } else {
+                                    dragLockedAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
+                                }
                             }
                         }
                         let constrained: CGSize
@@ -2542,9 +2589,31 @@ private struct DiscoverCard: View {
                     }
                     .onEnded { v in
                         guard interactionsEnabled, !isSwipeCompleting else { return }
+                        let locked = dragLockedAxis
                         dragLockedAxis = nil
-                        let dx = v.translation.width
-                        let dy = v.translation.height
+                        let rawDx = v.translation.width
+                        let rawDy = v.translation.height
+                        let dx: CGFloat
+                        let dy: CGFloat
+                        switch locked {
+                        case .horizontal:
+                            dx = rawDx
+                            dy = rawDy
+                        case .vertical:
+                            dx = 0
+                            dy = rawDy
+                        case nil:
+                            if onSwipeUpWithoutAction != nil, rawDy < 0, abs(rawDy) >= abs(rawDx) {
+                                dx = 0
+                                dy = rawDy
+                            } else if abs(rawDx) > abs(rawDy) {
+                                dx = rawDx
+                                dy = rawDy
+                            } else {
+                                dx = 0
+                                dy = rawDy
+                            }
+                        }
                         if dx < -swipeThreshold {
                             let swipedWordId = displayedWord.id
                             onFlyAwayStart?()
@@ -2566,6 +2635,7 @@ private struct DiscoverCard: View {
                         } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
                             onSwipeUpWithoutAction()
                         } else {
+                            onPeekGlowProgress?(0)
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 dragOffset = .zero
                                 dragRotation = .zero
@@ -2573,6 +2643,10 @@ private struct DiscoverCard: View {
                         }
                     }
             )
+            .onChange(of: dragOffset) { _, _ in
+                guard peekNextWord != nil else { return }
+                onPeekGlowProgress?(peekSmoothProgress)
+            }
             .onChange(of: appState.autoPlay) { _, enabled in
                 if !enabled {
                     stopSpeechPlayback()
@@ -2658,15 +2732,28 @@ private struct CardGlowModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         if strength > 0.001 {
+            let s = strength
+            let c = glowColor
+            let innerA = 0.28 * s
+            let outerA = 0.14 * s
+            let haloA = 0.09 * s
             content
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(glowColor.opacity((isDarkMode ? 0.64 : 0.42) * strength), lineWidth: isDarkMode ? 1.8 : 1.6)
-                        .blur(radius: isDarkMode ? 1.8 : 2)
-                )
-                .shadow(color: glowColor.opacity((isDarkMode ? 0.30 : 0.22) * strength), radius: isDarkMode ? 8 : 12, x: 0, y: 0)
-                .shadow(color: glowColor.opacity((isDarkMode ? 0.18 : 0.12) * strength), radius: isDarkMode ? 18 : 24, x: 0, y: 0)
-                .shadow(color: glowColor.opacity((isDarkMode ? 0.11 : 0.07) * strength), radius: isDarkMode ? 34 : 38, x: 0, y: 0)
+                .background {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(c.opacity(innerA))
+                            .blur(radius: 12)
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(c.opacity(outerA))
+                            .blur(radius: 26)
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(c.opacity(haloA))
+                            .blur(radius: 42)
+                    }
+                    .scaleEffect(1.02)
+                }
+                .compositingGroup()
+                .shadow(color: c.opacity(0.14 * s), radius: 20, x: 0, y: 0)
         } else {
             content
         }

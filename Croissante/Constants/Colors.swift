@@ -178,14 +178,15 @@ extension AppColors {
             return AnyShapeStyle(Color.clear)
         }
         return AnyShapeStyle(
-            LinearGradient(
+            RadialGradient(
                 colors: [
-                    nocturneWarmGlow.opacity(elevated ? 0.17 : 0.12),
-                    Color(red: 0.91, green: 0.87, blue: 0.83).opacity(elevated ? 0.07 : 0.05),
+                    nocturneWarmGlow.opacity(elevated ? 0.15 : 0.11),
+                    Color(red: 0.91, green: 0.87, blue: 0.83).opacity(elevated ? 0.05 : 0.035),
                     Color.clear
                 ],
-                startPoint: .bottomLeading,
-                endPoint: .topTrailing
+                center: UnitPoint(x: 0.42, y: 0.68),
+                startRadius: 24,
+                endRadius: 320
             )
         )
     }
@@ -195,14 +196,15 @@ extension AppColors {
             return AnyShapeStyle(Color.clear)
         }
         return AnyShapeStyle(
-            LinearGradient(
+            RadialGradient(
                 colors: [
-                    Color.white.opacity(elevated ? 0.16 : 0.13),
-                    Color.white.opacity(0.03),
+                    Color.white.opacity(elevated ? 0.14 : 0.11),
+                    Color.white.opacity(0.04),
                     Color.clear
                 ],
-                startPoint: .topLeading,
-                endPoint: UnitPoint(x: 0.75, y: 0.65)
+                center: UnitPoint(x: 0.38, y: 0.28),
+                startRadius: 16,
+                endRadius: 280
             )
         )
     }
