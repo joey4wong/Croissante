@@ -2393,16 +2393,16 @@ private struct DiscoverCard: View {
         let trimmedWord = displayedWord.displayWord.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedWord.isEmpty else { return }
         
-        OpenAITTSService.stopPlayback()
-        OpenAITTSService.speakText(trimmedWord, language: "fr-FR", contentType: .word)
+        ElevenLabsTTSService.stopPlayback()
+        ElevenLabsTTSService.speakText(trimmedWord, language: "fr-FR", contentType: .word)
     }
 
     private func speakExampleSentence() {
         let trimmedExample = displayedWord.exampleFr.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedExample.isEmpty else { return }
 
-        OpenAITTSService.stopPlayback()
-        OpenAITTSService.speakText(trimmedExample, language: "fr-FR", contentType: .sentence)
+        ElevenLabsTTSService.stopPlayback()
+        ElevenLabsTTSService.speakText(trimmedExample, language: "fr-FR", contentType: .sentence)
     }
 
     private func cancelScheduledSpeech() {
@@ -2412,7 +2412,7 @@ private struct DiscoverCard: View {
 
     private func stopSpeechPlayback() {
         cancelScheduledSpeech()
-        OpenAITTSService.stopPlayback()
+        ElevenLabsTTSService.stopPlayback()
     }
 
     private func scheduleAutoPlay(delay: TimeInterval = 0.32) {
@@ -3416,12 +3416,6 @@ private struct SettingsScreen: View {
     private var languages: [String] { ["English", "中文", "हिन्दी"] }
     private let dailyCardLimits = [5, 10, 15, 20, 50]
     private var dailyCardLimitLabels: [String] { dailyCardLimits.map(String.init) }
-    private let voiceOptions: [(id: String, name: String)] = [
-        ("coral", "Coral"),
-        ("alloy", "Alloy"),
-        ("echo", "Echo"),
-        ("shimmer", "Shimmer")
-    ]
     private let appIconTileSize: CGFloat = 68
     private let developerContactEmail = "joey4wong@gmail.com"
     private let xProfileURL = "https://x.com/croissante4u?s=21"
@@ -3490,7 +3484,7 @@ private struct SettingsScreen: View {
     }
 
     private var selectedVoiceName: String {
-        return voiceOptions.first(where: { $0.id == appState.selectedVoiceId })?.name ?? voiceOptions[0].name
+        TTSVoice(rawValue: appState.selectedVoiceId)?.displayName ?? TTSVoice.default.displayName
     }
     private var selectedCardFontLabel: String {
         cardFontOptions.first(where: { $0.style == appState.cardFontStyle })?.label ?? cardFontOptions[0].label
@@ -4024,8 +4018,8 @@ private struct SettingsScreen: View {
                                         set: { appState.selectedVoiceId = $0 }
                                     )
                                 ) {
-                                    ForEach(voiceOptions, id: \.id) { option in
-                                        Text(option.name).tag(option.id)
+                                    ForEach(TTSVoice.allCases) { voice in
+                                        Text(voice.displayName).tag(voice.rawValue)
                                     }
                                 }
                                 .font(.system(size: 16, weight: .semibold, design: .rounded))
@@ -6667,7 +6661,7 @@ private struct MemberUnlockPaywallView: View {
                 id: "natural-voice",
                 symbol: "waveform",
                 title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
-                subtitle: appState.localized("More natural spoken playback", "更自然的语音朗读", "और अधिक प्राकृतिक आवाज़ प्लेबैक")
+                subtitle: appState.localized("Authentic Paris & Québec French, powered by ElevenLabs", "巴黎 & 魁北克发音，ElevenLabs 出品", "असली पेरिस & क्यूबेक फ्रेंच, ElevenLabs द्वारा")
             ),
             MemberUnlockBenefit(
                 id: "widget",

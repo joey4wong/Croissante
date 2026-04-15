@@ -30,10 +30,11 @@
 		B10000000000000000000032 /* conjugation.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000124 /* conjugation.json */; };
 		B10000000000000000000033 /* croissante_dev_icon.png in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000125 /* croissante_dev_icon.png */; };
 		B10000000000000000000034 /* AudioCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000126 /* AudioCacheManager.swift */; };
-		B10000000000000000000035 /* OpenAITTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000127 /* OpenAITTSService.swift */; };
+		B10000000000000000000035 /* ElevenLabsTTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000127 /* ElevenLabsTTSService.swift */; };
 		B10000000000000000000036 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000128 /* NetworkMonitor.swift */; };
 		B10000000000000000000037 /* WidgetDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000129 /* WidgetDataService.swift */; };
 		B10000000000000000000039 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000132 /* StoreKitManager.swift */; };
+		B1000000000000000000003B /* TTSVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000133 /* TTSVoice.swift */; };
 		W10000000000000000000001 /* CroissanteWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000011 /* CroissanteWidgetBundle.swift */; };
 		W10000000000000000000002 /* DailyWordWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000012 /* DailyWordWidget.swift */; };
 		W10000000000000000000003 /* CroissanteWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = W10000000000000000000005 /* CroissanteWidgetExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -89,11 +90,12 @@
 		B10000000000000000000124 /* conjugation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = conjugation.json; sourceTree = "<group>"; };
 		B10000000000000000000125 /* croissante_dev_icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = croissante_dev_icon.png; sourceTree = "<group>"; };
 		B10000000000000000000126 /* AudioCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheManager.swift; sourceTree = "<group>"; };
-		B10000000000000000000127 /* OpenAITTSService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAITTSService.swift; sourceTree = "<group>"; };
+		B10000000000000000000127 /* ElevenLabsTTSService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevenLabsTTSService.swift; sourceTree = "<group>"; };
 		B10000000000000000000128 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		B10000000000000000000129 /* WidgetDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataService.swift; sourceTree = "<group>"; };
 		B10000000000000000000130 /* AppAlternateIconsInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AppAlternateIconsInfo.plist; sourceTree = "<group>"; };
 		B10000000000000000000132 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
+		B10000000000000000000133 /* TTSVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSVoice.swift; sourceTree = "<group>"; };
 		CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteDebug.entitlements; sourceTree = "<group>"; };
 		CB1004D62F6E0757009C269E /* CroissanteWidgetExtensionDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteWidgetExtensionDebug.entitlements; sourceTree = "<group>"; };
 		W10000000000000000000005 /* CroissanteWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CroissanteWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -170,6 +172,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000111 /* Colors.swift */,
+				B10000000000000000000133 /* TTSVoice.swift */,
 			);
 			path = Constants;
 			sourceTree = "<group>";
@@ -194,7 +197,7 @@
 				B10000000000000000000119 /* SRSManager.swift */,
 				B1000000000000000000011A /* SpotlightService.swift */,
 				B10000000000000000000126 /* AudioCacheManager.swift */,
-				B10000000000000000000127 /* OpenAITTSService.swift */,
+				B10000000000000000000127 /* ElevenLabsTTSService.swift */,
 				B10000000000000000000128 /* NetworkMonitor.swift */,
 				B10000000000000000000129 /* WidgetDataService.swift */,
 				B10000000000000000000132 /* StoreKitManager.swift */,
@@ -360,6 +363,7 @@
 			files = (
 				A10000000000000000000011 /* CroissanteApp.swift in Sources */,
 				B10000000000000000000011 /* Colors.swift in Sources */,
+				B1000000000000000000003B /* TTSVoice.swift in Sources */,
 				B10000000000000000000012 /* DailyRecord.swift in Sources */,
 				B10000000000000000000013 /* LearningRecord.swift in Sources */,
 				B10000000000000000000014 /* SimpleWord.swift in Sources */,
@@ -377,7 +381,7 @@
 				B10000000000000000000021 /* WordCardView.swift in Sources */,
 				B10000000000000000000022 /* ContentView.swift in Sources */,
 				B10000000000000000000034 /* AudioCacheManager.swift in Sources */,
-				B10000000000000000000035 /* OpenAITTSService.swift in Sources */,
+				B10000000000000000000035 /* ElevenLabsTTSService.swift in Sources */,
 				B10000000000000000000036 /* NetworkMonitor.swift in Sources */,
 				B10000000000000000000037 /* WidgetDataService.swift in Sources */,
 				B10000000000000000000039 /* StoreKitManager.swift in Sources */,

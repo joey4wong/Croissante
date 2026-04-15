@@ -11,7 +11,7 @@ Croissante is an iOS app for learning French vocabulary through spaced repetitio
 - Home Screen widget for daily word practice
 - Spotlight integration for faster lookup
 - iCloud sync for learning progress
-- Premium pronunciation powered by OpenAI TTS
+- Premium pronunciation powered by ElevenLabs TTS
 - Multiple app icon styles and personalization options
 
 ## Why I Built This
@@ -25,7 +25,7 @@ Croissante is an attempt to make French learning feel calmer, more visual, and e
 - WidgetKit
 - StoreKit 2
 - iCloud Key-Value Sync
-- OpenAI Audio / TTS API
+- ElevenLabs Text-to-Speech API
 - Teenybase + Cloudflare Workers (backend)
 
 ## Project Structure
@@ -40,7 +40,7 @@ Croissante is an attempt to make French learning feel calmer, more visual, and e
 1. Open `Croissante.xcodeproj` in Xcode.
 2. Select the `Croissante` scheme.
 3. Run on an iPhone simulator or physical device.
-4. If you want to test premium pronunciation, add your own `OpenAIAPIKey` locally and do not commit it.
+4. Premium pronunciation uses the hosted `tts-worker` (ElevenLabs). For local backend TTS, set `ELEVENLABS_API_KEY` in your Worker env and do not commit it.
 5. If needed, run the optional backend from `backend/`.
 
 ## Roadmap

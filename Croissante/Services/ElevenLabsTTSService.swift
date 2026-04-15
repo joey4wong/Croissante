@@ -2,53 +2,45 @@ import Foundation
 import AVFoundation
 
 @MainActor
-public class OpenAITTSService {
+public class ElevenLabsTTSService {
     enum ContentType: String {
         case word
         case sentence
     }
 
-    private static var sharedInstance: OpenAITTSService?
-    private static var shared: OpenAITTSService {
+    private static var sharedInstance: ElevenLabsTTSService?
+    private static var shared: ElevenLabsTTSService {
         if let existing = sharedInstance {
             return existing
         }
-        let created = OpenAITTSService()
+        let created = ElevenLabsTTSService()
         sharedInstance = created
         return created
     }
-    
-    private let supportedVoices: Set<String> = [
-        "coral", "alloy", "echo", "shimmer"
-    ]
 
     private var selectedVoiceId: String {
-        UserDefaults.standard.string(forKey: "selectedVoiceId") ?? "coral"
+        UserDefaults.standard.string(forKey: "selectedVoiceId") ?? TTSVoice.default.rawValue
     }
-    
+
     private var voice: String {
-        supportedVoices.contains(selectedVoiceId) ? selectedVoiceId : "coral"
+        TTSVoice.normalizedId(selectedVoiceId)
     }
-    
-    private let modelId = "gpt-4o-mini-tts"
-    private let outputFormat = "mp3"
-    private let openAISpeechSpeed: Float = 1.15
-    private let ttsInstructions = "Parle uniquement en français. Si le texte contient une autre langue, lis-le avec une prononciation française."
-    private let requestProfileVersion = "tts-v2"
+
+    private let requestProfileVersion = "tts-el-v1"
     private let defaultBackendBaseURL = "https://croissante-tts.joey4wong.workers.dev"
-    
+
     private let networkMonitor = NetworkMonitor.shared
     private let audioCache = AudioCacheManager.shared
     private let systemSynthesizer = AVSpeechSynthesizer()
-    
+
     private var audioPlayer: AVAudioPlayer?
-    
+
     private var isPlaying = false
     private var currentTask: Task<Void, Never>?
     private var memberUnlocked: Bool {
         UserDefaults.standard.bool(forKey: "memberUnlocked")
     }
-    
+
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30.0
@@ -58,34 +50,34 @@ public class OpenAITTSService {
     private var ttsEndpointURL: URL? {
         endpointURL(from: configuredBackendBaseURL)
     }
-    
+
     private init() {
         setupAudioSession()
     }
-    
+
     func speak(
         _ text: String,
         language: String = "fr-FR",
         contentType: ContentType = .sentence
     ) async {
         stop()
-        
+
         currentTask = Task { @MainActor in
             await performSpeak(text, language: language, contentType: contentType)
         }
     }
-    
+
     func stop() {
         currentTask?.cancel()
         currentTask = nil
         stopAudioPlayback()
         stopSystemSpeech()
     }
-    
+
     func isCurrentlySpeaking() -> Bool {
         isPlaying || systemSynthesizer.isSpeaking
     }
-    
+
     private func setupAudioSession() {
         #if os(iOS)
         do {
@@ -94,7 +86,7 @@ public class OpenAITTSService {
         } catch {}
         #endif
     }
-    
+
     private func performSpeak(
         _ text: String,
         language: String,
@@ -111,7 +103,7 @@ public class OpenAITTSService {
             speakWithSystemTTS(trimmedText, language: language)
             return
         }
-        
+
         guard ttsEndpointURL != nil else {
             speakWithSystemTTS(trimmedText, language: language)
             return
@@ -127,14 +119,14 @@ public class OpenAITTSService {
             await playAudio(from: cachedURL)
             return
         }
-        
+
         do {
             let audioData = try await fetchAudioFromBackend(
                 trimmedText,
                 language: language,
                 contentType: contentType
             )
-            
+
             if let cachedURL = audioCache.cacheAudioData(audioData, forText: cacheText) {
                 await playAudio(from: cachedURL)
             } else {
@@ -152,60 +144,55 @@ public class OpenAITTSService {
         utterance.voice = AVSpeechSynthesisVoice(language: language) ?? AVSpeechSynthesisVoice(language: "fr-FR")
         systemSynthesizer.speak(utterance)
     }
-    
-    private func makeRequestBody(
-        for text: String,
-        language: String,
-        contentType: ContentType
-    ) -> [String: Any] {
+
+    private func makeRequestBody(for text: String, contentType: ContentType) -> [String: Any] {
         [
             "voice": voice,
             "input": text,
-            "language": language,
             "contentType": contentType.rawValue
         ]
     }
-    
+
     private func fetchAudioFromBackend(
         _ text: String,
         language: String,
         contentType: ContentType
     ) async throws -> Data {
-        guard let url = ttsEndpointURL else { throw TTSError.networkError }
-        
+        guard let url = ttsEndpointURL else { throw ElevenLabsTTSError.networkError }
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(
-            withJSONObject: makeRequestBody(for: text, language: language, contentType: contentType)
+            withJSONObject: makeRequestBody(for: text, contentType: contentType)
         )
-        
+
         let (data, response) = try await urlSession.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw TTSError.networkError
+            throw ElevenLabsTTSError.networkError
         }
-        
+
         if httpResponse.statusCode != 200 {
-            throw TTSError.apiError(statusCode: httpResponse.statusCode)
+            throw ElevenLabsTTSError.apiError(statusCode: httpResponse.statusCode)
         }
-        
+
         return data
     }
 
     private func cacheTextKey(for text: String, language: String, contentType: ContentType) -> String {
-        "\(requestProfileVersion)|\(modelId)|\(outputFormat)|\(voice)|\(openAISpeechSpeed)|\(ttsInstructions)|\(language)|\(contentType.rawValue)|\(text)"
+        "\(requestProfileVersion)|\(voice)|\(language)|\(contentType.rawValue)|\(text)"
     }
-    
+
     private func playAudio(from source: Any) async {
         do {
             let player = try makeAudioPlayer(from: source)
-            
+
             player.prepareToPlay()
             audioPlayer = player
             isPlaying = true
             player.play()
-            
+
             while player.isPlaying {
                 try Task.checkCancellation()
                 try await Task.sleep(nanoseconds: 50_000_000)
@@ -216,7 +203,7 @@ public class OpenAITTSService {
             stopAudioPlayback()
         }
     }
-    
+
     func preloadAudio(
         for texts: [String],
         language: String = "fr-FR",
@@ -230,7 +217,7 @@ public class OpenAITTSService {
             let cacheText = cacheTextKey(for: trimmedText, language: language, contentType: contentType)
             guard !audioCache.hasCachedAudio(forText: cacheText) else { continue }
             guard networkMonitor.isReachable else { break }
-            
+
             do {
                 let audioData = try await fetchAudioFromBackend(
                     trimmedText,
@@ -242,15 +229,15 @@ public class OpenAITTSService {
             } catch {}
         }
     }
-    
+
     func clearCache() {
         audioCache.clearCache()
     }
-    
+
     func getCacheStats() -> (size: Int64, count: Int) {
         (audioCache.getCacheSize(), audioCache.getCacheFileCount())
     }
-    
+
     private func makeAudioPlayer(from source: Any) throws -> AVAudioPlayer {
         if let url = source as? URL {
             return try AVAudioPlayer(contentsOf: url)
@@ -258,15 +245,15 @@ public class OpenAITTSService {
         if let data = source as? Data {
             return try AVAudioPlayer(data: data)
         }
-        throw TTSError.audioPlaybackError
+        throw ElevenLabsTTSError.audioPlaybackError
     }
-    
+
     private func stopAudioPlayback() {
         audioPlayer?.stop()
         audioPlayer = nil
         isPlaying = false
     }
-    
+
     private func stopSystemSpeech() {
         guard systemSynthesizer.isSpeaking else { return }
         systemSynthesizer.stopSpeaking(at: .immediate)
@@ -285,11 +272,7 @@ public class OpenAITTSService {
             return environmentValue
         }
 
-        #if targetEnvironment(simulator)
         return defaultBackendBaseURL
-        #else
-        return defaultBackendBaseURL
-        #endif
     }
 
     private func endpointURL(from baseURLString: String) -> URL? {
@@ -310,13 +293,13 @@ public class OpenAITTSService {
     }
 }
 
-enum TTSError: Error {
+enum ElevenLabsTTSError: Error {
     case networkError
     case apiError(statusCode: Int)
     case audioPlaybackError
 }
 
-extension OpenAITTSService {
+extension ElevenLabsTTSService {
     @MainActor
     static func speakText(
         _ text: String,
@@ -327,7 +310,7 @@ extension OpenAITTSService {
             await shared.speak(text, language: language, contentType: contentType)
         }
     }
-    
+
     @MainActor
     static func stopPlayback() {
         guard let sharedInstance else { return }

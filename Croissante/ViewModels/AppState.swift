@@ -239,9 +239,7 @@ fileprivate struct DeferredLoadedResources: Sendable {
 
 @MainActor
 public final class AppState: ObservableObject {
-    private static let supportedVoiceIds: Set<String> = [
-        "coral", "alloy", "echo", "shimmer"
-    ]
+    private static let supportedVoiceIds = Set(TTSVoice.allCases.map(\.rawValue))
     private static let supportedLevels: Set<String> = [
         "All", "A1", "A2", "B1", "B2", "C1", "C2"
     ]
@@ -305,11 +303,11 @@ public final class AppState: ObservableObject {
     @Published public var avatarPath: String = "" {
         didSet { saveAvatarPath() }
     }
-    @Published public var selectedVoiceId: String = "coral" {
+    @Published public var selectedVoiceId: String = TTSVoice.default.rawValue {
         didSet {
             if !Self.supportedVoiceIds.contains(selectedVoiceId) {
-                if selectedVoiceId != "coral" {
-                    selectedVoiceId = "coral"
+                if selectedVoiceId != TTSVoice.default.rawValue {
+                    selectedVoiceId = TTSVoice.default.rawValue
                 }
                 return
             }
