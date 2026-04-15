@@ -1522,6 +1522,7 @@ private struct ActiveDiscoverCardHost: View {
     @State private var swipeInOffsetY: CGFloat = 0
     @State private var swipeInScale: CGFloat = 1.0
     @State private var swipeInOpacity: Double = 1.0
+    @State private var topCardDrag: CGSize = .zero
 
     private let transitionDuration: Double = 0.48
     private var restingCardYOffset: CGFloat {
@@ -1566,6 +1567,10 @@ private struct ActiveDiscoverCardHost: View {
         }
         .onChange(of: word.id) { _, _ in
             guard transitionRequest == nil else { return }
+            let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
+            let wasFullyRevealed = dragMagnitude / 150.0 >= 0.95
+            topCardDrag = .zero
+            guard !wasFullyRevealed else { return }
             swipeInOffsetY = 44
             swipeInScale = 0.94
             swipeInOpacity = 0
@@ -1592,6 +1597,9 @@ private struct ActiveDiscoverCardHost: View {
         } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
 
         let showPeekUnderlay = transitionRequest == nil && peekNextWord != nil
+        let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
+        let t = min(1.0, dragMagnitude / 150.0)
+        let peekProgress = t * t  // scale + offset + opacity：二次，中期到位
 
         ZStack {
             if showPeekUnderlay, let peek = peekNextWord {
@@ -1603,14 +1611,16 @@ private struct ActiveDiscoverCardHost: View {
                     isActiveTab: false,
                     detailProgress: 1,
                     glowStrength: 0.32,
-                    contentOpacity: 0.5,
+                    contentOpacity: 1,
                     interactionsEnabled: false,
                     onSwipeForgot: { _ in },
                     onSwipeMastered: { _ in },
                     onSwipeBlurry: { _ in }
                 )
                 .id(peek.id)
-                .scaleEffect(0.97)
+                .scaleEffect(0.94 + 0.06 * peekProgress)
+                .offset(y: 44.0 * (1.0 - peekProgress))
+                .opacity(Double(peekProgress))
                 .allowsHitTesting(false)
             }
 
@@ -1626,7 +1636,16 @@ private struct ActiveDiscoverCardHost: View {
                 interactionsEnabled: interactionEnabled,
                 onSwipeForgot: onSwipeForgot,
                 onSwipeMastered: onSwipeMastered,
-                onSwipeBlurry: onSwipeBlurry
+                onSwipeBlurry: onSwipeBlurry,
+                onDragChanged: { offset in
+                    if offset.width == 0 && offset.height == 0 {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            topCardDrag = .zero
+                        }
+                    } else {
+                        topCardDrag = offset
+                    }
+                }
             )
             .id(word.id)
             .offset(y: swipeInOffsetY)
@@ -2229,6 +2248,7 @@ private struct DiscoverCard: View {
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
+    let onDragChanged: ((CGSize) -> Void)?
 
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
@@ -2256,7 +2276,8 @@ private struct DiscoverCard: View {
         onSwipeUpWithoutAction: (() -> Void)? = nil,
         onSwipeForgot: @escaping (String) -> Void,
         onSwipeMastered: @escaping (String) -> Void,
-        onSwipeBlurry: @escaping (String) -> Void
+        onSwipeBlurry: @escaping (String) -> Void,
+        onDragChanged: ((CGSize) -> Void)? = nil
     ) {
         self.word = word
         self.screenWidth = screenWidth
@@ -2274,6 +2295,7 @@ private struct DiscoverCard: View {
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
         self.onSwipeBlurry = onSwipeBlurry
+        self.onDragChanged = onDragChanged
         _displayedWord = State(initialValue: word)
     }
 
@@ -2468,15 +2490,6 @@ private struct DiscoverCard: View {
                     .frame(maxWidth: resolvedCardWidth)
                 }
 
-                if allowsBlurrySwipe && blurryHintOpacity > 0 {
-                    Text(appState.localized("Blurry", "模糊", "धुंधला"))
-                        .font(swipeHintFont())
-                        .foregroundStyle(swipeHintTextColor)
-                        .opacity(blurryHintOpacity)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: resolvedCardWidth)
-                }
-
                 CardBody(
                     word: displayedWord,
                     cardWidth: cardWidth ?? 0,
@@ -2509,6 +2522,13 @@ private struct DiscoverCard: View {
                             .opacity(masteredHintOpacity)
                             .multilineTextAlignment(.center)
                     }
+                    if allowsBlurrySwipe && blurryHintOpacity > 0 {
+                        Text(appState.localized("Blurry", "模糊", "धुंधला"))
+                            .font(swipeHintFont())
+                            .foregroundStyle(swipeHintTextColor)
+                            .opacity(blurryHintOpacity)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .frame(maxWidth: resolvedCardWidth)
             }
@@ -2521,6 +2541,7 @@ private struct DiscoverCard: View {
                         guard interactionsEnabled, !isSwipeCompleting else { return }
                         dragOffset = v.translation
                         dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
+                        onDragChanged?(v.translation)
                     }
                     .onEnded { v in
                         guard interactionsEnabled, !isSwipeCompleting else { return }
@@ -2529,32 +2550,38 @@ private struct DiscoverCard: View {
                         if dx < -swipeThreshold {
                             let swipedWordId = displayedWord.id
                             FeedbackService.swipeForgot()
+                            onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
                                 onSwipeForgot(swipedWordId)
                             }
                         } else if dx > swipeThreshold {
                             let swipedWordId = displayedWord.id
                             FeedbackService.swipeMastered()
+                            onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
                                 onSwipeMastered(swipedWordId)
                             }
                         } else if dy > swipeThreshold, let onSwipeDownAction {
                             FeedbackService.swipeBlurry()
+                            onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
                         } else if dy > swipeThreshold && allowsBlurrySwipe {
                             let swipedWordId = displayedWord.id
                             FeedbackService.swipeBlurry()
+                            onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: 0, height: 400)) {
                                 onSwipeBlurry(swipedWordId)
                             }
                         } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
                             FeedbackService.swipeNoAction()
                             onSwipeUpWithoutAction()
+                            onDragChanged?(.zero)
                         } else {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 dragOffset = .zero
                                 dragRotation = .zero
                             }
+                            onDragChanged?(.zero)
                         }
                     }
             )
