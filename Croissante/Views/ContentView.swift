@@ -1586,34 +1586,7 @@ private struct ActiveDiscoverCardHost: View {
             transitionRenderState(for: $0, targetCardWidth: containerSize.width, progress: progress)
         } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
 
-        let showPeekUnderlay = transitionRequest == nil && peekNextWord != nil
-        let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
-        let t = min(1.0, dragMagnitude / (containerSize.width * 0.80))
-        let peekProgress = t * t * t
-
         ZStack {
-            if showPeekUnderlay, let peek = peekNextWord {
-                DiscoverCard(
-                    word: peek,
-                    screenWidth: containerSize.width,
-                    cardWidth: containerSize.width,
-                    cardHeight: restingCardContentHeight,
-                    isActiveTab: false,
-                    detailProgress: 1,
-                    glowStrength: 0.32,
-                    contentOpacity: 1,
-                    interactionsEnabled: false,
-                    onSwipeForgot: { _ in },
-                    onSwipeMastered: { _ in },
-                    onSwipeBlurry: { _ in }
-                )
-                .id(peek.id)
-                .scaleEffect(0.94 + 0.06 * peekProgress)
-                .offset(y: 44.0 * (1.0 - peekProgress))
-                .opacity(Double(peekProgress))
-                .allowsHitTesting(false)
-            }
-
             DiscoverCard(
                 word: word,
                 screenWidth: containerSize.width,
@@ -1636,10 +1609,9 @@ private struct ActiveDiscoverCardHost: View {
                         withAnimation(.easeIn(duration: 0.32)) {
                             topCardDrag = offset
                         }
-                    } else {
-                        topCardDrag = offset
                     }
-                }
+                },
+                peekNextWord: transitionRequest == nil ? peekNextWord : nil
             )
             .id(word.id)
             .offset(y: swipeInOffsetY)
@@ -2237,6 +2209,7 @@ private struct DiscoverCard: View {
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
     let onDragChanged: ((CGSize) -> Void)?
+    let peekNextWord: SimpleWord?
 
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
@@ -2267,7 +2240,8 @@ private struct DiscoverCard: View {
         onSwipeForgot: @escaping (String) -> Void,
         onSwipeMastered: @escaping (String) -> Void,
         onSwipeBlurry: @escaping (String) -> Void,
-        onDragChanged: ((CGSize) -> Void)? = nil
+        onDragChanged: ((CGSize) -> Void)? = nil,
+        peekNextWord: SimpleWord? = nil
     ) {
         self.word = word
         self.screenWidth = screenWidth
@@ -2286,6 +2260,7 @@ private struct DiscoverCard: View {
         self.onSwipeMastered = onSwipeMastered
         self.onSwipeBlurry = onSwipeBlurry
         self.onDragChanged = onDragChanged
+        self.peekNextWord = peekNextWord
         _displayedWord = State(initialValue: word)
     }
 
@@ -2364,6 +2339,12 @@ private struct DiscoverCard: View {
 
     private var bottomMetaReveal: Double {
         galaxySmoothStep((detailProgress - 0.10) / 0.72)
+    }
+
+    private var peekProgress: Double {
+        let mag = sqrt(dragOffset.width * dragOffset.width + dragOffset.height * dragOffset.height)
+        let t = min(1.0, mag / max(resolvedCardWidth * 0.80, 1))
+        return t * t * t
     }
 
     private func speakWord() {
@@ -2466,6 +2447,28 @@ private struct DiscoverCard: View {
 
     var body: some View {
         ZStack {
+            if let peek = peekNextWord {
+                DiscoverCard(
+                    word: peek,
+                    screenWidth: screenWidth,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    isActiveTab: false,
+                    detailProgress: 1,
+                    glowStrength: 0.32,
+                    contentOpacity: 1,
+                    interactionsEnabled: false,
+                    onSwipeForgot: { _ in },
+                    onSwipeMastered: { _ in },
+                    onSwipeBlurry: { _ in }
+                )
+                .id(peek.id)
+                .scaleEffect(0.94 + 0.06 * peekProgress)
+                .offset(y: 44.0 * (1.0 - peekProgress))
+                .opacity(peekProgress)
+                .allowsHitTesting(false)
+            }
+
             VStack(spacing: 10) {
                 if noActionHintOpacity > 0 {
                     HStack(spacing: 8) {
@@ -2552,7 +2555,6 @@ private struct DiscoverCard: View {
                             dragRotation = .zero
                         }
                         dragOffset = constrained
-                        onDragChanged?(constrained)
                     }
                     .onEnded { v in
                         guard interactionsEnabled, !isSwipeCompleting else { return }
