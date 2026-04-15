@@ -1512,7 +1512,7 @@ private struct ActiveDiscoverCardHost: View {
     @State private var swipeInOffsetY: CGFloat = 0
     @State private var swipeInScale: CGFloat = 1.0
     @State private var swipeInOpacity: Double = 1.0
-    @State private var topCardDrag: CGSize = .zero
+    @State private var didFlyAway = false
 
     private let transitionDuration: Double = 0.48
     private var restingCardYOffset: CGFloat {
@@ -1557,9 +1557,8 @@ private struct ActiveDiscoverCardHost: View {
         }
         .onChange(of: word.id) { _, _ in
             guard transitionRequest == nil else { return }
-            let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
-            let wasFullyRevealed = dragMagnitude / 150.0 >= 0.95
-            topCardDrag = .zero
+            let wasFullyRevealed = didFlyAway
+            didFlyAway = false
             guard !wasFullyRevealed else { return }
             swipeInOffsetY = 44
             swipeInScale = 0.94
@@ -1586,37 +1585,25 @@ private struct ActiveDiscoverCardHost: View {
             transitionRenderState(for: $0, targetCardWidth: containerSize.width, progress: progress)
         } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
 
-        ZStack {
-            DiscoverCard(
-                word: word,
-                screenWidth: containerSize.width,
-                cardWidth: containerSize.width,
-                cardHeight: restingCardContentHeight,
-                isActiveTab: isActiveTab && interactionEnabled,
-                detailProgress: detailProgress,
-                glowStrength: glowStrength,
-                contentOpacity: cardContentOpacity,
-                interactionsEnabled: interactionEnabled,
-                onSwipeForgot: onSwipeForgot,
-                onSwipeMastered: onSwipeMastered,
-                onSwipeBlurry: onSwipeBlurry,
-                onDragChanged: { offset in
-                    if offset.width == 0 && offset.height == 0 {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            topCardDrag = .zero
-                        }
-                    } else if offset.width == 500 {
-                        withAnimation(.easeIn(duration: 0.32)) {
-                            topCardDrag = offset
-                        }
-                    }
-                },
-                peekNextWord: transitionRequest == nil ? peekNextWord : nil
-            )
-            .id(word.id)
-            .offset(y: swipeInOffsetY)
-            .scaleEffect(swipeInScale)
-        }
+        DiscoverCard(
+            word: word,
+            screenWidth: containerSize.width,
+            cardWidth: containerSize.width,
+            cardHeight: restingCardContentHeight,
+            isActiveTab: isActiveTab && interactionEnabled,
+            detailProgress: detailProgress,
+            glowStrength: glowStrength,
+            contentOpacity: cardContentOpacity,
+            interactionsEnabled: interactionEnabled,
+            onSwipeForgot: onSwipeForgot,
+            onSwipeMastered: onSwipeMastered,
+            onSwipeBlurry: onSwipeBlurry,
+            onFlyAwayStart: { didFlyAway = true },
+            peekNextWord: transitionRequest == nil ? peekNextWord : nil
+        )
+        .id(word.id)
+        .offset(y: swipeInOffsetY)
+        .scaleEffect(swipeInScale)
         .frame(width: containerSize.width, height: containerSize.height)
         .position(x: containerSize.width / 2, y: containerSize.height / 2 + cardYOffset)
         .allowsHitTesting(!isTransitioning)
@@ -2203,12 +2190,11 @@ private struct DiscoverCard: View {
     let interactionsEnabled: Bool
     let resetTransformAfterSwipe: Bool
     let allowsBlurrySwipe: Bool
-    let onSwipeDownAction: (() -> Void)?
     let onSwipeUpWithoutAction: (() -> Void)?
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
-    let onDragChanged: ((CGSize) -> Void)?
+    let onFlyAwayStart: (() -> Void)?
     let peekNextWord: SimpleWord?
 
     @EnvironmentObject private var appState: AppState
@@ -2235,12 +2221,11 @@ private struct DiscoverCard: View {
         interactionsEnabled: Bool = true,
         resetTransformAfterSwipe: Bool = true,
         allowsBlurrySwipe: Bool = true,
-        onSwipeDownAction: (() -> Void)? = nil,
         onSwipeUpWithoutAction: (() -> Void)? = nil,
         onSwipeForgot: @escaping (String) -> Void,
         onSwipeMastered: @escaping (String) -> Void,
         onSwipeBlurry: @escaping (String) -> Void,
-        onDragChanged: ((CGSize) -> Void)? = nil,
+        onFlyAwayStart: (() -> Void)? = nil,
         peekNextWord: SimpleWord? = nil
     ) {
         self.word = word
@@ -2254,12 +2239,11 @@ private struct DiscoverCard: View {
         self.interactionsEnabled = interactionsEnabled
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
         self.allowsBlurrySwipe = allowsBlurrySwipe
-        self.onSwipeDownAction = onSwipeDownAction
         self.onSwipeUpWithoutAction = onSwipeUpWithoutAction
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
         self.onSwipeBlurry = onSwipeBlurry
-        self.onDragChanged = onDragChanged
+        self.onFlyAwayStart = onFlyAwayStart
         self.peekNextWord = peekNextWord
         _displayedWord = State(initialValue: word)
     }
@@ -2563,34 +2547,29 @@ private struct DiscoverCard: View {
                         let dy = v.translation.height
                         if dx < -swipeThreshold {
                             let swipedWordId = displayedWord.id
-                            onDragChanged?(CGSize(width: 500, height: 0))
+                            onFlyAwayStart?()
                             completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
                                 onSwipeForgot(swipedWordId)
                             }
                         } else if dx > swipeThreshold {
                             let swipedWordId = displayedWord.id
-                            onDragChanged?(CGSize(width: 500, height: 0))
+                            onFlyAwayStart?()
                             completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
                                 onSwipeMastered(swipedWordId)
                             }
-                        } else if dy > swipeThreshold, let onSwipeDownAction {
-                            onDragChanged?(CGSize(width: 500, height: 0))
-                            completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
                         } else if dy > swipeThreshold && allowsBlurrySwipe {
                             let swipedWordId = displayedWord.id
-                            onDragChanged?(CGSize(width: 500, height: 0))
+                            onFlyAwayStart?()
                             completeSwipe(to: CGSize(width: 0, height: 400)) {
                                 onSwipeBlurry(swipedWordId)
                             }
                         } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
                             onSwipeUpWithoutAction()
-                            onDragChanged?(.zero)
                         } else {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 dragOffset = .zero
                                 dragRotation = .zero
                             }
-                            onDragChanged?(.zero)
                         }
                     }
             )
@@ -2937,294 +2916,6 @@ private struct CardBody: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(OptionalTapModifier(action: onDetailTap))
-        }
-        .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
-    }
-}
-
-private struct TransitionDiscoverCard: View {
-    let word: SimpleWord
-    let cardWidth: CGFloat
-    let cardHeight: CGFloat
-    let contentRevealProgress: Double
-
-    @EnvironmentObject private var appState: AppState
-    @Environment(\.colorScheme) private var colorScheme
-
-    private enum CardFontWeight {
-        case regular
-        case medium
-        case semibold
-        case bold
-    }
-
-    private enum NounCornerTone {
-        case green
-        case red
-        case lavender
-    }
-
-    private var isDarkMode: Bool {
-        colorScheme == .dark
-    }
-
-    private var cardSurfaceColor: Color {
-        AppColors.elevatedSurfaceFill(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var cardBorderColor: Color {
-        AppColors.elevatedSurfaceBorder(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-    }
-
-    private var cardGlowColor: Color {
-        isDarkMode
-            ? Color(red: 0.31, green: 1.00, blue: 0.66)
-            : Color(red: 0.51, green: 0.86, blue: 0.75)
-    }
-
-    private var accentBorder: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.28, green: 0.95, blue: 0.56).opacity(isDarkMode ? 0.82 : 0.62),
-                Color(red: 0.16, green: 0.78, blue: 0.46).opacity(isDarkMode ? 0.72 : 0.52)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var levelTextColor: Color {
-        AppColors.tertiaryText(isDarkMode: isDarkMode)
-    }
-
-    private var headlineTextColor: Color {
-        AppColors.primaryText(isDarkMode: isDarkMode)
-    }
-
-    private var secondaryTextColor: Color {
-        isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.42)
-    }
-
-    private var bodyTextColor: Color {
-        isDarkMode ? Color.white.opacity(0.80) : Color.black.opacity(0.78)
-    }
-
-    private var dividerColor: Color {
-        isDarkMode ? AppColors.nocturneBorderSoft : Color.black.opacity(0.14)
-    }
-
-    private var exampleTextColor: Color {
-        isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.72)
-    }
-
-    private var exampleTranslationColor: Color {
-        isDarkMode ? AppColors.nocturneTextTertiary : Color.black.opacity(0.48)
-    }
-
-    private var titleBaseFontSize: CGFloat {
-        let count = word.displayWord.count
-        if count >= 24 { return 42 }
-        if count >= 20 { return 46 }
-        if count >= 16 { return 50 }
-        return 56
-    }
-
-    private func cardFont(size: CGFloat, weight: CardFontWeight = .regular) -> Font {
-        switch appState.cardFontStyle {
-        case .sfPro:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .default)
-        case .sfRounded:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
-        case .avenirNext:
-            return .custom(avenirNextFontName(for: weight), size: size)
-        case .newYork:
-            return .system(size: size, weight: systemFontWeight(for: weight), design: .serif)
-        }
-    }
-
-    private func systemFontWeight(for weight: CardFontWeight) -> Font.Weight {
-        switch weight {
-        case .regular: return .regular
-        case .medium: return .medium
-        case .semibold: return .semibold
-        case .bold: return .bold
-        }
-    }
-
-    private func avenirNextFontName(for weight: CardFontWeight) -> String {
-        switch weight {
-        case .regular: return "AvenirNext-Regular"
-        case .medium: return "AvenirNext-Medium"
-        case .semibold: return "AvenirNext-DemiBold"
-        case .bold: return "AvenirNext-Bold"
-        }
-    }
-
-    private var detailProgress: Double {
-        let t = min(1.0, max(0.0, (contentRevealProgress - 0.38) / 0.62))
-        return t * t * (3 - 2 * t)
-    }
-
-    private var nounFlags: Set<String> {
-        Set(word.nounUIFlags)
-    }
-
-    private var nounEntityType: String {
-        word.nounUIEntityType
-    }
-
-    private var isNounCard: Bool {
-        let normalizedTag = word.tag
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard normalizedTag == "n" || normalizedTag.hasPrefix("n.") else { return false }
-        return nounEntityType.isEmpty || nounEntityType.contains("name") || nounEntityType.contains("entity")
-    }
-
-    private var nounCornerTone: NounCornerTone? {
-        guard isNounCard else { return nil }
-        if nounFlags.contains("common_gender") || nounFlags.contains("proper_noun_like") {
-            return .lavender
-        }
-        switch word.nounUICorner {
-        case "green":
-            return .green
-        case "red":
-            return .red
-        case "dual", "neutral", "lavender":
-            return .lavender
-        case "not_applicable":
-            return nil
-        default:
-            return nil
-        }
-    }
-
-    private var nounCornerColor: Color {
-        guard let tone = nounCornerTone else { return .clear }
-        switch tone {
-        case .green:
-            return isDarkMode ? Color(red: 0.45, green: 0.81, blue: 0.66) : Color(red: 0.43, green: 0.77, blue: 0.62)
-        case .red:
-            return isDarkMode ? Color(red: 0.83, green: 0.51, blue: 0.54) : Color(red: 0.86, green: 0.49, blue: 0.51)
-        case .lavender:
-            return isDarkMode ? Color(red: 0.72, green: 0.66, blue: 0.88) : Color(red: 0.71, green: 0.62, blue: 0.88)
-        }
-    }
-
-    @ViewBuilder
-    private var nounCornerBadge: some View {
-        if nounCornerTone != nil {
-            NounCornerAccentShape()
-                .stroke(
-                    nounCornerColor.opacity(isDarkMode ? 0.96 : 0.92),
-                    style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
-                )
-                .frame(width: 84, height: 72)
-                .padding(.top, 8)
-                .padding(.trailing, 8)
-                .allowsHitTesting(false)
-        }
-    }
-
-    var body: some View {
-        cardContent
-            .padding(.horizontal, 26)
-            .padding(.vertical, 24)
-            .frame(width: cardWidth, alignment: .top)
-            .overlay(alignment: .topTrailing) {
-                nounCornerBadge
-                    .opacity(detailProgress)
-            }
-            .background(cardSurfaceColor, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(cardBorderColor, lineWidth: 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(accentBorder, lineWidth: 1.2)
-            )
-            .shadow(color: .black.opacity(isDarkMode ? 0.14 : 0.05), radius: 10, x: 0, y: 4)
-    }
-
-    private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Text(word.level.uppercased())
-                    if !word.auxiliary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(word.auxiliary)
-                    }
-                }
-                .font(cardFont(size: 11 * (2.0 / 3.0), weight: .semibold))
-                .foregroundStyle(levelTextColor)
-                .opacity(detailProgress)
-                .offset(y: -8)
-                Text(word.displayWord)
-                    .font(cardFont(size: titleBaseFontSize, weight: .semibold))
-                    .tracking(0.2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.42)
-                    .allowsTightening(true)
-                    .foregroundStyle(headlineTextColor)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 22)
-            }
-            .padding(.bottom, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Rectangle()
-                .fill(dividerColor)
-                .frame(height: 1)
-                .padding(.bottom, 20)
-                .opacity(0.18 + detailProgress * 0.82)
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 10) {
-                    Text(posLabel(word.tag))
-                        .font(cardFont(size: 16, weight: .medium))
-                        .foregroundStyle(secondaryTextColor)
-                        .padding(.top, 1)
-
-                    Text(appState.translationText(for: word))
-                        .font(cardFont(size: 16))
-                        .lineSpacing(5)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(bodyTextColor)
-                }
-                .multilineTextAlignment(.leading)
-
-                let translatedExample = appState.translatedExampleText(for: word)
-                if !word.exampleFr.isEmpty || !translatedExample.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if !word.exampleFr.isEmpty {
-                            Text(word.exampleFr)
-                                .foregroundStyle(exampleTextColor)
-                                .font(cardFont(size: 16))
-                                .multilineTextAlignment(.leading)
-                                .lineSpacing(3)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if !translatedExample.isEmpty {
-                            Text(translatedExample)
-                                .font(cardFont(size: 15))
-                                .multilineTextAlignment(.leading)
-                                .lineSpacing(2)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .foregroundStyle(exampleTranslationColor)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 18)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .opacity(detailProgress)
         }
         .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
     }
