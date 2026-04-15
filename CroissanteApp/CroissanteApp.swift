@@ -61,7 +61,6 @@ struct CroissanteApp: App {
     private var preferredColorScheme: ColorScheme? {
         switch appState.themeMode {
         case .system: return nil
-        case .steppe: return .light
         case .dark: return .dark
         case .light: return .light
         }

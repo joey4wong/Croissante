@@ -73,13 +73,8 @@ public struct ContentView: View {
     private var wallpaperBackground: some View {
         ThemedBackgroundView(
             themeMode: appState.themeMode,
-            isDarkMode: isDarkMode,
-            showWallpaper: shouldShowHomeWallpaper
+            isDarkMode: isDarkMode
         )
-    }
-
-    private var shouldShowHomeWallpaper: Bool {
-        appState.themeMode == .steppe
     }
 
     private var exploreView: some View {
@@ -658,10 +653,6 @@ private struct DiscoverScreen: View {
         AppColors.appBackgroundGradient(themeMode: appState.themeMode, isDarkMode: isDarkMode)
     }
 
-    private var shouldShowHomeWallpaper: Bool {
-        appState.themeMode == .steppe
-    }
-
     private var word: SimpleWord? {
         guard !words.isEmpty else { return nil }
         let idx = min(queueIndex, words.count - 1)
@@ -685,8 +676,7 @@ private struct DiscoverScreen: View {
         ZStack {
             ThemedBackgroundView(
                 themeMode: appState.themeMode,
-                isDarkMode: isDarkMode,
-                showWallpaper: shouldShowHomeWallpaper
+                isDarkMode: isDarkMode
             )
 
             GeometryReader { geo in
@@ -1598,7 +1588,7 @@ private struct ActiveDiscoverCardHost: View {
 
         let showPeekUnderlay = transitionRequest == nil && peekNextWord != nil
         let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
-        let t = min(1.0, dragMagnitude / (containerSize.width * 0.65))
+        let t = min(1.0, dragMagnitude / (containerSize.width * 0.80))
         let peekProgress = t * t * t
 
         ZStack {
@@ -1641,6 +1631,10 @@ private struct ActiveDiscoverCardHost: View {
                     if offset.width == 0 && offset.height == 0 {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             topCardDrag = .zero
+                        }
+                    } else if offset.width == 500 {
+                        withAnimation(.easeIn(duration: 0.32)) {
+                            topCardDrag = offset
                         }
                     } else {
                         topCardDrag = offset
@@ -1995,10 +1989,6 @@ struct SearchSelectedWordCardView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var showHomeWallpaper: Bool {
-        themeMode == .steppe
-    }
-
     #if os(iOS)
     private static let exploreTabBarHeight: CGFloat = 49
     #endif
@@ -2020,16 +2010,14 @@ struct SearchSelectedWordCardView: View {
                 if dismissOnTap {
                     ThemedBackgroundView(
                         themeMode: themeMode,
-                        isDarkMode: colorScheme == .dark,
-                        showWallpaper: showHomeWallpaper
+                        isDarkMode: colorScheme == .dark
                     )
                         .contentShape(Rectangle())
                         .onTapGesture { onDismiss() }
                 } else {
                     ThemedBackgroundView(
                         themeMode: themeMode,
-                        isDarkMode: colorScheme == .dark,
-                        showWallpaper: showHomeWallpaper
+                        isDarkMode: colorScheme == .dark
                     )
                 }
 
@@ -2255,6 +2243,8 @@ private struct DiscoverCard: View {
     @State private var dragOffset: CGSize = .zero
     @State private var dragRotation: Angle = .zero
     @State private var isSwipeCompleting = false
+    @State private var dragLockedAxis: Axis? = nil
+    private let arcMaxHeight: CGFloat = 32
     @State private var pendingSpeechTask: Task<Void, Never>?
     @State private var displayedWord: SimpleWord
     @State private var allSenses: [SimpleWord] = []
@@ -2454,13 +2444,13 @@ private struct DiscoverCard: View {
 
     private func completeSwipe(
         to offset: CGSize,
-        after delay: TimeInterval = 0.2,
+        after delay: TimeInterval = 0.32,
         action: @escaping () -> Void
     ) {
         guard !isSwipeCompleting else { return }
         isSwipeCompleting = true
 
-        withAnimation(.easeOut(duration: delay)) {
+        withAnimation(.easeIn(duration: delay)) {
             dragOffset = offset
         }
 
@@ -2539,41 +2529,58 @@ private struct DiscoverCard: View {
                 DragGesture(minimumDistance: 15)
                     .onChanged { v in
                         guard interactionsEnabled, !isSwipeCompleting else { return }
-                        dragOffset = v.translation
-                        dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
-                        onDragChanged?(v.translation)
+                        let dx = v.translation.width
+                        let dy = v.translation.height
+                        if dragLockedAxis == nil {
+                            let mag = sqrt(dx * dx + dy * dy)
+                            if mag > 8 {
+                                dragLockedAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
+                            }
+                        }
+                        let constrained: CGSize
+                        switch dragLockedAxis {
+                        case .horizontal:
+                            let t = min(1.0, abs(dx) / screenWidth)
+                            let arcY = -arcMaxHeight * 4 * t * (1 - t)
+                            constrained = CGSize(width: dx, height: arcY)
+                            dragRotation = .degrees(Double(dx / screenWidth * 12))
+                        case .vertical:
+                            constrained = CGSize(width: 0, height: dy)
+                            dragRotation = .zero
+                        case nil:
+                            constrained = .zero
+                            dragRotation = .zero
+                        }
+                        dragOffset = constrained
+                        onDragChanged?(constrained)
                     }
                     .onEnded { v in
                         guard interactionsEnabled, !isSwipeCompleting else { return }
+                        dragLockedAxis = nil
                         let dx = v.translation.width
                         let dy = v.translation.height
                         if dx < -swipeThreshold {
                             let swipedWordId = displayedWord.id
-                            FeedbackService.swipeForgot()
                             onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
                                 onSwipeForgot(swipedWordId)
                             }
                         } else if dx > swipeThreshold {
                             let swipedWordId = displayedWord.id
-                            FeedbackService.swipeMastered()
                             onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
                                 onSwipeMastered(swipedWordId)
                             }
                         } else if dy > swipeThreshold, let onSwipeDownAction {
-                            FeedbackService.swipeBlurry()
                             onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
                         } else if dy > swipeThreshold && allowsBlurrySwipe {
                             let swipedWordId = displayedWord.id
-                            FeedbackService.swipeBlurry()
                             onDragChanged?(CGSize(width: 500, height: 0))
                             completeSwipe(to: CGSize(width: 0, height: 400)) {
                                 onSwipeBlurry(swipedWordId)
                             }
                         } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
-                            FeedbackService.swipeNoAction()
                             onSwipeUpWithoutAction()
                             onDragChanged?(.zero)
                         } else {
@@ -2606,9 +2613,6 @@ private struct DiscoverCard: View {
             }
             .onAppear {
                 refreshSenses(using: word)
-                if interactionsEnabled {
-                    FeedbackService.prepareInteractive()
-                }
                 if interactionsEnabled && isActiveTab && appState.autoPlay {
                     scheduleAutoPlay()
                 }
@@ -3659,8 +3663,7 @@ private struct SettingsScreen: View {
         [
             appState.localized("System", "跟随系统", "सिस्टम"),
             appState.localized("Light", "浅色", "लाइट"),
-            appState.localized("Dark", "深色", "डार्क"),
-            appState.localized("Steppe", "草原", "घासभूमि")
+            appState.localized("Dark", "深色", "डार्क")
         ]
     }
     private let settingsToggleScale: CGFloat = 0.84
@@ -3694,7 +3697,6 @@ private struct SettingsScreen: View {
         case .system: return 0
         case .light: return 1
         case .dark: return 2
-        case .steppe: return 3
         }
     }
 
@@ -4324,7 +4326,7 @@ private struct SettingsScreen: View {
                                         case 0: newMode = .system
                                         case 1: newMode = .light
                                         case 2: newMode = .dark
-                                        default: newMode = .steppe
+                                        default: newMode = .system
                                         }
                                         guard appState.themeMode != newMode || themeSelectionOverride != nil else { return }
                                         themeSelectionOverride = idx

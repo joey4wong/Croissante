@@ -2,7 +2,6 @@ import SwiftUI
 
 public enum ThemeMode: Int, Codable {
     case system = 0
-    case steppe = 1
     case dark = 2
     case light = 5
 }
@@ -446,6 +445,9 @@ public final class AppState: ObservableObject {
         if let rawValue = userDefaults.value(forKey: Keys.themeMode) as? Int {
             if let mode = ThemeMode(rawValue: rawValue) {
                 themeMode = mode
+            } else if rawValue == 1 {
+                themeMode = .light
+                userDefaults.set(ThemeMode.light.rawValue, forKey: Keys.themeMode)
             } else {
                 themeMode = .system
                 userDefaults.set(ThemeMode.system.rawValue, forKey: Keys.themeMode)
