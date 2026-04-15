@@ -722,10 +722,7 @@ private struct DiscoverScreen: View {
                             onTransitionComplete: completeGalaxyTransition
                         )
                     } else if !isGalaxyVisible, shouldShowCompletionCelebration {
-                        DeckCompletionCelebrationView(
-                            showContinueInfiniteButton: false,
-                            onContinueInfinite: {}
-                        )
+                        DeckCompletionCelebrationView()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     } else if !isGalaxyVisible {
@@ -2049,10 +2046,7 @@ private struct DiscoverEmptyStateView: View {
 }
 
 private struct DeckCompletionCelebrationView: View {
-    let showContinueInfiniteButton: Bool
-    let onContinueInfinite: () -> Void
     @EnvironmentObject private var appState: AppState
-    @Environment(\.colorScheme) private var colorScheme
     @State private var burstProgress: CGFloat = 0
     @State private var emojiPulse = false
     @State private var textLift = false
@@ -2063,18 +2057,33 @@ private struct DeckCompletionCelebrationView: View {
         Color(red: 1.00, green: 0.74, blue: 0.22),
         Color(red: 1.00, green: 0.45, blue: 0.34)
     ]
-    private var continueButtonTextColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.92) : Color(red: 0.10, green: 0.13, blue: 0.18)
+
+    private func celebrationFont(_ textStyle: Font.TextStyle, weight: Font.Weight) -> Font {
+        switch appState.cardFontStyle {
+        case .sfPro:
+            return .system(textStyle, design: .default, weight: weight)
+        case .sfRounded:
+            return .system(textStyle, design: .rounded, weight: weight)
+        case .newYork:
+            return .system(textStyle, design: .serif, weight: weight)
+        case .avenirNext:
+            let base: CGFloat
+            switch textStyle {
+            case .title: base = 28
+            case .subheadline: base = 15
+            default: base = 17
+            }
+            return Font.custom(celebrationAvenirName(for: weight), size: base, relativeTo: textStyle)
+        }
     }
-    private var continueButtonFillColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.14)
-            : Color(red: 0.91, green: 0.96, blue: 0.94)
-    }
-    private var continueButtonBorderColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.22)
-            : Color(red: 0.68, green: 0.84, blue: 0.77)
+
+    private func celebrationAvenirName(for weight: Font.Weight) -> String {
+        switch weight {
+        case .bold: return "AvenirNext-Bold"
+        case .semibold: return "AvenirNext-DemiBold"
+        case .medium: return "AvenirNext-Medium"
+        default: return "AvenirNext-Regular"
+        }
     }
 
     var body: some View {
@@ -2123,44 +2132,14 @@ private struct DeckCompletionCelebrationView: View {
                 }
                 .scaleEffect(emojiPulse ? 1.0 : 0.78)
 
-                if showContinueInfiniteButton {
-                    VStack(spacing: 8) {
-                        Text(appState.localized("Want more practice now?", "还想继续练习？", "और अभ्यास करना चाहते हैं?"))
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.62) : Color.black.opacity(0.50))
-
-                        Button {
-                            onContinueInfinite()
-                        } label: {
-                            Text(appState.localized("Continue ∞", "继续∞加练", "जारी रखें ∞"))
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundStyle(continueButtonTextColor)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 11)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(continueButtonFillColor)
-                                )
-                                .overlay(
-                                    Capsule(style: .continuous)
-                                        .stroke(continueButtonBorderColor, lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 2)
-                    .padding(.bottom, 4)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-
                 Text(appState.localized("Amazing, today's goal complete!", "太棒了，今日目标已完成！", "शानदार, आज का लक्ष्य पूरा!"))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.84))
+                    .font(celebrationFont(.title, weight: .bold))
+                    .foregroundStyle(.secondary)
                     .offset(y: textLift ? -2 : 2)
 
                 Text(appState.localized("More cards coming up…", "更多卡片即将出现…", "और कार्ड आ रहे हैं…"))
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.62) : Color.black.opacity(0.52))
+                    .font(celebrationFont(.subheadline, weight: .medium))
+                    .foregroundStyle(.tertiary)
                     .offset(y: textLift ? -1 : 1)
             }
             .multilineTextAlignment(.center)
