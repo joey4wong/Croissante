@@ -676,6 +676,11 @@ private struct DiscoverScreen: View {
         activeGalaxyTransition?.word ?? transitionPinnedWord ?? (!isGalaxyVisible ? word : nil)
     }
 
+    private var nextQueueWord: SimpleWord? {
+        guard words.count > queueIndex + 1 else { return nil }
+        return words[queueIndex + 1]
+    }
+
     var body: some View {
         ZStack {
             ThemedBackgroundView(
@@ -703,6 +708,7 @@ private struct DiscoverScreen: View {
                     } else if let presentedWord {
                         ActiveDiscoverCardHost(
                             word: presentedWord,
+                            peekNextWord: (activeGalaxyTransition == nil && transitionPinnedWord == nil) ? nextQueueWord : nil,
                             transitionRequest: activeGalaxyTransition,
                             containerSize: geo.size,
                             allowsInteractions: activeGalaxyTransition == nil && transitionPinnedWord == nil,
@@ -1501,6 +1507,7 @@ private enum DiscoverCardLayout {
 
 private struct ActiveDiscoverCardHost: View {
     let word: SimpleWord
+    let peekNextWord: SimpleWord?
     let transitionRequest: GalaxySelectedCardTransitionRequest?
     let containerSize: CGSize
     let allowsInteractions: Bool
@@ -1584,21 +1591,47 @@ private struct ActiveDiscoverCardHost: View {
             transitionRenderState(for: $0, targetCardWidth: containerSize.width, progress: progress)
         } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
 
-        DiscoverCard(
-            word: word,
-            screenWidth: containerSize.width,
-            cardWidth: containerSize.width,
-            cardHeight: restingCardContentHeight,
-            isActiveTab: isActiveTab && interactionEnabled,
-            detailProgress: detailProgress,
-            glowStrength: glowStrength,
-            contentOpacity: cardContentOpacity,
-            interactionsEnabled: interactionEnabled,
-            onSwipeForgot: onSwipeForgot,
-            onSwipeMastered: onSwipeMastered,
-            onSwipeBlurry: onSwipeBlurry
-        )
-        .id(word.id)
+        let showPeekUnderlay = transitionRequest == nil && peekNextWord != nil
+
+        ZStack {
+            if showPeekUnderlay, let peek = peekNextWord {
+                DiscoverCard(
+                    word: peek,
+                    screenWidth: containerSize.width,
+                    cardWidth: containerSize.width,
+                    cardHeight: restingCardContentHeight,
+                    isActiveTab: false,
+                    detailProgress: 1,
+                    glowStrength: 0.32,
+                    contentOpacity: 0.5,
+                    interactionsEnabled: false,
+                    onSwipeForgot: { _ in },
+                    onSwipeMastered: { _ in },
+                    onSwipeBlurry: { _ in }
+                )
+                .id(peek.id)
+                .scaleEffect(0.97)
+                .allowsHitTesting(false)
+            }
+
+            DiscoverCard(
+                word: word,
+                screenWidth: containerSize.width,
+                cardWidth: containerSize.width,
+                cardHeight: restingCardContentHeight,
+                isActiveTab: isActiveTab && interactionEnabled,
+                detailProgress: detailProgress,
+                glowStrength: glowStrength,
+                contentOpacity: cardContentOpacity,
+                interactionsEnabled: interactionEnabled,
+                onSwipeForgot: onSwipeForgot,
+                onSwipeMastered: onSwipeMastered,
+                onSwipeBlurry: onSwipeBlurry
+            )
+            .id(word.id)
+            .offset(y: swipeInOffsetY)
+            .scaleEffect(swipeInScale)
+        }
         .frame(width: containerSize.width, height: containerSize.height)
         .position(x: containerSize.width / 2, y: containerSize.height / 2 + cardYOffset)
         .allowsHitTesting(!isTransitioning)
@@ -1612,8 +1645,6 @@ private struct ActiveDiscoverCardHost: View {
         .offset(state.offset)
         .opacity(state.opacity)
         .modifier(ConditionalBlur(radius: state.blur))
-        .offset(y: swipeInOffsetY)
-        .scaleEffect(swipeInScale)
     }
 
     private func transitionDetailProgress(progress: Double, transitionRequest: GalaxySelectedCardTransitionRequest?) -> Double {
@@ -2301,6 +2332,24 @@ private struct DiscoverCard: View {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.42)
     }
 
+    private var swipeHintTextColor: Color {
+        Color.primary.opacity(isDarkMode ? 0.38 : 0.42)
+    }
+
+    private func swipeHintFont() -> Font {
+        let scaled = UIFontMetrics(forTextStyle: .title3).scaledValue(for: 20)
+        switch appState.cardFontStyle {
+        case .sfPro:
+            return .system(size: scaled, weight: .semibold, design: .default)
+        case .sfRounded:
+            return .system(size: scaled, weight: .semibold, design: .rounded)
+        case .avenirNext:
+            return .custom("AvenirNext-DemiBold", size: scaled)
+        case .newYork:
+            return .system(size: scaled, weight: .semibold, design: .serif)
+        }
+    }
+
     private var bottomMetaReveal: Double {
         galaxySmoothStep((detailProgress - 0.10) / 0.72)
     }
@@ -2405,155 +2454,138 @@ private struct DiscoverCard: View {
 
     var body: some View {
         ZStack {
-            if forgotHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.red)
-                    Text(appState.localized("Forgot", "忘记", "भूल गया"))
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.red)
+            VStack(spacing: 10) {
+                if noActionHintOpacity > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(secondaryTextColor)
+                        Text(appState.localized("No action", "无操作", "कोई कार्रवाई नहीं"))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(secondaryTextColor)
+                    }
+                    .opacity(noActionHintOpacity)
+                    .frame(maxWidth: resolvedCardWidth)
                 }
-                .rotationEffect(.degrees(-9))
-                .opacity(forgotHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .trailing)
-                .padding(.trailing, 20)
-            }
 
-            if masteredHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.green)
-                    Text(appState.localized("Mastered", "掌握", "सीख लिया"))
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.green)
-                }
-                .rotationEffect(.degrees(9))
-                .opacity(masteredHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .leading)
-                .padding(.leading, 20)
-            }
-
-            if allowsBlurrySwipe && blurryHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "questionmark.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(.orange)
+                if allowsBlurrySwipe && blurryHintOpacity > 0 {
                     Text(appState.localized("Blurry", "模糊", "धुंधला"))
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.orange)
+                        .font(swipeHintFont())
+                        .foregroundStyle(swipeHintTextColor)
+                        .opacity(blurryHintOpacity)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: resolvedCardWidth)
                 }
-                .rotationEffect(.degrees(7))
-                .opacity(blurryHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .top)
-                .offset(y: -28)
-            }
 
-            if noActionHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(secondaryTextColor)
-                    Text(appState.localized("No action", "无操作", "कोई कार्रवाई नहीं"))
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(secondaryTextColor)
-                }
-                .opacity(noActionHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .top)
-                .padding(.top, 20)
-            }
+                CardBody(
+                    word: displayedWord,
+                    cardWidth: cardWidth ?? 0,
+                    cardHeight: cardHeight ?? 0,
+                    detailProgress: detailProgress,
+                    contentOpacity: contentOpacity,
+                    onTitleTap: { [self] in cancelScheduledSpeech(); speakWord() },
+                    onDetailTap: { [self] in cancelScheduledSpeech(); speakExampleSentence() }
+                )
+                    .overlay(alignment: .bottomTrailing) {
+                        bottomMetaBar
+                            .padding(.trailing, 12)
+                            .padding(.bottom, 12)
+                            .opacity(bottomMetaReveal)
+                    }
+                    .modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
 
-            CardBody(
-                word: displayedWord,
-                cardWidth: cardWidth ?? 0,
-                cardHeight: cardHeight ?? 0,
-                detailProgress: detailProgress,
-                contentOpacity: contentOpacity,
-                onTitleTap: { [self] in cancelScheduledSpeech(); speakWord() },
-                onDetailTap: { [self] in cancelScheduledSpeech(); speakExampleSentence() }
-            )
-                .overlay(alignment: .bottomTrailing) {
-                    bottomMetaBar
-                        .padding(.trailing, 12)
-                        .padding(.bottom, 12)
-                        .opacity(bottomMetaReveal)
+                ZStack {
+                    if forgotHintOpacity > 0 {
+                        Text(appState.localized("Forgot", "忘记", "भूल गया"))
+                            .font(swipeHintFont())
+                            .foregroundStyle(swipeHintTextColor)
+                            .opacity(forgotHintOpacity)
+                            .multilineTextAlignment(.center)
+                    }
+                    if masteredHintOpacity > 0 {
+                        Text(appState.localized("Mastered", "掌握", "सीख लिया"))
+                            .font(swipeHintFont())
+                            .foregroundStyle(swipeHintTextColor)
+                            .opacity(masteredHintOpacity)
+                            .multilineTextAlignment(.center)
+                    }
                 }
-                .modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
-                .offset(dragOffset)
-                .rotationEffect(dragRotation)
-                .allowsHitTesting(interactionsEnabled)
-                .gesture(
-                    DragGesture(minimumDistance: 15)
-                        .onChanged { v in
-                            guard interactionsEnabled, !isSwipeCompleting else { return }
-                            dragOffset = v.translation
-                            dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
-                        }
-                        .onEnded { v in
-                            guard interactionsEnabled, !isSwipeCompleting else { return }
-                            let dx = v.translation.width
-                            let dy = v.translation.height
-                            if dx < -swipeThreshold {
-                                let swipedWordId = displayedWord.id
-                                FeedbackService.swipeForgot()
-                                completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
-                                    onSwipeForgot(swipedWordId)
-                                }
-                            } else if dx > swipeThreshold {
-                                let swipedWordId = displayedWord.id
-                                FeedbackService.swipeMastered()
-                                completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
-                                    onSwipeMastered(swipedWordId)
-                                }
-                            } else if dy > swipeThreshold, let onSwipeDownAction {
-                                FeedbackService.swipeBlurry()
-                                completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
-                            } else if dy > swipeThreshold && allowsBlurrySwipe {
-                                let swipedWordId = displayedWord.id
-                                FeedbackService.swipeBlurry()
-                                completeSwipe(to: CGSize(width: 0, height: 400)) {
-                                    onSwipeBlurry(swipedWordId)
-                                }
-                            } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
-                                FeedbackService.swipeNoAction()
-                                onSwipeUpWithoutAction()
-                            } else {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    dragOffset = .zero
-                                    dragRotation = .zero
-                                }
+                .frame(maxWidth: resolvedCardWidth)
+            }
+            .offset(dragOffset)
+            .rotationEffect(dragRotation)
+            .allowsHitTesting(interactionsEnabled)
+            .gesture(
+                DragGesture(minimumDistance: 15)
+                    .onChanged { v in
+                        guard interactionsEnabled, !isSwipeCompleting else { return }
+                        dragOffset = v.translation
+                        dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
+                    }
+                    .onEnded { v in
+                        guard interactionsEnabled, !isSwipeCompleting else { return }
+                        let dx = v.translation.width
+                        let dy = v.translation.height
+                        if dx < -swipeThreshold {
+                            let swipedWordId = displayedWord.id
+                            FeedbackService.swipeForgot()
+                            completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
+                                onSwipeForgot(swipedWordId)
+                            }
+                        } else if dx > swipeThreshold {
+                            let swipedWordId = displayedWord.id
+                            FeedbackService.swipeMastered()
+                            completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
+                                onSwipeMastered(swipedWordId)
+                            }
+                        } else if dy > swipeThreshold, let onSwipeDownAction {
+                            FeedbackService.swipeBlurry()
+                            completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
+                        } else if dy > swipeThreshold && allowsBlurrySwipe {
+                            let swipedWordId = displayedWord.id
+                            FeedbackService.swipeBlurry()
+                            completeSwipe(to: CGSize(width: 0, height: 400)) {
+                                onSwipeBlurry(swipedWordId)
+                            }
+                        } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
+                            FeedbackService.swipeNoAction()
+                            onSwipeUpWithoutAction()
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                dragOffset = .zero
+                                dragRotation = .zero
                             }
                         }
-                )
-                .onChange(of: appState.autoPlay) { _, enabled in
-                    if !enabled {
-                        stopSpeechPlayback()
                     }
-                }
-                .onChange(of: isActiveTab) { _, active in
-                    if !active {
-                        stopSpeechPlayback()
-                    }
-                }
-                .onChange(of: word.id) { _, _ in
-                    refreshSenses(using: word)
-                    if interactionsEnabled && isActiveTab && appState.autoPlay {
-                        scheduleAutoPlay()
-                    }
-                }
-                .onDisappear {
+            )
+            .onChange(of: appState.autoPlay) { _, enabled in
+                if !enabled {
                     stopSpeechPlayback()
                 }
-                .onAppear {
-                    refreshSenses(using: word)
-                    if interactionsEnabled {
-                        FeedbackService.prepareInteractive()
-                    }
-                    if interactionsEnabled && isActiveTab && appState.autoPlay {
-                        scheduleAutoPlay()
-                    }
+            }
+            .onChange(of: isActiveTab) { _, active in
+                if !active {
+                    stopSpeechPlayback()
                 }
+            }
+            .onChange(of: word.id) { _, _ in
+                refreshSenses(using: word)
+                if interactionsEnabled && isActiveTab && appState.autoPlay {
+                    scheduleAutoPlay()
+                }
+            }
+            .onDisappear {
+                stopSpeechPlayback()
+            }
+            .onAppear {
+                refreshSenses(using: word)
+                if interactionsEnabled {
+                    FeedbackService.prepareInteractive()
+                }
+                if interactionsEnabled && isActiveTab && appState.autoPlay {
+                    scheduleAutoPlay()
+                }
+            }
         }
     }
 
