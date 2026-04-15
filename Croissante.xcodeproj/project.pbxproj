@@ -33,11 +33,11 @@
 		B10000000000000000000035 /* OpenAITTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000127 /* OpenAITTSService.swift */; };
 		B10000000000000000000036 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000128 /* NetworkMonitor.swift */; };
 		B10000000000000000000037 /* WidgetDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000129 /* WidgetDataService.swift */; };
-		B10000000000000000000038 /* GestureOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000131 /* GestureOnboardingView.swift */; };
 		B10000000000000000000039 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000132 /* StoreKitManager.swift */; };
 		W10000000000000000000001 /* CroissanteWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000011 /* CroissanteWidgetBundle.swift */; };
 		W10000000000000000000002 /* DailyWordWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000012 /* DailyWordWidget.swift */; };
 		W10000000000000000000003 /* CroissanteWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = W10000000000000000000005 /* CroissanteWidgetExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		W10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,7 +93,6 @@
 		B10000000000000000000128 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		B10000000000000000000129 /* WidgetDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataService.swift; sourceTree = "<group>"; };
 		B10000000000000000000130 /* AppAlternateIconsInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AppAlternateIconsInfo.plist; sourceTree = "<group>"; };
-		B10000000000000000000131 /* GestureOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureOnboardingView.swift; sourceTree = "<group>"; };
 		B10000000000000000000132 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
 		CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteDebug.entitlements; sourceTree = "<group>"; };
 		CB1004D62F6E0757009C269E /* CroissanteWidgetExtensionDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteWidgetExtensionDebug.entitlements; sourceTree = "<group>"; };
@@ -228,7 +227,6 @@
 				B1000000000000000000011E /* PolysemousWordView.swift */,
 				B1000000000000000000011F /* SearchSheetView.swift */,
 				B10000000000000000000121 /* WordCardView.swift */,
-				B10000000000000000000131 /* GestureOnboardingView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -304,9 +302,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					A10000000000000000000006 = {
-					DevelopmentTeam = M4X7UBJ3DR;
-					ProvisioningStyle = Automatic;
 						CreatedOnToolsVersion = 26.0;
+						DevelopmentTeam = M4X7UBJ3DR;
+						ProvisioningStyle = Automatic;
 					};
 					W10000000000000000000006 = {
 						CreatedOnToolsVersion = 26.0;
@@ -349,6 +347,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				W10000000000000000000004 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -381,7 +380,6 @@
 				B10000000000000000000035 /* OpenAITTSService.swift in Sources */,
 				B10000000000000000000036 /* NetworkMonitor.swift in Sources */,
 				B10000000000000000000037 /* WidgetDataService.swift in Sources */,
-				B10000000000000000000038 /* GestureOnboardingView.swift in Sources */,
 				B10000000000000000000039 /* StoreKitManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -496,7 +494,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_DEBUG_DYLIB = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
@@ -541,7 +539,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Croissante;
@@ -576,13 +574,11 @@
 		W1000000000000000000000E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CroissanteWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";
@@ -609,13 +605,11 @@
 		W1000000000000000000000F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CroissanteWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";

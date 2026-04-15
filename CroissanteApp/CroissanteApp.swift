@@ -52,6 +52,9 @@ struct CroissanteApp: App {
                         appState.spotlightSelectedWordId = wordId
                     }
                 }
+                .onOpenURL { url in
+                    handleIncomingURL(url)
+                }
         }
     }
 
@@ -84,6 +87,23 @@ struct CroissanteApp: App {
 
         UITabBar.appearance().standardAppearance = appearance
         UITabBar.appearance().scrollEdgeAppearance = appearance
+    }
+
+    private func handleIncomingURL(_ url: URL) {
+        guard url.scheme == "croissante" else { return }
+        if url.host == "paywall" {
+            appState.openMemberPaywallFromDeepLink = true
+            return
+        }
+        guard url.host == "word",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let rawWordId = components.queryItems?.first(where: { $0.name == "id" })?.value else {
+            return
+        }
+
+        let wordId = rawWordId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wordId.isEmpty else { return }
+        appState.widgetSelectedWordId = wordId
     }
 
     private func makeSelectionIndicatorImage() -> UIImage {

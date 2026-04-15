@@ -11,6 +11,7 @@ public enum CardFontStyle: String, Codable {
     case sfPro
     case sfRounded
     case avenirNext
+    case newYork
 }
 
 enum SearchTextNormalizer {
@@ -26,18 +27,25 @@ enum SearchTextNormalizer {
     }
 }
 
+fileprivate struct ConjugationFormIndexEntry: Sendable {
+    let form: String
+    let lemmas: [String]
+}
+
 fileprivate struct ConjugationData: Sendable {
     static let empty = ConjugationData(
         map: [:],
         formsByLemma: [:],
         exactLemmasByForm: [:],
-        normalizedLemmasByForm: [:]
+        normalizedLemmasByForm: [:],
+        normalizedFormEntries: []
     )
 
     let map: [String: String]
     let formsByLemma: [String: [String]]
     let exactLemmasByForm: [String: [String]]
     let normalizedLemmasByForm: [String: [String]]
+    let normalizedFormEntries: [ConjugationFormIndexEntry]
 
     static func build(from map: [String: String]) -> ConjugationData {
         var formsByLemma: [String: Set<String>] = [:]
@@ -54,16 +62,22 @@ fileprivate struct ConjugationData: Sendable {
             normalizedLemmasByForm[normalizedForm, default: []].insert(normalizedLemma)
         }
 
+        let normalizedLemmasByFormMap = normalizedLemmasByForm.mapValues { Array($0).sorted() }
+        let normalizedFormEntries = normalizedLemmasByFormMap
+            .map { ConjugationFormIndexEntry(form: $0.key, lemmas: $0.value) }
+            .sorted { $0.form < $1.form }
+
         return ConjugationData(
             map: map,
             formsByLemma: formsByLemma.mapValues { Array($0).sorted() },
             exactLemmasByForm: exactLemmasByForm.mapValues { Array($0).sorted() },
-            normalizedLemmasByForm: normalizedLemmasByForm.mapValues { Array($0).sorted() }
+            normalizedLemmasByForm: normalizedLemmasByFormMap,
+            normalizedFormEntries: normalizedFormEntries
         )
     }
 }
 
-struct SearchIndexedWord: Sendable {
+fileprivate struct SearchIndexedWord: Sendable {
     let word: SimpleWord
     let normalizedWord: String
     let normalizedExamples: String
@@ -74,13 +88,15 @@ struct WordSearchIndex: Sendable {
         indexedWords: [],
         exactConjugationLemmasByForm: [:],
         normalizedConjugationLemmasByForm: [:],
+        normalizedConjugationFormEntries: [],
         wordsByNormalizedLemma: [:]
     )
 
-    let indexedWords: [SearchIndexedWord]
-    let exactConjugationLemmasByForm: [String: [String]]
-    let normalizedConjugationLemmasByForm: [String: [String]]
-    let wordsByNormalizedLemma: [String: [SimpleWord]]
+    private let indexedWords: [SearchIndexedWord]
+    private let exactConjugationLemmasByForm: [String: [String]]
+    private let normalizedConjugationLemmasByForm: [String: [String]]
+    private let normalizedConjugationFormEntries: [ConjugationFormIndexEntry]
+    private let wordsByNormalizedLemma: [String: [SimpleWord]]
 
     static func build(words: [SimpleWord], conjugationMap: [String: String]) -> WordSearchIndex {
         build(words: words, conjugationData: ConjugationData.build(from: conjugationMap))
@@ -112,11 +128,12 @@ struct WordSearchIndex: Sendable {
             indexedWords: indexedWords,
             exactConjugationLemmasByForm: conjugationData.exactLemmasByForm,
             normalizedConjugationLemmasByForm: conjugationData.normalizedLemmasByForm,
+            normalizedConjugationFormEntries: conjugationData.normalizedFormEntries,
             wordsByNormalizedLemma: wordsByNormalizedLemma
         )
     }
 
-    func bridgeWords(for query: String) -> [SimpleWord] {
+    private func bridgeWords(for query: String) -> [SimpleWord] {
         let exactQuery = SearchTextNormalizer.normalizeExact(query)
         let normalizedQuery = SearchTextNormalizer.normalize(query)
         guard !normalizedQuery.isEmpty else { return [] }
@@ -129,6 +146,18 @@ struct WordSearchIndex: Sendable {
             }
         }
 
+        if normalizedQuery.count >= 3 {
+            let startIndex = firstConjugationFormEntryIndex(notLessThan: normalizedQuery)
+            for entry in normalizedConjugationFormEntries[startIndex...] {
+                guard entry.form.hasPrefix(normalizedQuery) else { break }
+                guard entry.form != normalizedQuery else { continue }
+                for lemma in entry.lemmas where !lemma.hasPrefix(normalizedQuery) && seenLemmas.insert(lemma).inserted {
+                    orderedLemmas.append(lemma)
+                }
+                if orderedLemmas.count >= 8 { break }
+            }
+        }
+
         var matchedWords: [SimpleWord] = []
         var seenWordIDs: Set<String> = []
         for lemma in orderedLemmas {
@@ -137,6 +166,64 @@ struct WordSearchIndex: Sendable {
             }
         }
         return matchedWords
+    }
+
+    func searchResults(for rawQuery: String) -> [SimpleWord] {
+        let query = SearchTextNormalizer.normalize(rawQuery)
+        guard !query.isEmpty else { return [] }
+
+        var scored: [(word: SimpleWord, score: Int)] = []
+        scored.reserveCapacity(indexedWords.count)
+
+        for indexed in indexedWords {
+            guard let score = searchScore(for: indexed, query: query) else { continue }
+            scored.append((word: indexed.word, score: score))
+        }
+
+        var results = scored
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score < rhs.score }
+                if lhs.word.word.count != rhs.word.word.count { return lhs.word.word.count < rhs.word.word.count }
+                return lhs.word.word < rhs.word.word
+            }
+            .map(\.word)
+
+        for bridgeWord in bridgeWords(for: rawQuery).reversed() {
+            results.removeAll { $0.id == bridgeWord.id }
+            results.insert(bridgeWord, at: 0)
+        }
+
+        return results
+    }
+
+    private func searchScore(for indexed: SearchIndexedWord, query: String) -> Int? {
+        if indexed.normalizedWord == query {
+            return 0
+        }
+        if indexed.normalizedWord.hasPrefix(query) {
+            return 1
+        }
+        if indexed.normalizedWord.contains(query) {
+            return 2
+        }
+        if indexed.normalizedExamples.contains(query) {
+            return 5
+        }
+        return nil
+    }
+
+    private func firstConjugationFormEntryIndex(notLessThan query: String) -> Int {
+        var low = 0
+        var high = normalizedConjugationFormEntries.count
+        while low < high {
+            let mid = (low + high) / 2
+            if normalizedConjugationFormEntries[mid].form < query {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
     }
 }
 
@@ -176,6 +263,8 @@ public final class AppState: ObservableObject {
 
     @Published public var words: [SimpleWord] = []
     @Published public var spotlightSelectedWordId: String?
+    @Published public var widgetSelectedWordId: String?
+    @Published public var openMemberPaywallFromDeepLink = false
     @Published public var conjugationFormsByLemma: [String: [String]] = [:]
     @Published var wordSearchIndex: WordSearchIndex = .empty
     @Published public private(set) var hasCompletedInitialResourceLoad: Bool = false
@@ -291,7 +380,7 @@ public final class AppState: ObservableObject {
             applyLoadedCoreResources(coreResources)
             conjugationData = .empty
             conjugationFormsByLemma = [:]
-            wordSearchIndex = .empty
+            rebuildSearchIndex()
             hasCompletedInitialResourceLoad = true
 
             let deferredResources = await Self.loadDeferredResources(
@@ -392,6 +481,7 @@ public final class AppState: ObservableObject {
         
         // Member Unlocked
         memberUnlocked = userDefaults.bool(forKey: Keys.memberUnlocked)
+        WidgetDataService.writeMemberUnlocked(memberUnlocked)
         
         // Avatar Path
         if let savedAvatarPath = userDefaults.string(forKey: Keys.avatarPath) {
@@ -463,6 +553,7 @@ public final class AppState: ObservableObject {
     
     private func saveMemberUnlocked() {
         userDefaults.set(memberUnlocked, forKey: Keys.memberUnlocked)
+        WidgetDataService.writeMemberUnlocked(memberUnlocked)
     }
     
     private func saveAvatarPath() {
@@ -601,7 +692,7 @@ public final class AppState: ObservableObject {
         pendingSpotlightIndexTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 900_000_000)
             guard !Task.isCancelled, spotlightEnabled else { return }
-            SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma, spotlightEnabled: true)
+            SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma)
         }
     }
 }

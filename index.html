@@ -247,6 +247,7 @@
       position: absolute;
       width: 72px; height: 100px;
       left: -36px; top: -50px;
+      opacity: 0;
       border-radius: 9px;
       transform-style: preserve-3d;
       backface-visibility: visible;
@@ -549,7 +550,7 @@
     </div>
   </div>
 
-    <!-- FOOTER -->
+  <!-- FOOTER -->
   <footer>
     <p>© 2026 Croissante · <a href="https://x.com/croissante4u?s=21" target="_blank" rel="noopener">@croissante4u</a></p>
   </footer>
@@ -569,13 +570,21 @@
       'silence','voyage','nostalgie','étoile'
     ];
 
-    const COUNT   = WORDS.length;
-    const RADIUS  = 180;
-    const SPEED   = 60;   // deg/sec auto-rotate
+    const COUNT        = WORDS.length;
+    const RADIUS       = 180;
+    const SPEED        = 60;             // deg/sec auto-rotate
 
-    // View angles — draggable
-    let tiltX = -0.6;   // up/down (俯视)
-    let tiltZ =  17.2;   // twist
+    // Deal / entrance animation — mirroring Swift constants
+    const PILE_ANGLE          = Math.PI * 0.65;
+    const DEAL_DURATION       = 1.4;     // seconds
+    const DEAL_STAGGER        = 0.028;   // per card, as fraction of DEAL_DURATION
+    const COMPRESSED_STEPS    = 3.0;
+    const COMPRESSED_POWER    = 0.82;
+    const DEPTH_Z_SWITCH      = 0.42;
+
+    // View angles
+    let tiltX = -19.5;
+    let tiltZ  = 26.2;
 
     const DUST_COUNT = 9, DUST_CYCLE = 6000;
 
@@ -583,9 +592,10 @@
     const viewport = document.getElementById('galaxyViewport');
 
     // Build cards
-    const cardEls = WORDS.map((word) => {
+    const cardEls = WORDS.map((word, i) => {
       const el   = document.createElement('div');
       el.className = 'g-card';
+      el.style.zIndex = COUNT - i;   // initial deal z-order
       const span = document.createElement('span');
       span.className = 'g-card-word';
       span.textContent = word;
@@ -602,51 +612,77 @@
       return el;
     });
 
-    let orbitOffset = 0;
-    let isDragging  = false, lastX = null, lastY = null;
-    let inertiaX = 0, inertiaZ = 0;
-    let galaxyScale = window.innerWidth < 768 ? 0.55 : 1.0;
-    frame._last = null;
+    // Easing
+    function smoothStep(t) {
+      t = Math.min(1, Math.max(0, t));
+      return t * t * (3 - 2 * t);
+    }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    let orbitOffset  = 0;
+    let startTime    = null;
+    let animReady    = false;
+    setTimeout(() => { animReady = true; }, 120); // wait for page paint
+    let isDragging   = false, lastX = null, lastY = null;
+    frame._last      = null;
 
     function frame(now) {
+      if (!animReady) { requestAnimationFrame(frame); return; }
+      if (!startTime) startTime = now;
+      const elapsed = (now - startTime) / 1000;   // seconds since page load
       const dt = frame._last ? Math.min((now - frame._last) / 1000, 0.05) : 0;
       frame._last = now;
-      const sec = now / 1000;
 
-      if (!isDragging) {
-        orbitOffset -= SPEED * dt;
-        inertiaX *= 0.90; inertiaZ *= 0.90;
-        tiltX += inertiaX * dt;
-        tiltZ += inertiaZ * dt;
-        // Clamp view angles
-        tiltX = Math.max(-70, Math.min(0, tiltX));
-        tiltZ = Math.max(-40, Math.min(40, tiltZ));
-      }
+      if (!isDragging) orbitOffset -= SPEED * dt;
 
-      // Tilt the whole ring
       ring.style.transform = `scale(${galaxyScale}) rotateX(${tiltX}deg) rotateZ(${tiltZ}deg)`;
 
+      // Exact Swift logic
+      const orbitStep      = 2 * Math.PI / COUNT;
+      const orbitRad       = orbitOffset * Math.PI / 180;
+      const dealProgress   = Math.min(1, Math.max(0, elapsed / DEAL_DURATION));
+      const compressedSpan = COMPRESSED_STEPS * orbitStep;
+      const maxSlot        = Math.max(COUNT - 1, 1);
+
       for (let i = 0; i < COUNT; i++) {
-        const deg = orbitOffset + (i / COUNT) * 360;
-        const rad = deg * Math.PI / 180;
+        const releaseRank  = i;
+        const orbitRank    = i;                    // card 0 → nearest, last card → farthest CCW
+        const slotFraction = i / maxSlot;
 
-        const x = Math.cos(rad) * RADIUS;
-        const z = Math.sin(rad) * RADIUS;
+        // Staggered local progress — mirrors Swift dealStaggerPerCard logic
+        const localDelay   = (releaseRank * DEAL_STAGGER) / DEAL_DURATION;
+        const rawLocal     = Math.min(1, Math.max(0,
+          (dealProgress - localDelay) / Math.max(1 - localDelay, 0.001)
+        ));
+        const openProgress = smoothStep(rawLocal);
 
-        // Tangent-facing: thin edge points to center
-        const tx = -Math.sin(rad) * RADIUS;
-        const tz =  Math.cos(rad) * RADIUS;
+        // Start: compressed fan around pileAngle
+        // End:   evenly spaced orbit (card 0 goes farthest CCW)
+        // Negate both so deal fans clockwise, matching orbit rotation direction
+        const compressedOffset = -(compressedSpan / 2
+          - Math.pow(slotFraction, COMPRESSED_POWER) * compressedSpan);
+        const finalOffset = -orbitRank * orbitStep;
+        const angle = PILE_ANGLE + orbitRad
+          + lerp(compressedOffset, finalOffset, openProgress);
+
+        const x  = Math.cos(angle) * RADIUS;
+        const z  = Math.sin(angle) * RADIUS;
+        const tx = -Math.sin(angle) * RADIUS;
+        const tz =  Math.cos(angle) * RADIUS;
         const facing = Math.atan2(tx, tz) * (180 / Math.PI);
 
-        // Depth opacity: z in local ring space (-R=back, +R=front)
-        const depthT = (z + RADIUS) / (2 * RADIUS);
-        const opacity = 0.22 + 0.78 * depthT;
+        const depthT  = (z + RADIUS) / (2 * RADIUS);
+        const opacity = openProgress < 0.01 ? 0 : (0.22 + 0.78 * depthT);
 
+        cardEls[i].style.zIndex = openProgress < DEPTH_Z_SWITCH
+          ? COUNT - releaseRank
+          : Math.round(100 + z);
         cardEls[i].style.transform = `translate3d(${x}px, 0px, ${z}px) rotateY(${facing}deg)`;
         cardEls[i].style.opacity   = opacity.toFixed(3);
       }
 
       // Dust
+      const sec = now / 1000;
       for (let i = 0; i < DUST_COUNT; i++) {
         const phase = ((now / DUST_CYCLE + i / DUST_COUNT) % 1 + 1) % 1;
         const opac  = Math.sin(Math.PI * phase) * (0.74 + 0.26 * Math.sin(sec * 0.8 + i));
@@ -664,38 +700,34 @@
 
       requestAnimationFrame(frame);
     }
+
+    let galaxyScale = window.innerWidth < 768 ? 0.55 : 1.0;
     requestAnimationFrame(frame);
 
-    // ── Drag: horizontal → tiltZ, vertical → tiltX ──
-    viewport.addEventListener('mousedown', e => {
-      isDragging = true; lastX = e.clientX; lastY = e.clientY;
-    });
+    // Drag: horizontal → tiltZ, vertical → tiltX
+    viewport.addEventListener('mousedown', e => { isDragging = true; lastX = e.clientX; lastY = e.clientY; });
     window.addEventListener('mousemove', e => {
       if (!isDragging) return;
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      tiltZ = Math.max(-40, Math.min(40, tiltZ + dx * 0.3));  // horizontal → tiltZ
-      tiltX = Math.max(-70, Math.min(0,  tiltX - dy * 0.3));  // vertical   → tiltX
+      tiltZ = Math.max(-40, Math.min(40, tiltZ + dx * 0.3));
+      tiltX = Math.max(-70, Math.min(0,  tiltX - dy * 0.3));
     });
     window.addEventListener('mouseup', () => { isDragging = false; });
 
     viewport.addEventListener('touchstart', e => {
-      isDragging = true;
-      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+      isDragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
     }, { passive: true });
     viewport.addEventListener('touchmove', e => {
       if (!isDragging) return;
-      const dx = e.touches[0].clientX - lastX;
-      const dy = e.touches[0].clientY - lastY;
+      const dx = e.touches[0].clientX - lastX, dy = e.touches[0].clientY - lastY;
       lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
       tiltZ = Math.max(-40, Math.min(40, tiltZ + dx * 0.3));
-      tiltX = Math.max(-70, Math.min(0,  tiltX + dy * 0.3));
+      tiltX = Math.max(-70, Math.min(0,  tiltX - dy * 0.3));
       e.preventDefault();
     }, { passive: false });
     viewport.addEventListener('touchend', () => { isDragging = false; });
 
-    // Scroll wheel → scale galaxy ring
     viewport.addEventListener('wheel', e => {
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.80 : 1.20;

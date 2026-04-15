@@ -22,23 +22,20 @@ private struct SettingsAvatarBottomPreferenceKey: PreferenceKey {
     }
 }
 
-private enum GestureOnboardingState: String {
-    case pending
-    case seen
-}
+private struct AppIconPickerLayout {
+    let tileSize: CGFloat
+    let contentInset: CGFloat
+    let bottomInset: CGFloat
+    let initialDropTopInset: CGFloat
+    let initialDropSpacing: CGFloat
 
-private enum GestureOnboardingDefaults {
-    static let stateKey = "gesture_onboarding_state"
-}
-
-enum GestureOnboardingStep: Int, CaseIterable {
-    case swipeRight
-    case swipeLeft
-    case swipeDown
-    case pinch
-
-    var next: Self? {
-        Self(rawValue: rawValue + 1)
+    var sheetInsets: EdgeInsets {
+        EdgeInsets(
+            top: contentInset,
+            leading: contentInset,
+            bottom: bottomInset,
+            trailing: contentInset
+        )
     }
 }
 
@@ -46,32 +43,19 @@ public struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(GestureOnboardingDefaults.stateKey) private var gestureOnboardingStateRaw = ""
     @State private var discoverQueueIndex = 0
     @State private var searchSheetShowing = false
     @State private var selectedTab: MainTab = .explore
     @State private var lastContentTab: MainTab = .explore
     @State private var settingsGearSpinToken = 0
     @State private var spotlightWord: SimpleWord?
+    @State private var widgetOpenedWordId: String?
+    @State private var pendingSettingsMemberPaywall = false
     @State private var isGalaxyVisibleInExplore = false
-    @State private var isGestureOnboardingPending = false
-    @State private var gestureOnboardingStep: GestureOnboardingStep = .swipeRight
     @State private var pendingGalaxyTabBarRevealTask: Task<Void, Never>? = nil
     private let galaxyTabBarRevealDelay: UInt64 = 180_000_000
 
-    public init() {
-        let defaults = UserDefaults.standard
-        let resolvedState: String
-
-        if let savedState = defaults.string(forKey: GestureOnboardingDefaults.stateKey), !savedState.isEmpty {
-            resolvedState = savedState
-        } else {
-            resolvedState = GestureOnboardingState.pending.rawValue
-            defaults.set(resolvedState, forKey: GestureOnboardingDefaults.stateKey)
-        }
-
-        _isGestureOnboardingPending = State(initialValue: resolvedState == GestureOnboardingState.pending.rawValue)
-    }
+    public init() {}
 
     private var discoverWords: [SimpleWord] {
         srsManager.getLearningQueueWordsSnapshot()
@@ -98,38 +82,22 @@ public struct ContentView: View {
         appState.themeMode == .steppe
     }
 
-    private var shouldShowGestureOnboarding: Bool {
-        isGestureOnboardingPending &&
-        selectedTab == .explore &&
-        !discoverWords.isEmpty &&
-        appState.hasCompletedInitialResourceLoad &&
-        !searchSheetShowing &&
-        spotlightWord == nil
-    }
-
     private var exploreView: some View {
         DiscoverScreen(
             words: discoverWords,
             queueIndex: $discoverQueueIndex,
             isActiveTab: selectedTab == .explore,
-            gestureOnboardingStep: shouldShowGestureOnboarding ? gestureOnboardingStep : nil,
             onGalaxyVisibilityChanged: { [self] visible in
                 setExploreGalaxyVisibility(visible)
-                if visible && shouldShowGestureOnboarding && gestureOnboardingStep == .pinch {
-                    finishGestureOnboarding()
-                }
             },
             onSwipeForgot: { [self] id in
-                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
-                srsManager.markWordForgot(id); advanceDiscover()
+                markDiscoverWordForgot(id)
             },
             onSwipeMastered: { [self] id in
-                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
-                srsManager.markWordMastered(id); advanceDiscover()
+                markDiscoverWordMastered(id)
             },
             onSwipeBlurry: { [self] id in
-                if shouldShowGestureOnboarding { advanceGestureOnboarding(); return }
-                srsManager.markWordBlurry(id); advanceDiscover()
+                markDiscoverWordBlurry(id)
             }
         )
     }
@@ -144,7 +112,7 @@ public struct ContentView: View {
     }
 
     private var settingsView: some View {
-        SettingsScreen()
+        SettingsScreen(pendingMemberPaywall: $pendingSettingsMemberPaywall)
             .environmentObject(appState)
             .background {
                 wallpaperBackground
@@ -168,21 +136,13 @@ public struct ContentView: View {
                         .ignoresSafeArea()
                 }
             }
-            if shouldShowGestureOnboarding {
-                GestureOnboardingView(
-                    step: gestureOnboardingStep,
-                    onFinish: finishGestureOnboarding
-                )
-                .transition(.opacity)
-                .zIndex(1)
-            }
         }
         #if os(iOS)
         .background(
             SettingsTabGearAnimationBridge(
                 settingsIndex: 2,
                 spinToken: settingsGearSpinToken,
-                isTabBarHidden: isGalaxyVisibleInExplore || shouldShowGestureOnboarding
+                isTabBarHidden: isGalaxyVisibleInExplore
             )
                 .frame(width: 0, height: 0)
         )
@@ -213,55 +173,138 @@ public struct ContentView: View {
                 searchIndex: appState.wordSearchIndex
             )
         )
+        .onAppear {
+            guard appState.hasCompletedInitialResourceLoad else { return }
+            presentSpotlightWordIfAvailable(appState.spotlightSelectedWordId)
+            presentWidgetWordIfAvailable(appState.widgetSelectedWordId)
+        }
         .onChange(of: appState.level) { _, newLevel in
             srsManager.setTargetLevel(newLevel)
             advanceDiscover()
         }
-        .onChange(of: gestureOnboardingStateRaw) { _, newValue in
-            let isPending = newValue == GestureOnboardingState.pending.rawValue
-            isGestureOnboardingPending = isPending
-            if isPending {
-                gestureOnboardingStep = .swipeRight
-            }
-        }
         .onChange(of: appState.spotlightSelectedWordId) { _, wordId in
-            guard let wordId, let word = appState.words.first(where: { $0.id == wordId }) else { return }
-            appState.spotlightSelectedWordId = nil
-            spotlightWord = word
+            presentSpotlightWordIfAvailable(wordId)
+        }
+        .onChange(of: appState.widgetSelectedWordId) { _, wordId in
+            presentWidgetWordIfAvailable(wordId)
+        }
+        .onChange(of: appState.hasCompletedInitialResourceLoad) { _, loaded in
+            guard loaded else { return }
+            presentSpotlightWordIfAvailable(appState.spotlightSelectedWordId)
+            presentWidgetWordIfAvailable(appState.widgetSelectedWordId)
+        }
+        .onChange(of: appState.openMemberPaywallFromDeepLink) { _, open in
+            guard open else { return }
+            appState.openMemberPaywallFromDeepLink = false
+            selectedTab = .settings
+            pendingSettingsMemberPaywall = true
         }
         #if os(iOS)
         .fullScreenCover(item: $spotlightWord) { word in
+            let openedFromWidget = widgetOpenedWordId == word.id
             SearchSelectedWordCardView(
                 word: word,
                 themeMode: appState.themeMode,
                 dismissOnTap: true,
-                onDismiss: { spotlightWord = nil },
-                onSwipeForgot: { srsManager.markWordForgot($0) },
-                onSwipeMastered: { srsManager.markWordMastered($0) },
-                onSwipeBlurry: { srsManager.markWordBlurry($0) }
+                onDismiss: {
+                    spotlightWord = nil
+                    if openedFromWidget {
+                        widgetOpenedWordId = nil
+                    }
+                },
+                onSwipeForgot: { markPresentedWordForgot($0, openedFromWidget: openedFromWidget) },
+                onSwipeMastered: { markPresentedWordMastered($0, openedFromWidget: openedFromWidget) },
+                onSwipeBlurry: { markPresentedWordBlurry($0, openedFromWidget: openedFromWidget) }
             )
         }
         #endif
+    }
+
+    private func presentSpotlightWordIfAvailable(_ wordId: String?) {
+        guard let wordId else {
+            return
+        }
+        guard let word = appState.getWordById(wordId) else {
+            appState.spotlightSelectedWordId = nil
+            return
+        }
+
+        appState.spotlightSelectedWordId = nil
+        widgetOpenedWordId = nil
+        spotlightWord = word
+    }
+
+    private func presentWidgetWordIfAvailable(_ wordId: String?) {
+        guard let wordId,
+              let word = appState.getWordById(wordId) ?? appState.words.first(where: { $0.id == wordId }) else {
+            return
+        }
+
+        appState.widgetSelectedWordId = nil
+        widgetOpenedWordId = wordId
+        spotlightWord = word
+    }
+
+    private func markPresentedWordForgot(_ id: String, openedFromWidget: Bool) {
+        srsManager.markWordForgot(id, persistDuringInfinitePractice: true)
+        refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
+    }
+
+    private func markPresentedWordMastered(_ id: String, openedFromWidget: Bool) {
+        srsManager.markWordMastered(id, persistDuringInfinitePractice: true)
+        refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
+    }
+
+    private func markPresentedWordBlurry(_ id: String, openedFromWidget: Bool) {
+        srsManager.markWordBlurry(id, persistDuringInfinitePractice: true)
+        refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
+    }
+
+    private func refreshWidgetAfterMarking(wordId: String, openedFromWidget: Bool) {
+        guard openedFromWidget, appState.hasCompletedInitialResourceLoad else { return }
+        WidgetDataService.writeWidgetPool(
+            from: appState.words,
+            language: appState.language,
+            level: appState.level,
+            memberUnlocked: appState.memberUnlocked,
+            excluding: [wordId]
+        )
+        WidgetCenter.shared.reloadAllTimelines()
+        widgetOpenedWordId = nil
     }
 
     private func advanceDiscover() {
         discoverQueueIndex = 0
     }
 
-    private func advanceGestureOnboarding() {
-        if let next = gestureOnboardingStep.next {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                gestureOnboardingStep = next
-            }
-            return
-        }
-        finishGestureOnboarding()
+    private func markDiscoverWordForgot(_ id: String) {
+        let isInfinitePractice = srsManager.isInfinitePracticeActive
+        srsManager.markWordForgot(
+            id,
+            persistDuringInfinitePractice: isInfinitePractice,
+            affectsDailyProgress: !isInfinitePractice
+        )
+        advanceDiscover()
     }
 
-    private func finishGestureOnboarding() {
-        gestureOnboardingStateRaw = GestureOnboardingState.seen.rawValue
-        isGestureOnboardingPending = false
-        gestureOnboardingStep = .swipeRight
+    private func markDiscoverWordMastered(_ id: String) {
+        let isInfinitePractice = srsManager.isInfinitePracticeActive
+        srsManager.markWordMastered(
+            id,
+            persistDuringInfinitePractice: isInfinitePractice,
+            affectsDailyProgress: !isInfinitePractice
+        )
+        advanceDiscover()
+    }
+
+    private func markDiscoverWordBlurry(_ id: String) {
+        let isInfinitePractice = srsManager.isInfinitePracticeActive
+        srsManager.markWordBlurry(
+            id,
+            persistDuringInfinitePractice: isInfinitePractice,
+            affectsDailyProgress: !isInfinitePractice
+        )
+        advanceDiscover()
     }
 
     private func setExploreGalaxyVisibility(_ visible: Bool, delayReveal: Bool? = nil) {
@@ -579,17 +622,10 @@ extension SettingsTabGearAnimationBridge.Coordinator: UIGestureRecognizerDelegat
 }
 #endif
 
-private enum DiscoverCardDemoGesture: Equatable {
-    case swipeRight
-    case swipeLeft
-    case swipeDown
-}
-
 private struct DiscoverScreen: View {
     let words: [SimpleWord]
     @Binding var queueIndex: Int
     let isActiveTab: Bool
-    let gestureOnboardingStep: GestureOnboardingStep?
     let onGalaxyVisibilityChanged: (Bool) -> Void
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
@@ -607,11 +643,8 @@ private struct DiscoverScreen: View {
     @State private var pendingGalaxyQueueCommitTask: Task<Void, Never>? = nil
     @State private var pendingWidgetWriteTask: Task<Void, Never>? = nil
     @State private var pendingInitialDiscoverPreparationTask: Task<Void, Never>? = nil
-    @State private var pendingOnboardingGalaxyRevealTask: Task<Void, Never>? = nil
     @State private var isPreparingInitialDiscoverContent = true
-    @State private var onboardingGalaxyWords: [SimpleWord] = []
-    @State private var isOnboardingGalaxyVisible = false
-    @State private var animatePinchDemo = false
+    @State private var pendingAutoInfiniteTask: Task<Void, Never>? = nil
     private let galaxyTargetCount = 22
     private let galaxyActivationCompression: CGFloat = 0.16
     private let galaxyQueueCommitDelay: UInt64 = 90_000_000
@@ -639,26 +672,13 @@ private struct DiscoverScreen: View {
         hasSeenCardsInSession && words.isEmpty && srsManager.hasReachedDailyMasteryGoal
     }
 
-    private var demoGesture: DiscoverCardDemoGesture? {
-        switch gestureOnboardingStep {
-        case .swipeRight:
-            return .swipeRight
-        case .swipeLeft:
-            return .swipeLeft
-        case .swipeDown:
-            return .swipeDown
-        default:
-            return nil
-        }
-    }
-
-    private var isShowingOnboardingGalaxy: Bool {
-        gestureOnboardingStep == .pinch && isOnboardingGalaxyVisible && !onboardingGalaxyWords.isEmpty
-    }
-
     private var presentedWord: SimpleWord? {
-        guard !isShowingOnboardingGalaxy else { return nil }
-        return activeGalaxyTransition?.word ?? transitionPinnedWord ?? (!isGalaxyVisible ? word : nil)
+        activeGalaxyTransition?.word ?? transitionPinnedWord ?? (!isGalaxyVisible ? word : nil)
+    }
+
+    private var nextQueueWord: SimpleWord? {
+        guard words.count > queueIndex + 1 else { return nil }
+        return words[queueIndex + 1]
     }
 
     var body: some View {
@@ -680,16 +700,6 @@ private struct DiscoverScreen: View {
                         .transition(.identity)
                     }
 
-                    if isShowingOnboardingGalaxy {
-                        WordGalaxyOverlay(
-                            words: onboardingGalaxyWords,
-                            onSelectCard: { _ in },
-                            onDismiss: {}
-                        )
-                        .allowsHitTesting(false)
-                        .transition(.identity)
-                    }
-
                     if !appState.hasCompletedInitialResourceLoad || isPreparingInitialDiscoverContent {
                         ProgressView()
                             .progressViewStyle(.circular)
@@ -698,11 +708,11 @@ private struct DiscoverScreen: View {
                     } else if let presentedWord {
                         ActiveDiscoverCardHost(
                             word: presentedWord,
+                            peekNextWord: (activeGalaxyTransition == nil && transitionPinnedWord == nil) ? nextQueueWord : nil,
                             transitionRequest: activeGalaxyTransition,
                             containerSize: geo.size,
-                            allowsInteractions: (gestureOnboardingStep == nil || gestureOnboardingStep == .swipeRight || gestureOnboardingStep == .swipeLeft || gestureOnboardingStep == .swipeDown) && activeGalaxyTransition == nil && transitionPinnedWord == nil,
-                            isActiveTab: isActiveTab && gestureOnboardingStep == nil,
-                            scriptedGesture: demoGesture,
+                            allowsInteractions: activeGalaxyTransition == nil && transitionPinnedWord == nil,
+                            isActiveTab: isActiveTab,
                             onSwipeForgot: {
                                 onSwipeForgot($0)
                                 finishGalaxyTransition()
@@ -717,16 +727,11 @@ private struct DiscoverScreen: View {
                             },
                             onTransitionComplete: completeGalaxyTransition
                         )
-                    } else if !isGalaxyVisible, gestureOnboardingStep == nil, shouldShowCompletionCelebration {
-                        DeckCompletionCelebrationView(
-                            showContinueInfiniteButton: srsManager.canStartInfinitePractice,
-                            onContinueInfinite: {
-                                srsManager.startInfinitePractice()
-                            }
-                        )
+                    } else if !isGalaxyVisible, shouldShowCompletionCelebration {
+                        DeckCompletionCelebrationView()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                    } else if !isGalaxyVisible, gestureOnboardingStep == nil {
+                    } else if !isGalaxyVisible {
                         Group {
                             if srsManager.todayStudyState == .completed {
                                 DiscoverEmptyStateView(
@@ -757,7 +762,7 @@ private struct DiscoverScreen: View {
                 .animation(.easeInOut(duration: 0.26), value: words.isEmpty)
                 #if os(iOS)
                 .background(
-                    ExplorePinchGestureBridge(isEnabled: isActiveTab && word != nil && !isGalaxyVisible && activeGalaxyTransition == nil && (gestureOnboardingStep == nil || gestureOnboardingStep == .pinch)) { event in
+                    ExplorePinchGestureBridge(isEnabled: isActiveTab && word != nil && !isGalaxyVisible && activeGalaxyTransition == nil) { event in
                         handleGalaxyPinch(event, containerFrame: geo.frame(in: .global))
                     }
                     .frame(width: 0, height: 0)
@@ -765,13 +770,6 @@ private struct DiscoverScreen: View {
                 #endif
             }
             .padding(.horizontal, 20)
-            .overlay(alignment: .center) {
-                if gestureOnboardingStep == .pinch && !isGalaxyVisible {
-                    OnboardingPinchDemoView(animate: animatePinchDemo, isDarkMode: isDarkMode)
-                        .offset(y: 240)
-                        .transition(.opacity)
-                }
-            }
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .onAppear {
@@ -782,7 +780,6 @@ private struct DiscoverScreen: View {
             if !words.isEmpty {
                 hasSeenCardsInSession = true
             }
-            syncGestureOnboardingDemo(for: gestureOnboardingStep)
         }
         .onChange(of: words.map(\.id).sorted()) { _, ids in
             if !ids.isEmpty {
@@ -794,11 +791,11 @@ private struct DiscoverScreen: View {
             if activeGalaxyTransition == nil, transitionPinnedWord?.id == newWordId {
                 transitionPinnedWord = nil
             }
-            if gestureOnboardingStep == .pinch, newWordId != nil {
-                syncGestureOnboardingDemo(for: gestureOnboardingStep)
-            }
         }
         .onChange(of: appState.level) { _, _ in
+            scheduleWidgetDataWrite()
+        }
+        .onChange(of: appState.memberUnlocked) { _, _ in
             scheduleWidgetDataWrite()
         }
         .onChange(of: appState.hasCompletedInitialResourceLoad) { _, loaded in
@@ -815,15 +812,27 @@ private struct DiscoverScreen: View {
             dismissGalaxyBackdrop()
             transitionPinnedWord = nil
         }
-        .onChange(of: gestureOnboardingStep) { _, newValue in
-            syncGestureOnboardingDemo(for: newValue)
+        .onChange(of: shouldShowCompletionCelebration) { _, showing in
+            if showing {
+                scheduleAutoInfinitePractice()
+            } else {
+                pendingAutoInfiniteTask?.cancel()
+                pendingAutoInfiniteTask = nil
+            }
         }
         .onDisappear {
-            pendingOnboardingGalaxyRevealTask?.cancel()
-            pendingOnboardingGalaxyRevealTask = nil
-            if isOnboardingGalaxyVisible {
-                onGalaxyVisibilityChanged(false)
-            }
+            pendingAutoInfiniteTask?.cancel()
+            pendingAutoInfiniteTask = nil
+        }
+    }
+
+    private func scheduleAutoInfinitePractice() {
+        pendingAutoInfiniteTask?.cancel()
+        pendingAutoInfiniteTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            srsManager.completeDailyGoalAndEnterInfinitePractice()
+            pendingAutoInfiniteTask = nil
         }
     }
 
@@ -878,16 +887,12 @@ private struct DiscoverScreen: View {
 
     private func writeWidgetData() {
         guard appState.hasCompletedInitialResourceLoad else { return }
-        let level = appState.level
-        let filtered = level == "All" ? appState.words : appState.words.filter { $0.level == level }
-        let pool = filtered.shuffled().prefix(50).map {
-            WidgetWordData(
-                id: $0.id, word: $0.word, tag: $0.tag, level: $0.level,
-                translationEn: $0.translationEn, translationZh: $0.translationZh,
-                exampleFr: $0.exampleFr, exampleEn: $0.exampleEn, exampleZh: $0.exampleZh
-            )
-        }
-        WidgetDataService.writeWidgetPool(pool, language: appState.language, level: level)
+        WidgetDataService.writeWidgetPool(
+            from: appState.words,
+            language: appState.language,
+            level: appState.level,
+            memberUnlocked: appState.memberUnlocked
+        )
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -968,33 +973,6 @@ private struct DiscoverScreen: View {
         onGalaxyVisibilityChanged(false)
         galaxyPinchLatched = false
         galaxyWords = []
-    }
-
-    private func syncGestureOnboardingDemo(for step: GestureOnboardingStep?) {
-        pendingOnboardingGalaxyRevealTask?.cancel()
-        pendingOnboardingGalaxyRevealTask = nil
-
-        if isOnboardingGalaxyVisible {
-            onGalaxyVisibilityChanged(false)
-        }
-        isOnboardingGalaxyVisible = false
-
-        guard step == .pinch, let word else {
-            onboardingGalaxyWords = []
-            return
-        }
-
-        let generatedWords = buildGalaxyWords(excluding: word.id)
-        if generatedWords.isEmpty {
-            onboardingGalaxyWords = Array(appState.words.filter { $0.id != word.id }.prefix(galaxyTargetCount))
-        } else {
-            onboardingGalaxyWords = generatedWords
-        }
-
-        animatePinchDemo = false
-        withAnimation(.easeInOut(duration: 1.05).repeatForever(autoreverses: true)) {
-            animatePinchDemo = true
-        }
     }
 
     #if os(iOS)
@@ -1509,13 +1487,31 @@ private func galaxyAccentBorder(isDarkMode: Bool) -> LinearGradient {
     )
 }
 
+private enum DiscoverCardLayout {
+    static let horizontalInset: CGFloat = 20
+    static let horizontalInsetTotal: CGFloat = horizontalInset * 2
+    private static let cardBodyVerticalPaddingTotal: CGFloat = 48
+
+    static func contentWidth(forScreenWidth width: CGFloat) -> CGFloat {
+        max(width - horizontalInsetTotal, 0)
+    }
+
+    static func cardHeight(forCardWidth width: CGFloat) -> CGFloat {
+        max(width - cardBodyVerticalPaddingTotal, 0)
+    }
+
+    static func restingCardYOffset(containerHeight: CGFloat) -> CGFloat {
+        -min(56, max(36, containerHeight * 0.06))
+    }
+}
+
 private struct ActiveDiscoverCardHost: View {
     let word: SimpleWord
+    let peekNextWord: SimpleWord?
     let transitionRequest: GalaxySelectedCardTransitionRequest?
     let containerSize: CGSize
     let allowsInteractions: Bool
     let isActiveTab: Bool
-    let scriptedGesture: DiscoverCardDemoGesture?
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
@@ -1523,8 +1519,18 @@ private struct ActiveDiscoverCardHost: View {
 
     @State private var animationStart = Date()
     @State private var hasCompletedTransition = false
+    @State private var swipeInOffsetY: CGFloat = 0
+    @State private var swipeInScale: CGFloat = 1.0
+    @State private var swipeInOpacity: Double = 1.0
+    @State private var topCardDrag: CGSize = .zero
 
     private let transitionDuration: Double = 0.48
+    private var restingCardYOffset: CGFloat {
+        DiscoverCardLayout.restingCardYOffset(containerHeight: containerSize.height)
+    }
+    private var restingCardContentHeight: CGFloat {
+        DiscoverCardLayout.cardHeight(forCardWidth: containerSize.width)
+    }
 
     var body: some View {
         Group {
@@ -1559,6 +1565,23 @@ private struct ActiveDiscoverCardHost: View {
             animationStart = Date()
             hasCompletedTransition = false
         }
+        .onChange(of: word.id) { _, _ in
+            guard transitionRequest == nil else { return }
+            let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
+            let wasFullyRevealed = dragMagnitude / 150.0 >= 0.95
+            topCardDrag = .zero
+            guard !wasFullyRevealed else { return }
+            swipeInOffsetY = 44
+            swipeInScale = 0.94
+            swipeInOpacity = 0
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.70)) {
+                swipeInOffsetY = 0
+                swipeInScale = 1.0
+            }
+            withAnimation(.easeIn(duration: 0.7)) {
+                swipeInOpacity = 1.0
+            }
+        }
     }
 
     @ViewBuilder
@@ -1566,28 +1589,70 @@ private struct ActiveDiscoverCardHost: View {
         let detailProgress = transitionDetailProgress(progress: progress, transitionRequest: transitionRequest)
         let isTransitioning = transitionRequest != nil
         let glowStrength = isTransitioning ? min(1.0, detailProgress) : 1.0
+        let cardContentOpacity = isTransitioning ? 1.0 : swipeInOpacity
         let interactionEnabled = !isTransitioning && allowsInteractions
+        let cardYOffset = restingCardYOffset * CGFloat(detailProgress)
         let state: SelectedGalaxyCardState = transitionRequest.map {
             transitionRenderState(for: $0, targetCardWidth: containerSize.width, progress: progress)
         } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
 
-        DiscoverCard(
-            word: word,
-            screenWidth: containerSize.width,
-            cardWidth: containerSize.width,
-            cardHeight: max(containerSize.width - 48, 0),
-            isActiveTab: isActiveTab && interactionEnabled,
-            detailProgress: detailProgress,
-            glowStrength: glowStrength,
-            interactionsEnabled: interactionEnabled,
-            scriptedGesture: scriptedGesture,
-            onSwipeForgot: onSwipeForgot,
-            onSwipeMastered: onSwipeMastered,
-            onSwipeBlurry: onSwipeBlurry
-        )
-        .id(word.id)
+        let showPeekUnderlay = transitionRequest == nil && peekNextWord != nil
+        let dragMagnitude = sqrt(topCardDrag.width * topCardDrag.width + topCardDrag.height * topCardDrag.height)
+        let t = min(1.0, dragMagnitude / (containerSize.width * 0.65))
+        let peekProgress = t * t * t
+
+        ZStack {
+            if showPeekUnderlay, let peek = peekNextWord {
+                DiscoverCard(
+                    word: peek,
+                    screenWidth: containerSize.width,
+                    cardWidth: containerSize.width,
+                    cardHeight: restingCardContentHeight,
+                    isActiveTab: false,
+                    detailProgress: 1,
+                    glowStrength: 0.32,
+                    contentOpacity: 1,
+                    interactionsEnabled: false,
+                    onSwipeForgot: { _ in },
+                    onSwipeMastered: { _ in },
+                    onSwipeBlurry: { _ in }
+                )
+                .id(peek.id)
+                .scaleEffect(0.94 + 0.06 * peekProgress)
+                .offset(y: 44.0 * (1.0 - peekProgress))
+                .opacity(Double(peekProgress))
+                .allowsHitTesting(false)
+            }
+
+            DiscoverCard(
+                word: word,
+                screenWidth: containerSize.width,
+                cardWidth: containerSize.width,
+                cardHeight: restingCardContentHeight,
+                isActiveTab: isActiveTab && interactionEnabled,
+                detailProgress: detailProgress,
+                glowStrength: glowStrength,
+                contentOpacity: cardContentOpacity,
+                interactionsEnabled: interactionEnabled,
+                onSwipeForgot: onSwipeForgot,
+                onSwipeMastered: onSwipeMastered,
+                onSwipeBlurry: onSwipeBlurry,
+                onDragChanged: { offset in
+                    if offset.width == 0 && offset.height == 0 {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            topCardDrag = .zero
+                        }
+                    } else {
+                        topCardDrag = offset
+                    }
+                }
+            )
+            .id(word.id)
+            .offset(y: swipeInOffsetY)
+            .scaleEffect(swipeInScale)
+        }
         .frame(width: containerSize.width, height: containerSize.height)
-        .position(x: containerSize.width / 2, y: containerSize.height / 2)
+        .position(x: containerSize.width / 2, y: containerSize.height / 2 + cardYOffset)
         .allowsHitTesting(!isTransitioning)
         .rotation3DEffect(
             .degrees(state.tiltY),
@@ -1685,8 +1750,9 @@ private struct GalaxyWordCard: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
 
-    init(word: SimpleWord) {
+    init(word: SimpleWord, materialEnabled: Bool = true) {
         self.word = word
+        self.materialEnabled = materialEnabled
     }
 
     private enum CardFontWeight {
@@ -1710,6 +1776,7 @@ private struct GalaxyWordCard: View {
         case .sfPro: return .system(size: 9.5, weight: .bold, design: .default)
         case .sfRounded: return .system(size: 9.5, weight: .bold, design: .rounded)
         case .avenirNext: return .custom("AvenirNext-Bold", size: 9.5)
+        case .newYork: return .system(size: 9.5, weight: .bold, design: .serif)
         }
     }
 
@@ -1898,6 +1965,7 @@ struct SearchSelectedWordCardView: View {
     let themeMode: ThemeMode
     let allowsBlurrySwipe: Bool
     let dismissOnTap: Bool
+    let embeddedInTabView: Bool
     let onDismiss: () -> Void
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
@@ -1908,6 +1976,7 @@ struct SearchSelectedWordCardView: View {
         themeMode: ThemeMode = .system,
         allowsBlurrySwipe: Bool = true,
         dismissOnTap: Bool = false,
+        embeddedInTabView: Bool = false,
         onDismiss: @escaping () -> Void,
         onSwipeForgot: @escaping (String) -> Void,
         onSwipeMastered: @escaping (String) -> Void,
@@ -1917,6 +1986,7 @@ struct SearchSelectedWordCardView: View {
         self.themeMode = themeMode
         self.allowsBlurrySwipe = allowsBlurrySwipe
         self.dismissOnTap = dismissOnTap
+        self.embeddedInTabView = embeddedInTabView
         self.onDismiss = onDismiss
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
@@ -1924,35 +1994,50 @@ struct SearchSelectedWordCardView: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
-    private var backgroundGradient: LinearGradient {
-        AppColors.appBackgroundGradient(themeMode: themeMode, isDarkMode: colorScheme == .dark)
+
+    private var showHomeWallpaper: Bool {
+        themeMode == .steppe
     }
+
+    #if os(iOS)
+    private static let exploreTabBarHeight: CGFloat = 49
+    #endif
 
     var body: some View {
         GeometryReader { geo in
-            let availableWidth = max(geo.size.width - 40, 0)
-            let discoverCardWidth = availableWidth
-            let discoverCardHeight = max(discoverCardWidth - 48, 0)
+            let contentWidth = DiscoverCardLayout.contentWidth(forScreenWidth: geo.size.width)
+            let cardHeight = DiscoverCardLayout.cardHeight(forCardWidth: contentWidth)
+            #if os(iOS)
+            let containerHeight: CGFloat = {
+                if embeddedInTabView { return geo.size.height }
+                return max(0, geo.size.height - Self.exploreTabBarHeight)
+            }()
+            #else
+            let containerHeight = geo.size.height
+            #endif
+            let cardYOffset = DiscoverCardLayout.restingCardYOffset(containerHeight: containerHeight)
             ZStack {
                 if dismissOnTap {
                     ThemedBackgroundView(
                         themeMode: themeMode,
-                        isDarkMode: colorScheme == .dark
+                        isDarkMode: colorScheme == .dark,
+                        showWallpaper: showHomeWallpaper
                     )
                         .contentShape(Rectangle())
                         .onTapGesture { onDismiss() }
                 } else {
                     ThemedBackgroundView(
                         themeMode: themeMode,
-                        isDarkMode: colorScheme == .dark
+                        isDarkMode: colorScheme == .dark,
+                        showWallpaper: showHomeWallpaper
                     )
                 }
 
                 DiscoverCard(
                     word: word,
-                    screenWidth: geo.size.width,
-                    cardWidth: discoverCardWidth,
-                    cardHeight: discoverCardHeight,
+                    screenWidth: contentWidth,
+                    cardWidth: contentWidth,
+                    cardHeight: cardHeight,
                     isActiveTab: true,
                     resetTransformAfterSwipe: false,
                     allowsBlurrySwipe: allowsBlurrySwipe,
@@ -1976,24 +2061,13 @@ struct SearchSelectedWordCardView: View {
                         }
                     }
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 20)
+                .id(word.id)
+                .frame(width: contentWidth, height: containerHeight)
+                .position(x: geo.size.width / 2, y: containerHeight / 2 + cardYOffset)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .interactiveDismissDisabled()
-    }
-}
-
-private struct OnboardingPinchDemoView: View {
-    let animate: Bool
-    let isDarkMode: Bool
-
-    var body: some View {
-        Image(systemName: "hand.pinch")
-            .font(.system(size: 52, weight: .thin))
-            .foregroundStyle(isDarkMode ? Color.white.opacity(0.45) : Color.black.opacity(0.25))
-            .scaleEffect(animate ? 0.8 : 1.1)
-            .allowsHitTesting(false)
     }
 }
 
@@ -2022,10 +2096,7 @@ private struct DiscoverEmptyStateView: View {
 }
 
 private struct DeckCompletionCelebrationView: View {
-    let showContinueInfiniteButton: Bool
-    let onContinueInfinite: () -> Void
     @EnvironmentObject private var appState: AppState
-    @Environment(\.colorScheme) private var colorScheme
     @State private var burstProgress: CGFloat = 0
     @State private var emojiPulse = false
     @State private var textLift = false
@@ -2036,18 +2107,33 @@ private struct DeckCompletionCelebrationView: View {
         Color(red: 1.00, green: 0.74, blue: 0.22),
         Color(red: 1.00, green: 0.45, blue: 0.34)
     ]
-    private var continueButtonTextColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.92) : Color(red: 0.10, green: 0.13, blue: 0.18)
+
+    private func celebrationFont(_ textStyle: Font.TextStyle, weight: Font.Weight) -> Font {
+        switch appState.cardFontStyle {
+        case .sfPro:
+            return .system(textStyle, design: .default, weight: weight)
+        case .sfRounded:
+            return .system(textStyle, design: .rounded, weight: weight)
+        case .newYork:
+            return .system(textStyle, design: .serif, weight: weight)
+        case .avenirNext:
+            let base: CGFloat
+            switch textStyle {
+            case .title: base = 28
+            case .subheadline: base = 15
+            default: base = 17
+            }
+            return Font.custom(celebrationAvenirName(for: weight), size: base, relativeTo: textStyle)
+        }
     }
-    private var continueButtonFillColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.14)
-            : Color(red: 0.91, green: 0.96, blue: 0.94)
-    }
-    private var continueButtonBorderColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.22)
-            : Color(red: 0.68, green: 0.84, blue: 0.77)
+
+    private func celebrationAvenirName(for weight: Font.Weight) -> String {
+        switch weight {
+        case .bold: return "AvenirNext-Bold"
+        case .semibold: return "AvenirNext-DemiBold"
+        case .medium: return "AvenirNext-Medium"
+        default: return "AvenirNext-Regular"
+        }
     }
 
     var body: some View {
@@ -2096,44 +2182,14 @@ private struct DeckCompletionCelebrationView: View {
                 }
                 .scaleEffect(emojiPulse ? 1.0 : 0.78)
 
-                if showContinueInfiniteButton {
-                    VStack(spacing: 8) {
-                        Text(appState.localized("Want more practice now?", "还想继续练习？", "और अभ्यास करना चाहते हैं?"))
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.62) : Color.black.opacity(0.50))
-
-                        Button {
-                            onContinueInfinite()
-                        } label: {
-                            Text(appState.localized("Continue ∞", "继续∞加练", "जारी रखें ∞"))
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundStyle(continueButtonTextColor)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 11)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(continueButtonFillColor)
-                                )
-                                .overlay(
-                                    Capsule(style: .continuous)
-                                        .stroke(continueButtonBorderColor, lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 2)
-                    .padding(.bottom, 4)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-
-                Text(appState.localized("Deck Complete!", "今日卡片已完成！", "आज का डेक पूरा!"))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.84))
+                Text(appState.localized("Amazing, today's goal complete!", "太棒了，今日目标已完成！", "शानदार, आज का लक्ष्य पूरा!"))
+                    .font(celebrationFont(.title, weight: .bold))
+                    .foregroundStyle(.secondary)
                     .offset(y: textLift ? -2 : 2)
 
-                Text(appState.localized("Great job. See you tomorrow.", "太棒了，明天继续。", "बहुत बढ़िया, कल फिर मिलते हैं।"))
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.62) : Color.black.opacity(0.52))
+                Text(appState.localized("More cards coming up…", "更多卡片即将出现…", "और कार्ड आ रहे हैं…"))
+                    .font(celebrationFont(.subheadline, weight: .medium))
+                    .foregroundStyle(.tertiary)
                     .offset(y: textLift ? -1 : 1)
             }
             .multilineTextAlignment(.center)
@@ -2183,8 +2239,8 @@ private struct DiscoverCard: View {
     let isActiveTab: Bool
     let detailProgress: Double
     let glowStrength: Double
+    let contentOpacity: Double
     let interactionsEnabled: Bool
-    let scriptedGesture: DiscoverCardDemoGesture?
     let resetTransformAfterSwipe: Bool
     let allowsBlurrySwipe: Bool
     let onSwipeDownAction: (() -> Void)?
@@ -2192,6 +2248,7 @@ private struct DiscoverCard: View {
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
+    let onDragChanged: ((CGSize) -> Void)?
 
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
@@ -2199,7 +2256,6 @@ private struct DiscoverCard: View {
     @State private var dragRotation: Angle = .zero
     @State private var isSwipeCompleting = false
     @State private var pendingSpeechTask: Task<Void, Never>?
-    @State private var demoLoopTask: Task<Void, Never>?
     @State private var displayedWord: SimpleWord
     @State private var allSenses: [SimpleWord] = []
     @State private var currentSensePosition: Int = 0
@@ -2212,15 +2268,16 @@ private struct DiscoverCard: View {
         isActiveTab: Bool,
         detailProgress: Double = 1,
         glowStrength: Double = 1,
+        contentOpacity: Double = 1,
         interactionsEnabled: Bool = true,
-        scriptedGesture: DiscoverCardDemoGesture? = nil,
         resetTransformAfterSwipe: Bool = true,
         allowsBlurrySwipe: Bool = true,
         onSwipeDownAction: (() -> Void)? = nil,
         onSwipeUpWithoutAction: (() -> Void)? = nil,
         onSwipeForgot: @escaping (String) -> Void,
         onSwipeMastered: @escaping (String) -> Void,
-        onSwipeBlurry: @escaping (String) -> Void
+        onSwipeBlurry: @escaping (String) -> Void,
+        onDragChanged: ((CGSize) -> Void)? = nil
     ) {
         self.word = word
         self.screenWidth = screenWidth
@@ -2229,8 +2286,8 @@ private struct DiscoverCard: View {
         self.isActiveTab = isActiveTab
         self.detailProgress = detailProgress
         self.glowStrength = glowStrength
+        self.contentOpacity = contentOpacity
         self.interactionsEnabled = interactionsEnabled
-        self.scriptedGesture = scriptedGesture
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
         self.allowsBlurrySwipe = allowsBlurrySwipe
         self.onSwipeDownAction = onSwipeDownAction
@@ -2238,6 +2295,7 @@ private struct DiscoverCard: View {
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
         self.onSwipeBlurry = onSwipeBlurry
+        self.onDragChanged = onDragChanged
         _displayedWord = State(initialValue: word)
     }
 
@@ -2289,71 +2347,28 @@ private struct DiscoverCard: View {
         max(cardWidth ?? screenWidth, 0)
     }
     private var resolvedCardHeight: CGFloat {
-        max(cardHeight ?? max(resolvedCardWidth - 48, 0), 0)
+        max(cardHeight ?? DiscoverCardLayout.cardHeight(forCardWidth: resolvedCardWidth), 0)
     }
     private var isDarkMode: Bool { colorScheme == .dark }
     private var secondaryTextColor: Color {
         isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.42)
     }
 
-    private func demoTargetOffset(for gesture: DiscoverCardDemoGesture) -> CGSize {
-        switch gesture {
-        case .swipeRight:
-            return CGSize(width: min(resolvedCardWidth * 0.38, 140), height: 0)
-        case .swipeLeft:
-            return CGSize(width: -min(resolvedCardWidth * 0.38, 140), height: 0)
-        case .swipeDown:
-            return CGSize(width: 0, height: min(resolvedCardHeight * 0.24, 96))
-        }
+    private var swipeHintTextColor: Color {
+        Color.primary.opacity(isDarkMode ? 0.38 : 0.42)
     }
 
-    private func demoTargetRotation(for gesture: DiscoverCardDemoGesture) -> Angle {
-        switch gesture {
-        case .swipeRight:
-            return .degrees(7)
-        case .swipeLeft:
-            return .degrees(-7)
-        case .swipeDown:
-            return .zero
-        }
-    }
-
-    @MainActor
-    private func stopDemoLoop(resetTransform: Bool) {
-        demoLoopTask?.cancel()
-        demoLoopTask = nil
-        guard resetTransform else { return }
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-            dragOffset = .zero
-            dragRotation = .zero
-        }
-    }
-
-    @MainActor
-    private func restartDemoLoopIfNeeded() {
-        guard let scriptedGesture, !isSwipeCompleting else {
-            stopDemoLoop(resetTransform: true)
-            return
-        }
-
-        demoLoopTask?.cancel()
-        demoLoopTask = Task { @MainActor in
-            dragOffset = .zero
-            dragRotation = .zero
-
-            while !Task.isCancelled {
-                withAnimation(.easeInOut(duration: 0.9)) {
-                    dragOffset = demoTargetOffset(for: scriptedGesture)
-                    dragRotation = demoTargetRotation(for: scriptedGesture)
-                }
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                guard !Task.isCancelled else { return }
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-                    dragOffset = .zero
-                    dragRotation = .zero
-                }
-                try? await Task.sleep(nanoseconds: 800_000_000)
-            }
+    private func swipeHintFont() -> Font {
+        let scaled = UIFontMetrics(forTextStyle: .title3).scaledValue(for: 20)
+        switch appState.cardFontStyle {
+        case .sfPro:
+            return .system(size: scaled, weight: .semibold, design: .default)
+        case .sfRounded:
+            return .system(size: scaled, weight: .semibold, design: .rounded)
+        case .avenirNext:
+            return .custom("AvenirNext-DemiBold", size: scaled)
+        case .newYork:
+            return .system(size: scaled, weight: .semibold, design: .serif)
         }
     }
 
@@ -2366,7 +2381,7 @@ private struct DiscoverCard: View {
         guard !trimmedWord.isEmpty else { return }
         
         OpenAITTSService.stopPlayback()
-        OpenAITTSService.speakText(trimmedWord, language: "fr-FR")
+        OpenAITTSService.speakText(trimmedWord, language: "fr-FR", contentType: .word)
     }
 
     private func speakExampleSentence() {
@@ -2374,7 +2389,7 @@ private struct DiscoverCard: View {
         guard !trimmedExample.isEmpty else { return }
 
         OpenAITTSService.stopPlayback()
-        OpenAITTSService.speakText(trimmedExample, language: "fr-FR")
+        OpenAITTSService.speakText(trimmedExample, language: "fr-FR", contentType: .sentence)
     }
 
     private func cancelScheduledSpeech() {
@@ -2461,162 +2476,143 @@ private struct DiscoverCard: View {
 
     var body: some View {
         ZStack {
-            if forgotHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.red)
-                    Text(appState.localized("Forgot", "忘记", "भूल गया"))
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.red)
+            VStack(spacing: 10) {
+                if noActionHintOpacity > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(secondaryTextColor)
+                        Text(appState.localized("No action", "无操作", "कोई कार्रवाई नहीं"))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(secondaryTextColor)
+                    }
+                    .opacity(noActionHintOpacity)
+                    .frame(maxWidth: resolvedCardWidth)
                 }
-                .rotationEffect(.degrees(-9))
-                .opacity(forgotHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .trailing)
-                .padding(.trailing, 20)
-            }
 
-            if masteredHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.green)
-                    Text(appState.localized("Mastered", "掌握", "सीख लिया"))
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.green)
-                }
-                .rotationEffect(.degrees(9))
-                .opacity(masteredHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .leading)
-                .padding(.leading, 20)
-            }
-
-            if allowsBlurrySwipe && blurryHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "questionmark.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(.orange)
-                    Text(appState.localized("Blurry", "模糊", "धुंधला"))
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.orange)
-                }
-                .rotationEffect(.degrees(7))
-                .opacity(blurryHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .top)
-                .offset(y: -28)
-            }
-
-            if noActionHintOpacity > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(secondaryTextColor)
-                    Text(appState.localized("No action", "无操作", "कोई कार्रवाई नहीं"))
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(secondaryTextColor)
-                }
-                .opacity(noActionHintOpacity)
-                .frame(width: resolvedCardWidth, height: resolvedCardHeight, alignment: .top)
-                .padding(.top, 20)
-            }
-
-            CardBody(
-                word: displayedWord,
-                cardWidth: cardWidth ?? 0,
-                cardHeight: cardHeight ?? 0,
-                detailProgress: detailProgress,
-                onTitleTap: { [self] in cancelScheduledSpeech(); speakWord() },
-                onDetailTap: { [self] in cancelScheduledSpeech(); speakExampleSentence() }
-            )
-                .overlay(alignment: .bottomTrailing) {
-                    bottomMetaBar
-                        .padding(.trailing, 12)
-                        .padding(.bottom, 12)
-                        .opacity(bottomMetaReveal)
-                }
-                .modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
-                .offset(dragOffset)
-                .rotationEffect(dragRotation)
-                .allowsHitTesting(interactionsEnabled)
-                .gesture(
-                    DragGesture(minimumDistance: 15)
-                        .onChanged { v in
-                            guard interactionsEnabled, !isSwipeCompleting else { return }
-                            if scriptedGesture != nil {
-                                stopDemoLoop(resetTransform: false)
-                            }
-                            dragOffset = v.translation
-                            dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
-                        }
-                        .onEnded { v in
-                            guard interactionsEnabled, !isSwipeCompleting else { return }
-                            let dx = v.translation.width
-                            let dy = v.translation.height
-                            if dx < -swipeThreshold {
-                                let swipedWordId = word.id
-                                FeedbackService.swipeForgot()
-                                completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
-                                    onSwipeForgot(swipedWordId)
-                                }
-                            } else if dx > swipeThreshold {
-                                let swipedWordId = word.id
-                                FeedbackService.swipeMastered()
-                                completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
-                                    onSwipeMastered(swipedWordId)
-                                }
-                            } else if dy > swipeThreshold, let onSwipeDownAction {
-                                FeedbackService.swipeBlurry()
-                                completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
-                            } else if dy > swipeThreshold && allowsBlurrySwipe {
-                                let swipedWordId = word.id
-                                FeedbackService.swipeBlurry()
-                                completeSwipe(to: CGSize(width: 0, height: 400)) {
-                                    onSwipeBlurry(swipedWordId)
-                                }
-                            } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
-                                FeedbackService.swipeNoAction()
-                                onSwipeUpWithoutAction()
-                            } else {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    dragOffset = .zero
-                                    dragRotation = .zero
-                                }
-                            }
-                        }
+                CardBody(
+                    word: displayedWord,
+                    cardWidth: cardWidth ?? 0,
+                    cardHeight: cardHeight ?? 0,
+                    detailProgress: detailProgress,
+                    contentOpacity: contentOpacity,
+                    onTitleTap: { [self] in cancelScheduledSpeech(); speakWord() },
+                    onDetailTap: { [self] in cancelScheduledSpeech(); speakExampleSentence() }
                 )
-                .onChange(of: appState.autoPlay) { _, enabled in
-                    if !enabled {
-                        stopSpeechPlayback()
+                    .overlay(alignment: .bottomTrailing) {
+                        bottomMetaBar
+                            .padding(.trailing, 12)
+                            .padding(.bottom, 12)
+                            .opacity(bottomMetaReveal)
+                    }
+                    .modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
+
+                ZStack {
+                    if forgotHintOpacity > 0 {
+                        Text(appState.localized("Forgot", "忘记", "भूल गया"))
+                            .font(swipeHintFont())
+                            .foregroundStyle(swipeHintTextColor)
+                            .opacity(forgotHintOpacity)
+                            .multilineTextAlignment(.center)
+                    }
+                    if masteredHintOpacity > 0 {
+                        Text(appState.localized("Mastered", "掌握", "सीख लिया"))
+                            .font(swipeHintFont())
+                            .foregroundStyle(swipeHintTextColor)
+                            .opacity(masteredHintOpacity)
+                            .multilineTextAlignment(.center)
+                    }
+                    if allowsBlurrySwipe && blurryHintOpacity > 0 {
+                        Text(appState.localized("Blurry", "模糊", "धुंधला"))
+                            .font(swipeHintFont())
+                            .foregroundStyle(swipeHintTextColor)
+                            .opacity(blurryHintOpacity)
+                            .multilineTextAlignment(.center)
                     }
                 }
-                .onChange(of: isActiveTab) { _, active in
-                    if !active {
-                        stopSpeechPlayback()
+                .frame(maxWidth: resolvedCardWidth)
+            }
+            .offset(dragOffset)
+            .rotationEffect(dragRotation)
+            .allowsHitTesting(interactionsEnabled)
+            .gesture(
+                DragGesture(minimumDistance: 15)
+                    .onChanged { v in
+                        guard interactionsEnabled, !isSwipeCompleting else { return }
+                        dragOffset = v.translation
+                        dragRotation = .degrees(Double(v.translation.width / screenWidth * 12))
+                        onDragChanged?(v.translation)
                     }
-                }
-                .onChange(of: word.id) { _, _ in
-                    refreshSenses(using: word)
-                    if interactionsEnabled && isActiveTab && appState.autoPlay {
-                        scheduleAutoPlay()
+                    .onEnded { v in
+                        guard interactionsEnabled, !isSwipeCompleting else { return }
+                        let dx = v.translation.width
+                        let dy = v.translation.height
+                        if dx < -swipeThreshold {
+                            let swipedWordId = displayedWord.id
+                            FeedbackService.swipeForgot()
+                            onDragChanged?(CGSize(width: 500, height: 0))
+                            completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
+                                onSwipeForgot(swipedWordId)
+                            }
+                        } else if dx > swipeThreshold {
+                            let swipedWordId = displayedWord.id
+                            FeedbackService.swipeMastered()
+                            onDragChanged?(CGSize(width: 500, height: 0))
+                            completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
+                                onSwipeMastered(swipedWordId)
+                            }
+                        } else if dy > swipeThreshold, let onSwipeDownAction {
+                            FeedbackService.swipeBlurry()
+                            onDragChanged?(CGSize(width: 500, height: 0))
+                            completeSwipe(to: CGSize(width: 0, height: 400), action: onSwipeDownAction)
+                        } else if dy > swipeThreshold && allowsBlurrySwipe {
+                            let swipedWordId = displayedWord.id
+                            FeedbackService.swipeBlurry()
+                            onDragChanged?(CGSize(width: 500, height: 0))
+                            completeSwipe(to: CGSize(width: 0, height: 400)) {
+                                onSwipeBlurry(swipedWordId)
+                            }
+                        } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
+                            FeedbackService.swipeNoAction()
+                            onSwipeUpWithoutAction()
+                            onDragChanged?(.zero)
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                dragOffset = .zero
+                                dragRotation = .zero
+                            }
+                            onDragChanged?(.zero)
+                        }
                     }
-                }
-                .onDisappear {
-                    stopDemoLoop(resetTransform: false)
+            )
+            .onChange(of: appState.autoPlay) { _, enabled in
+                if !enabled {
                     stopSpeechPlayback()
                 }
-                .onAppear {
-                    refreshSenses(using: word)
-                    if interactionsEnabled {
-                        FeedbackService.prepareInteractive()
-                    }
-                    if interactionsEnabled && isActiveTab && appState.autoPlay {
-                        scheduleAutoPlay()
-                    }
-                    restartDemoLoopIfNeeded()
+            }
+            .onChange(of: isActiveTab) { _, active in
+                if !active {
+                    stopSpeechPlayback()
                 }
-                .onChange(of: scriptedGesture) { _, _ in
-                    restartDemoLoopIfNeeded()
+            }
+            .onChange(of: word.id) { _, _ in
+                refreshSenses(using: word)
+                if interactionsEnabled && isActiveTab && appState.autoPlay {
+                    scheduleAutoPlay()
                 }
+            }
+            .onDisappear {
+                stopSpeechPlayback()
+            }
+            .onAppear {
+                refreshSenses(using: word)
+                if interactionsEnabled {
+                    FeedbackService.prepareInteractive()
+                }
+                if interactionsEnabled && isActiveTab && appState.autoPlay {
+                    scheduleAutoPlay()
+                }
+            }
         }
     }
 
@@ -2697,6 +2693,7 @@ private struct CardBody: View {
     let cardWidth: CGFloat
     let cardHeight: CGFloat
     let detailProgress: Double
+    var contentOpacity: Double = 1.0
     var onTitleTap: (() -> Void)? = nil
     var onDetailTap: (() -> Void)? = nil
 
@@ -2747,6 +2744,8 @@ private struct CardBody: View {
             return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
         case .avenirNext:
             return .custom(avenirNextFontName(for: weight), size: size)
+        case .newYork:
+            return .system(size: size, weight: systemFontWeight(for: weight), design: .serif)
         }
     }
 
@@ -2787,7 +2786,7 @@ private struct CardBody: View {
         switch word.nounUICorner {
         case "green": return .green
         case "red": return .red
-        case "dual", "neutral": return .lavender
+        case "dual", "neutral", "lavender": return .lavender
         case "not_applicable": return nil
         default: return nil
         }
@@ -2828,14 +2827,19 @@ private struct CardBody: View {
         }
     }
 
+    private func layerOpacity(delay: Double) -> Double {
+        guard contentOpacity < 1.0 else { return 1.0 }
+        return min(1.0, max(0.0, (contentOpacity - delay) / max(0.01, 1.0 - delay)))
+    }
+
     var body: some View {
         cardContent
-            .padding(.horizontal, 26)
+            .padding(.horizontal, 24)
             .padding(.vertical, 24)
             .frame(width: cardWidth, alignment: .top)
             .overlay(alignment: .topTrailing) {
                 nounCornerBadge
-                    .opacity(primaryReveal)
+                    .opacity(primaryReveal * contentOpacity)
             }
             .background(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -2846,26 +2850,29 @@ private struct CardBody: View {
 
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(word.level.uppercased())
                     if !word.auxiliary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(word.auxiliary)
                     }
                 }
-                .opacity(primaryReveal)
+                .font(cardFont(size: 10 * (2.0 / 3.0), weight: .semibold))
+                .tracking(0.7)
+                .foregroundStyle(levelTextColor)
+                .opacity(primaryReveal * 0.78 * layerOpacity(delay: 0.0))
+                .offset(y: -8)
                 Text(word.displayWord)
-                    .font(cardFont(size: titleBaseFontSize, weight: .bold))
+                    .font(cardFont(size: titleBaseFontSize, weight: .semibold))
                     .tracking(0.2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.42)
                     .allowsTightening(true)
                     .foregroundStyle(headlineTextColor)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 22)
+                    .padding(.bottom, 20)
+                    .opacity(layerOpacity(delay: 0.18))
             }
-            .font(cardFont(size: 11, weight: .semibold))
-            .foregroundStyle(levelTextColor)
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(OptionalTapModifier(action: onTitleTap))
@@ -2874,7 +2881,7 @@ private struct CardBody: View {
                 .fill(dividerColor)
                 .frame(height: 1)
                 .padding(.bottom, 20)
-                .opacity(0.18 + primaryReveal * 0.82)
+                .opacity((0.18 + primaryReveal * 0.82) * layerOpacity(delay: 0.36))
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
@@ -2891,7 +2898,7 @@ private struct CardBody: View {
                         .foregroundStyle(bodyTextColor)
                 }
                 .multilineTextAlignment(.leading)
-                .opacity(primaryReveal)
+                .opacity(primaryReveal * layerOpacity(delay: 0.54))
 
                 let translatedExample = appState.translatedExampleText(for: word)
                 if !word.exampleFr.isEmpty || !translatedExample.isEmpty {
@@ -2918,7 +2925,7 @@ private struct CardBody: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 18)
-                    .opacity(secondaryReveal)
+                    .opacity(secondaryReveal * layerOpacity(delay: 0.70))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -3023,6 +3030,8 @@ private struct TransitionDiscoverCard: View {
             return .system(size: size, weight: systemFontWeight(for: weight), design: .rounded)
         case .avenirNext:
             return .custom(avenirNextFontName(for: weight), size: size)
+        case .newYork:
+            return .system(size: size, weight: systemFontWeight(for: weight), design: .serif)
         }
     }
 
@@ -3075,7 +3084,7 @@ private struct TransitionDiscoverCard: View {
             return .green
         case "red":
             return .red
-        case "dual", "neutral":
+        case "dual", "neutral", "lavender":
             return .lavender
         case "not_applicable":
             return nil
@@ -3141,9 +3150,12 @@ private struct TransitionDiscoverCard: View {
                         Text(word.auxiliary)
                     }
                 }
+                .font(cardFont(size: 11 * (2.0 / 3.0), weight: .semibold))
+                .foregroundStyle(levelTextColor)
                 .opacity(detailProgress)
+                .offset(y: -8)
                 Text(word.displayWord)
-                    .font(cardFont(size: titleBaseFontSize, weight: .bold))
+                    .font(cardFont(size: titleBaseFontSize, weight: .semibold))
                     .tracking(0.2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.42)
@@ -3152,8 +3164,6 @@ private struct TransitionDiscoverCard: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 22)
             }
-            .font(cardFont(size: 11, weight: .semibold))
-            .foregroundStyle(levelTextColor)
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -3253,7 +3263,7 @@ private struct NounCornerAccentShape: Shape {
             nounUIEntityType: "named_entity"
         ),
         screenWidth: 390,
-        cardHeight: 320,
+        cardHeight: 342,
         isActiveTab: true,
         onSwipeForgot: { _ in },
         onSwipeMastered: { _ in },
@@ -3402,10 +3412,29 @@ private struct ProgressScreen: View {
                         themeMode: appState.themeMode,
                         allowsBlurrySwipe: true,
                         dismissOnTap: true,
+                        embeddedInTabView: true,
                         onDismiss: { dismissWordCard() },
-                        onSwipeForgot: { srsManager.markWordForgot($0) },
-                        onSwipeMastered: { srsManager.markWordMastered($0) },
-                        onSwipeBlurry: { srsManager.markWordBlurry($0) }
+                        onSwipeForgot: {
+                            srsManager.markWordForgot(
+                                $0,
+                                persistDuringInfinitePractice: true,
+                                affectsDailyProgress: false
+                            )
+                        },
+                        onSwipeMastered: {
+                            srsManager.markWordMastered(
+                                $0,
+                                persistDuringInfinitePractice: true,
+                                affectsDailyProgress: false
+                            )
+                        },
+                        onSwipeBlurry: {
+                            srsManager.markWordBlurry(
+                                $0,
+                                persistDuringInfinitePractice: true,
+                                affectsDailyProgress: false
+                            )
+                        }
                     )
                     .id(word.id)
                     .mask(
@@ -3562,16 +3591,20 @@ private struct ProgressWordRow: View {
 }
 
 private struct SettingsScreen: View {
+    @Binding private var pendingMemberPaywall: Bool
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var storeKitManager: StoreKitManager
     @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
+
+    init(pendingMemberPaywall: Binding<Bool> = .constant(false)) {
+        _pendingMemberPaywall = pendingMemberPaywall
+    }
     @StateObject private var appIconManager = AppIconManager.shared
     @State private var showingAvatarPicker = false
     @State private var showingFAQ = false
     @State private var showingTermsOfUse = false
-    @State private var showingTipOptions = false
     @State private var showingShareSheet = false
     @State private var showingMemberUnlock = false
     @State private var memberPaywallShowingAllPlans = false
@@ -3606,12 +3639,14 @@ private struct SettingsScreen: View {
     ]
     private let appIconTileSize: CGFloat = 68
     private let developerContactEmail = "joey4wong@gmail.com"
+    private let xProfileURL = "https://x.com/croissante4u?s=21"
     private let termsOfUseURL = "https://hungry-land-732.notion.site/Terms-of-Use-32c52d9458a9802e9308c296fc8fd9d8?source=copy_link"
     private let privacyPolicyURL = "https://hungry-land-732.notion.site/Privacy-Policy-32c52d9458a980b6975cd6786df84199?source=copy_link"
     private let cardFontOptions: [(style: CardFontStyle, label: String)] = [
         (.sfPro, "SF Pro"),
         (.sfRounded, "SF R"),
-        (.avenirNext, "Avenir N")
+        (.avenirNext, "Avenir N"),
+        (.newYork, "New York")
     ]
     private var appShareMessage: String {
         appState.localized(
@@ -3629,8 +3664,22 @@ private struct SettingsScreen: View {
         ]
     }
     private let settingsToggleScale: CGFloat = 0.84
-    private let compactSettingsRowVerticalPadding: CGFloat = 13
+    private let settingsOptionRowVerticalPadding: CGFloat = 12
+    private let settingsMenuControlHeight: CGFloat = 34
     private let chevronTrailingInset: CGFloat = 12
+    private let appIconPickerDetentFraction: CGFloat = 0.5
+    private let appIconPickerContentInset: CGFloat = 16
+    private let appIconPickerBottomInset: CGFloat = 4
+
+    private var appIconPickerLayout: AppIconPickerLayout {
+        AppIconPickerLayout(
+            tileSize: appIconTileSize,
+            contentInset: appIconPickerContentInset,
+            bottomInset: appIconPickerBottomInset,
+            initialDropTopInset: 12,
+            initialDropSpacing: 36
+        )
+    }
 
     private var selectedLevelIndex: Int {
         levels.firstIndex(of: appState.level) ?? 0
@@ -3749,8 +3798,7 @@ private struct SettingsScreen: View {
                 if newValue {
                     SpotlightService.shared.indexAllWords(
                         appState.words,
-                        conjugationFormsByLemma: appState.conjugationFormsByLemma,
-                        spotlightEnabled: true
+                        conjugationFormsByLemma: appState.conjugationFormsByLemma
                     )
                 } else {
                     SpotlightService.shared.removeAllWords()
@@ -3789,6 +3837,15 @@ private struct SettingsScreen: View {
     private let memberPaywallExpandedDetentHeight: CGFloat = 618
     private var memberPaywallDetentHeight: CGFloat {
         memberPaywallShowingAllPlans ? memberPaywallExpandedDetentHeight : memberPaywallCollapsedDetentHeight
+    }
+
+    private func consumePendingMemberPaywallFromDeepLink() {
+        guard pendingMemberPaywall else { return }
+        pendingMemberPaywall = false
+        guard !appState.memberUnlocked else { return }
+        DispatchQueue.main.async {
+            showingMemberUnlock = true
+        }
     }
 
     private var avatarMetalRingGradient: [Color] {
@@ -3837,9 +3894,9 @@ private struct SettingsScreen: View {
                     "5 / 10 / 15 दैनिक लक्ष्य का क्या मतलब है?"
                 ),
                 answer: appState.localized(
-                    "It is a mastery goal, not a swipe count. Completion is measured by how many cards in today's target pool are marked Mastered. If you change the goal during the day, the app rebuilds today's target pool for the new goal and resets today's progress from the beginning.",
-                    "这代表“掌握目标”，不是“滑动次数”。系统按“今天目标池里被标记为掌握的卡片数”来判断完成度。只要你在当天修改每日目标，系统就会按新目标重建今天的目标池，并把当天进度从头开始计算。",
-                    "It is a mastery goal, not a swipe count. Completion is measured by how many cards in today's target pool are marked Mastered. If you change the goal during the day, the app rebuilds today's target pool for the new goal and resets today's progress from the beginning."
+                    "It is a today-pass goal, not a swipe count. Completion is measured by how many cards in today's target pool you can eventually mark Mastered today. That does not mean every card is permanently mastered in memory.",
+                    "这代表“今日通过目标”，不是“滑动次数”。系统按“今天目标池里有多少张最终能被你标记为掌握”来判断完成度，但这不等于这些词已经在长期记忆里永久掌握。",
+                    "It is a today-pass goal, not a swipe count. Completion is measured by how many cards in today's target pool you can eventually mark Mastered today. That does not mean every card is permanently mastered in memory."
                 )
             ),
             FAQItem(
@@ -3863,9 +3920,9 @@ private struct SettingsScreen: View {
                     "Why does a card come back after I already swiped it away?"
                 ),
                 answer: appState.localized(
-                    "After Blurry or Forgot, the app usually swaps that card out of today's active pool and issues another eligible card, so you don't get stuck looping the same few cards. The unsettled card is scheduled for a later review and usually becomes available again from the start of the next day.",
-                    "当你标记“模糊/忘记”后，系统通常会把这张卡先移出今天的活动牌池，并补发一张当前可发卡，避免你反复只刷到同几张词。未稳固的这张卡会被安排到后续复习，通常会在次日一开始重新变为可复习。",
-                    "After Blurry or Forgot, the app usually swaps that card out of today's active pool and issues another eligible card, so you don't get stuck looping the same few cards. The unsettled card is scheduled for a later review and usually becomes available again from the start of the next day."
+                    "After Blurry or Forgot, the card stays in today's target set until you can pass it today. If you later mark it Mastered on the same day, today's goal can move forward, but the long-term memory state stays unsettled and the word is scheduled for a short-term review.",
+                    "当你标记“模糊/忘记”后，这张卡仍会留在今天的目标池里，直到你今天能把它通过。若你同一天后面又标记“掌握”，今日目标可以继续推进，但长期记忆状态仍会保留为未稳固，并安排短期复习。",
+                    "After Blurry or Forgot, the card stays in today's target set until you can pass it today. If you later mark it Mastered on the same day, today's goal can move forward, but the long-term memory state stays unsettled and the word is scheduled for a short-term review."
                 )
             ),
             FAQItem(
@@ -3876,9 +3933,9 @@ private struct SettingsScreen: View {
                     "When is today's Explore session actually complete?"
                 ),
                 answer: appState.localized(
-                    "The day is complete when every card currently in today's base target pool is marked Mastered. If a card is marked Blurry or Forgot there, the app can replace it with another eligible card; Continue ∞ is separate and does not reopen today's completion.",
-                    "只有当“今天基础目标池”中的卡片都被标记为“掌握”时，首页才算完成。若你在这组卡片里标记“模糊/忘记”，系统会尝试补入其他可发卡；Continue ∞ 属于独立加练，不会重新打开今天的完成状态。",
-                    "The day is complete when every card currently in today's base target pool is marked Mastered. If a card is marked Blurry or Forgot there, the app can replace it with another eligible card; Continue ∞ is separate and does not reopen today's completion."
+                    "The day is complete when every card in today's base target pool has been passed today. A card that was Blurry or Forgot earlier can still count after you later mark it Mastered, but its Progress state may remain Blurry until a future review confirms it.",
+                    "只有当“今天基础目标池”里的每张卡都在今天通过后，首页才算完成。某张卡今天早些时候被标记过“模糊/忘记”，后面再标记“掌握”也可以计入今日完成，但它在进度页里可能仍会保持“模糊”，直到未来复习再次确认。",
+                    "The day is complete when every card in today's base target pool has been passed today. A card that was Blurry or Forgot earlier can still count after you later mark it Mastered, but its Progress state may remain Blurry until a future review confirms it."
                 )
             ),
             FAQItem(
@@ -3889,9 +3946,9 @@ private struct SettingsScreen: View {
                     "What is Continue ∞ and when does it appear?"
                 ),
                 answer: appState.localized(
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there are disposable practice only: they do not write memory state, progress buckets, today's completion, or the heatmap.",
-                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。这里的滑动只用于继续练习，不会写入记忆状态、进度分类、今日完成状态或热力图。",
-                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there are disposable practice only: they do not write memory state, progress buckets, today's completion, or the heatmap."
+                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap.",
+                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。这里的滑动会写入记忆状态、进度分类和下次复习安排，但不会改动今日基础目标的完成状态或热力图。",
+                    "Continue ∞ appears only after you fully complete today's base mastery goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap."
                 )
             ),
             FAQItem(
@@ -3954,9 +4011,35 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "On today's base deck, swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. If a card shows multiple senses, the swipe applies to the sense currently displayed on the card. On cards opened from Search, Progress, or Spotlight, swipe up simply closes the card. In Continue ∞, swipes are non-persistent and only advance practice.",
-                    "在今天的基础牌堆里，右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑不记录任何操作。若一张卡包含多个义项，滑动会作用在当前卡面正在显示的那个义项上。对于从搜索、进度或 Spotlight 打开的弹出卡片，上滑仅表示关闭卡片。进入 Continue ∞ 后，所有滑动都不持久记录，只负责继续练习。",
-                    "On today's base deck, swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. If a card shows multiple senses, the swipe applies to the sense currently displayed on the card. On cards opened from Search, Progress, or Spotlight, swipe up simply closes the card. In Continue ∞, swipes are non-persistent and only advance practice."
+                    "On today's base deck, swipe right means passed today, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. Progress uses long-term memory state: if a word was Blurry or Forgot earlier today, a later right swipe completes today's card but keeps it unsettled for review.",
+                    "在今天的基础牌堆里，右滑表示“今天通过”，下滑是“模糊”，左滑是“忘记”，上滑不记录任何操作。进度页看的是长期记忆状态：如果一个词今天早些时候被标记过“模糊/忘记”，后面再右滑可以完成今日卡片，但它仍会保持未稳固并等待复习。",
+                    "On today's base deck, swipe right means passed today, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. Progress uses long-term memory state: if a word was Blurry or Forgot earlier today, a later right swipe completes today's card but keeps it unsettled for review."
+                )
+            ),
+            FAQItem(
+                id: "blurry-forgot-review",
+                question: appState.localized(
+                    "How do Blurry and Forgot affect reviews?",
+                    "“模糊”和“忘记”会怎样影响复习？",
+                    "Blurry और Forgot से रिव्यू कैसे बदलता है?"
+                ),
+                answer: appState.localized(
+                    "Blurry and Forgot do not add extra cards to today's goal. The word stays in today's set until you can mark it Mastered, and both are scheduled for a short review tomorrow. Forgot resets consecutive corrects to 0; Blurry only reduces them by 1. If you mark it Mastered later on the same day, today's goal can count it as passed, but long-term progress still treats it as unsettled. It returns to Mastered only after a later scheduled review is also marked Mastered.",
+                    "“模糊”和“忘记”不会给今天额外加卡。这个词会留在今天的目标池里，直到你今天把它标记为“掌握”；两者都会安排到明天短期复习。区别是：“忘记”会把连续正确数归 0，“模糊”只会让连续正确数减 1。如果同一天后面又标记“掌握”，今天的目标可以把它算作通过，但长期进度仍会把它视为未稳固；只有之后到期复习也标记“掌握”，它才会真正回到“掌握”。",
+                    "Blurry और Forgot आज के लक्ष्य में अतिरिक्त कार्ड नहीं जोड़ते। शब्द आज के सेट में तब तक रहता है जब तक आप उसे Mastered नहीं कर देते, और दोनों को कल छोटे रिव्यू के लिए रखा जाता है। Forgot लगातार सही जवाबों को 0 कर देता है; Blurry उन्हें सिर्फ 1 घटाता है। अगर आप उसी दिन बाद में Mastered कर दें, तो आज का लक्ष्य उसे पास मान सकता है, लेकिन लंबी अवधि की प्रगति उसे अभी भी अस्थिर मानती है। वह बाद की scheduled review में फिर से Mastered होने पर ही Mastered में लौटता है."
+                )
+            ),
+            FAQItem(
+                id: "progress-buckets",
+                question: appState.localized(
+                    "Why can a word stay Blurry after I mark it Mastered?",
+                    "为什么我点了“掌握”，它还会留在“模糊”？",
+                    "Why can a word stay Blurry after I mark it Mastered?"
+                ),
+                answer: appState.localized(
+                    "Because Progress is not a last-swipe list. If a word was missed today, the same-day Mastered swipe only proves you can pass it after practice. The word moves back to Mastered after a later scheduled review also succeeds.",
+                    "因为进度页不是“最后一次手势列表”。如果一个词今天出错过，同一天后面的“掌握”只能说明你通过练习后暂时答对了；等后续到期复习再次成功，它才会回到“掌握”。",
+                    "Because Progress is not a last-swipe list. If a word was missed today, the same-day Mastered swipe only proves you can pass it after practice. The word moves back to Mastered after a later scheduled review also succeeds."
                 )
             ),
             FAQItem(
@@ -4054,29 +4137,33 @@ private struct SettingsScreen: View {
                     cancelAvatarImageLoading()
                 }
 
-                SettingsGroupCard {
-                    Button {
-                        showingMemberUnlock = true
-                    } label: {
-                        SettingsCardRow(
-                            icon: "crown",
-                            title: "Croissante Plus",
-                            subtitle: "",
-                            titleFontSize: 13,
-                            rowVerticalPadding: 12,
-                            showsSubtitle: false,
-                            showsDivider: false,
-                            matchPickerFont: true
-                        ) {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
-                                .padding(.trailing, chevronTrailingInset)
+                if storeKitManager.purchasedProduct != .some(.lifetime) {
+                    SettingsGroupCard {
+                        Button {
+                            showingMemberUnlock = true
+                        } label: {
+                            SettingsCardRow(
+                                icon: "crown",
+                                title: "Croissante Plus",
+                                subtitle: "",
+                                titleFontSize: 13,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
+                                showsSubtitle: false,
+                                showsDivider: false,
+                                matchPickerFont: true
+                            ) {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
+                                    .padding(.trailing, chevronTrailingInset)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.top, 22)
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 20)
 
                 SettingsGroupCard {
                         SettingsCardRow(
@@ -4084,7 +4171,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Level", "等级", "स्तर"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4106,6 +4193,7 @@ private struct SettingsScreen: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.88)
                             .frame(minWidth: 112, alignment: .trailing)
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4113,7 +4201,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Daily Goal", "每日目标", "दैनिक लक्ष्य"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4132,6 +4220,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         if appState.memberUnlocked {
@@ -4140,7 +4229,7 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
                                 subtitle: "",
                                 titleFontSize: 13,
-                                rowVerticalPadding: 12,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsSubtitle: false,
                                 showsDivider: false,
                                 matchPickerFont: true
@@ -4159,6 +4248,7 @@ private struct SettingsScreen: View {
                                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 .pickerStyle(.menu)
                                 .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                             }
                         } else {
                             Button {
@@ -4169,7 +4259,7 @@ private struct SettingsScreen: View {
                                     title: appState.localized("Natural Voice", "自然语音", "प्राकृतिक आवाज़"),
                                     subtitle: "",
                                     titleFontSize: 13,
-                                    rowVerticalPadding: 12,
+                                    rowVerticalPadding: settingsOptionRowVerticalPadding,
                                     showsSubtitle: false,
                                     showsDivider: false,
                                     matchPickerFont: true
@@ -4177,6 +4267,7 @@ private struct SettingsScreen: View {
                                     Image(systemName: "lock.fill")
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundStyle(isDarkMode ? Color.white.opacity(0.40) : Color.black.opacity(0.32))
+                                        .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                         .padding(.trailing, chevronTrailingInset)
                                 }
                             }
@@ -4186,23 +4277,12 @@ private struct SettingsScreen: View {
                 .padding(.horizontal, 20)
 
                 SettingsGroupCard {
-                    NotificationReminderSettingsCard(
-                        title: notificationRowTitle,
-                        displayTime: reminderTimeText,
-                        stepIndex: reminderStepIndex,
-                        isEnabled: reminderToggleBinding,
-                        onChangeStep: setReminderStepIndex
-                    )
-                }
-                .padding(.horizontal, 20)
-
-                SettingsGroupCard {
                         SettingsCardRow(
                             icon: "globe",
                             title: appState.localized("Language", "语言", "भाषा"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4221,6 +4301,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4228,7 +4309,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Theme", "主题", "थीम"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4263,6 +4344,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4270,7 +4352,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Card Font", "卡片字体", "कार्ड फ़ॉन्ट"),
                             subtitle: "",
                             titleFontSize: 13,
-                            rowVerticalPadding: 12,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsSubtitle: false,
                             showsDivider: true,
                             matchPickerFont: true
@@ -4289,6 +4371,7 @@ private struct SettingsScreen: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .pickerStyle(.menu)
                             .tint(isDarkMode ? Color.white.opacity(0.52) : Color.black.opacity(0.44))
+                            .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         appIconOptionsSection
@@ -4301,7 +4384,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Spotlight Search", "聚焦搜索", "स्पॉटलाइट खोज"),
                             subtitle: appState.localized("Search words from iOS Spotlight", "在 iOS 聚焦中搜索单词", "iOS स्पॉटलाइट में शब्द खोजें"),
                             titleFontSize: 13,
-                            rowVerticalPadding: compactSettingsRowVerticalPadding,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsDivider: true,
                             matchPickerFont: true
                         ) {
@@ -4309,6 +4392,7 @@ private struct SettingsScreen: View {
                                 .labelsHidden()
                                 .toggleStyle(SwitchToggleStyle(tint: .green))
                                 .scaleEffect(settingsToggleScale)
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4320,7 +4404,7 @@ private struct SettingsScreen: View {
                                 "अपने सभी डिवाइस में सीखने की प्रगति सिंक करें"
                             ),
                             titleFontSize: 13,
-                            rowVerticalPadding: compactSettingsRowVerticalPadding,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsDivider: true,
                             matchPickerFont: true
                         ) {
@@ -4328,6 +4412,7 @@ private struct SettingsScreen: View {
                                 .labelsHidden()
                                 .toggleStyle(SwitchToggleStyle(tint: .green))
                                 .scaleEffect(settingsToggleScale)
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         SettingsCardRow(
@@ -4335,7 +4420,7 @@ private struct SettingsScreen: View {
                             title: appState.localized("Auto-play", "自动播放", "ऑटो-प्ले"),
                             subtitle: appState.localized("Speak the word automatically", "自动朗读单词", "शब्द अपने आप बोलें"),
                             titleFontSize: 13,
-                            rowVerticalPadding: compactSettingsRowVerticalPadding,
+                            rowVerticalPadding: settingsOptionRowVerticalPadding,
                             showsDivider: true,
                             matchPickerFont: true
                         ) {
@@ -4343,6 +4428,7 @@ private struct SettingsScreen: View {
                                 .labelsHidden()
                                 .toggleStyle(SwitchToggleStyle(tint: .green))
                                 .scaleEffect(settingsToggleScale)
+                                .frame(height: settingsMenuControlHeight, alignment: .center)
                         }
 
                         Button {
@@ -4353,19 +4439,31 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Reset Data", "重置数据", "डेटा रीसेट"),
                                 subtitle: appState.localized("Reset learning progress", "重置学习进度", "सीखने की प्रगति रीसेट करें"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
-                                showsSubtitle: true,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
+                                showsSubtitle: false,
                                 showsDivider: false,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
                         .buttonStyle(.plain)
                     }
+                .padding(.horizontal, 20)
+
+                SettingsGroupCard {
+                    NotificationReminderSettingsCard(
+                        title: notificationRowTitle,
+                        displayTime: reminderTimeText,
+                        stepIndex: reminderStepIndex,
+                        isEnabled: reminderToggleBinding,
+                        onChangeStep: setReminderStepIndex
+                    )
+                }
                 .padding(.horizontal, 20)
 
                 SettingsGroupCard {
@@ -4377,13 +4475,14 @@ private struct SettingsScreen: View {
                                 title: appState.localized("FAQ", "常见问题", "सामान्य प्रश्न"),
                                 subtitle: appState.localized("Frequently asked questions", "常见问题解答", "अक्सर पूछे जाने वाले सवाल"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsDivider: true,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
@@ -4399,13 +4498,14 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Terms of Use", "使用条款", "उपयोग की शर्तें"),
                                 subtitle: appState.localized("Terms and conditions", "条款与条件", "नियम और शर्तें"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsDivider: true,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
@@ -4421,13 +4521,14 @@ private struct SettingsScreen: View {
                                 title: appState.localized("Privacy Policy", "隐私政策", "गोपनीयता नीति"),
                                 subtitle: appState.localized("How we handle your data", "我们如何处理你的数据", "हम आपके डेटा को कैसे संभालते हैं"),
                                 titleFontSize: 13,
-                                rowVerticalPadding: compactSettingsRowVerticalPadding,
+                                rowVerticalPadding: settingsOptionRowVerticalPadding,
                                 showsDivider: false,
                                 matchPickerFont: true
                             ) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
+                                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                                     .padding(.trailing, chevronTrailingInset)
                             }
                         }
@@ -4449,17 +4550,25 @@ private struct SettingsScreen: View {
                             EmptyView()
                         }
 
-                        SettingsActionButtonsRow(labels: [
-                            appState.localized("Report", "报错", "रिपोर्ट"),
-                            appState.localized("Tip", "打赏", "टिप"),
-                            appState.localized("Rate", "评分", "रेट"),
-                            appState.localized("Share", "分享", "शेयर")
-                        ]) { index in
+                        SettingsActionButtonsRow(
+                            labels: [
+                                "SF:flag.circle.fill",
+                                "X",
+                                "SF:star.leadinghalf.filled",
+                                "SF:square.and.arrow.up.circle"
+                            ],
+                            accessibilityLabels: [
+                                appState.localized("Report", "报错", "रिपोर्ट"),
+                                "X",
+                                appState.localized("Rate", "评分", "रेट"),
+                                appState.localized("Share", "分享", "शेयर")
+                            ]
+                        ) { index in
                             switch index {
                             case 0:
                                 contactDeveloper()
                             case 1:
-                                showingTipOptions = true
+                                openXProfile()
                             case 2:
                                 requestAppStoreRating()
                             case 3:
@@ -4493,11 +4602,17 @@ private struct SettingsScreen: View {
                 .presentationDragIndicator(.visible)
             #endif
         }
+        .onChange(of: pendingMemberPaywall) { _, _ in
+            consumePendingMemberPaywallFromDeepLink()
+        }
+        .onAppear {
+            consumePendingMemberPaywallFromDeepLink()
+        }
         .sheet(isPresented: $showingAppIconPicker) {
             appIconPickerSheet
                 .environmentObject(appState)
             #if os(iOS)
-                .presentationDetents([.height(418)])
+                .presentationDetents([.fraction(appIconPickerDetentFraction)])
                 .presentationDragIndicator(.visible)
             #endif
         }
@@ -4538,17 +4653,6 @@ private struct SettingsScreen: View {
             )
             #if os(iOS)
             .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            #endif
-        }
-        .sheet(isPresented: $showingTipOptions) {
-            TipSupportSheetView { _ in
-                // Placeholder for future in-app purchase wiring.
-                showingTipOptions = false
-            }
-            .environmentObject(appState)
-            #if os(iOS)
-            .presentationDetents([.height(204)])
             .presentationDragIndicator(.visible)
             #endif
         }
@@ -4639,6 +4743,11 @@ private struct SettingsScreen: View {
         openURL(url)
     }
 
+    private func openXProfile() {
+        guard let url = URL(string: xProfileURL) else { return }
+        openURL(url)
+    }
+
     private func requestAppStoreRating() {
         #if os(iOS)
         guard let scene = UIApplication.shared.connectedScenes
@@ -4653,10 +4762,6 @@ private struct SettingsScreen: View {
     private func resetLearningData() {
         srsManager.resetLearningData()
         UserDefaults.standard.removeObject(forKey: "search_recent_word_ids")
-        UserDefaults.standard.set(
-            GestureOnboardingState.pending.rawValue,
-            forKey: GestureOnboardingDefaults.stateKey
-        )
         themeApplyTask?.cancel()
         themeSelectionOverride = nil
         appState.themeMode = .system
@@ -4696,7 +4801,7 @@ private struct SettingsScreen: View {
                 title: appState.localized("App Icon", "应用图标", "ऐप आइकन"),
                 subtitle: "",
                 titleFontSize: 13,
-                rowVerticalPadding: 12,
+                rowVerticalPadding: settingsOptionRowVerticalPadding,
                 showsDivider: false,
                 matchPickerFont: true
             ) {
@@ -4707,6 +4812,7 @@ private struct SettingsScreen: View {
                             ? (isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
                             : (isDarkMode ? Color.white.opacity(0.40) : Color.black.opacity(0.32))
                     )
+                    .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
                     .padding(.trailing, chevronTrailingInset)
             }
         }
@@ -4714,28 +4820,20 @@ private struct SettingsScreen: View {
     }
 
     private var appIconPickerSheet: some View {
-        VStack(spacing: 0) {
+        Group {
             #if os(iOS)
-            let physicsPickerMinHeight = appIconTileSize * 3 + 22 * 2 + 84
             AppIconPhysicsPicker(
                 icons: AppIconManager.AppIcon.allIcons,
                 currentIconID: appIconManager.currentIcon.id,
                 memberUnlocked: appState.memberUnlocked,
                 isDarkMode: isDarkMode,
                 isApplying: appIconManager.changingIcon,
-                tileSize: appIconTileSize,
+                layout: appIconPickerLayout,
                 onTapIcon: handleAppIconSelection
             )
-            .frame(
-                maxWidth: .infinity,
-                minHeight: physicsPickerMinHeight,
-                idealHeight: physicsPickerMinHeight,
-                maxHeight: physicsPickerMinHeight,
-                alignment: .center
-            )
-            .padding(.top, 12)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .ignoresSafeArea(.container, edges: .bottom)
+            .padding(appIconPickerLayout.sheetInsets)
             #else
             GeometryReader { proxy in
                 let horizontalSpacing = max((proxy.size.width - appIconTileSize * 3) / 4, 0)
@@ -4856,7 +4954,7 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
     let memberUnlocked: Bool
     let isDarkMode: Bool
     let isApplying: Bool
-    let tileSize: CGFloat
+    let layout: AppIconPickerLayout
     let onTapIcon: (AppIconManager.AppIcon) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -4887,14 +4985,18 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
         private var didPlaceInitialDrop = false
         private var lastContainerBoundsSize: CGSize = .zero
         private var lastCollisionSoundTime: CFTimeInterval = 0
+        private var initialDropStartTime: CFTimeInterval = 0
+        private var entranceDropActivationToken: Int = 0
+        private var hasActivatedEntranceDrop = false
         private let collisionVelocityThreshold: CGFloat = 140
         private let collisionSoundCooldown: CFTimeInterval = 0.14
+        private let settledGravityMagnitude: CGFloat = 1.25
         private let defaultDropGravity = CGVector(dx: 0, dy: 1)
         private let minimumEntranceGravityY: CGFloat = 0.68
-        private let maximumEntranceGravityX: CGFloat = 0.24
-        private let initialDropVelocity: CGFloat = 250
-        private let initialDropTopInset: CGFloat = 18
-        private let initialDropSpacing: CGFloat = 10
+        private let maximumEntranceGravityX: CGFloat = 0.08
+        private let entranceAssistDuration: CFTimeInterval = 0.55
+        private let entranceActivationDelay: CFTimeInterval = 0.18
+        private let initialDropVelocity: CGFloat = 210
         private var filteredGravity: CGVector
         private let gravitySmoothing: CGFloat = 0.16
 
@@ -4916,17 +5018,8 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
 
         func applyCurrentState(animated: Bool) {
             guard let container else { return }
-            if animator == nil, container.bounds.width > 0, container.bounds.height > 0 {
-                setupAnimatorIfNeeded(referenceView: container)
-            }
-            syncTiles(in: container)
-            updateTileStates()
-
-            if !didPlaceInitialDrop {
-                didPlaceInitialDrop = placeTilesAtTop()
-            } else if animated {
-                keepTilesInsideBounds()
-            }
+            ensureAnimatorAndTileState(in: container)
+            restartEntranceIfNeeded(clampActiveTiles: animated)
         }
 
         func containerDidLayout() {
@@ -4934,23 +5027,17 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             let bounds = container.bounds
             guard bounds.width > 0, bounds.height > 0 else { return }
 
-            if animator == nil {
-                setupAnimatorIfNeeded(referenceView: container)
-                syncTiles(in: container)
-                updateTileStates()
-            }
+            ensureAnimatorAndTileState(in: container)
 
             let sizeChanged = bounds.size != lastContainerBoundsSize
             lastContainerBoundsSize = bounds.size
             updateCollisionBounds(in: container)
-            if !didPlaceInitialDrop {
-                didPlaceInitialDrop = placeTilesAtTop()
-            } else if sizeChanged {
-                keepTilesInsideBounds()
-            }
+            restartEntranceIfNeeded(clampActiveTiles: sizeChanged)
         }
 
         func stopMotionUpdates() {
+            entranceDropActivationToken += 1
+            hasActivatedEntranceDrop = false
             motionManager.stopDeviceMotionUpdates()
         }
 
@@ -4963,8 +5050,7 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
                 setupAnimatorIfNeeded(referenceView: container)
             }
 
-            syncTiles(in: container)
-            updateTileStates()
+            ensureAnimatorAndTileState(in: container)
 
             guard needsEntranceGravityAssist() else { return }
 
@@ -4973,11 +5059,27 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             didPlaceInitialDrop = placeTilesAtTop()
         }
 
+        private func ensureAnimatorAndTileState(in container: AppIconPhysicsContainerView) {
+            if animator == nil, container.bounds.width > 0, container.bounds.height > 0 {
+                setupAnimatorIfNeeded(referenceView: container)
+            }
+            syncTiles(in: container)
+            updateTileStates()
+        }
+
+        private func restartEntranceIfNeeded(clampActiveTiles: Bool) {
+            if !didPlaceInitialDrop || !hasActivatedEntranceDrop {
+                didPlaceInitialDrop = placeTilesAtTop()
+            } else if clampActiveTiles {
+                keepTilesInsideBounds()
+            }
+        }
+
         private func setupAnimatorIfNeeded(referenceView: UIView) {
             guard animator == nil else { return }
             let animator = UIDynamicAnimator(referenceView: referenceView)
 
-            gravityBehavior.magnitude = 1.25
+            gravityBehavior.magnitude = 0
             gravityBehavior.gravityDirection = filteredGravity
             collisionBehavior.collisionDelegate = self
             updateCollisionBounds(in: referenceView)
@@ -5007,13 +5109,20 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
                 tilesByID.removeValue(forKey: id)
             }
 
-            for icon in parent.icons {
+            for (index, icon) in parent.icons.enumerated() {
                 if let tile = tilesByID[icon.id] {
                     tile.updateIcon(icon)
                     continue
                 }
 
-                let tile = AppIconPhysicsTileView(icon: icon, tileSize: parent.tileSize)
+                let tile = AppIconPhysicsTileView(icon: icon, tileSize: parent.layout.tileSize)
+                if canPlaceInitialGrid(in: container.bounds) {
+                    tile.center = initialDropCenter(
+                        for: index,
+                        in: container.bounds,
+                        totalCount: newOrderedIDs.count
+                    )
+                }
                 tile.addTarget(self, action: #selector(handleTileTap(_:)), for: .touchUpInside)
                 container.addSubview(tile)
                 tilesByID[icon.id] = tile
@@ -5046,33 +5155,30 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
         @discardableResult
         private func placeTilesAtTop() -> Bool {
             guard let container else { return false }
+            guard canPlaceInitialGrid(in: container.bounds) else { return false }
 
             let width = container.bounds.width
             let height = container.bounds.height
             guard width > 0, height > 0 else { return false }
 
-            let tileSize = parent.tileSize
-            let halfSize = tileSize / 2
-            let spacing = initialDropSpacing
-            let columns = min(3, max(Int(floor((width + spacing) / (tileSize + spacing))), 1))
+            entranceDropActivationToken += 1
+            let activationToken = entranceDropActivationToken
+            hasActivatedEntranceDrop = false
+            gravityBehavior.magnitude = 0
+            filteredGravity = defaultDropGravity
+            gravityBehavior.gravityDirection = filteredGravity
 
             for (index, id) in orderedIDs.enumerated() {
                 guard let tile = tilesByID[id] else { continue }
-                let col = index % columns
-                let row = index / columns
-                let itemsInRow = min(orderedIDs.count - row * columns, columns)
-                let rowWidth = CGFloat(itemsInRow) * tileSize + CGFloat(max(itemsInRow - 1, 0)) * spacing
-                let x = (width - rowWidth) / 2 + halfSize + CGFloat(col) * (tileSize + spacing)
-                let y = initialDropTopInset + halfSize + CGFloat(row) * (tileSize + spacing)
-                tile.center = CGPoint(x: x, y: y)
+                tile.center = initialDropCenter(
+                    for: index,
+                    in: container.bounds,
+                    totalCount: orderedIDs.count
+                )
 
                 let linearVelocity = itemBehavior.linearVelocity(for: tile)
                 itemBehavior.addLinearVelocity(
                     CGPoint(x: -linearVelocity.x, y: -linearVelocity.y),
-                    for: tile
-                )
-                itemBehavior.addLinearVelocity(
-                    CGPoint(x: 0, y: initialDropVelocity),
                     for: tile
                 )
                 let angularVelocity = itemBehavior.angularVelocity(for: tile)
@@ -5081,15 +5187,67 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
                 animator?.updateItem(usingCurrentState: tile)
             }
 
+            DispatchQueue.main.asyncAfter(deadline: .now() + entranceActivationDelay) { [weak self] in
+                guard let self else { return }
+                guard self.entranceDropActivationToken == activationToken else { return }
+
+                self.hasActivatedEntranceDrop = true
+                self.initialDropStartTime = CFAbsoluteTimeGetCurrent()
+                self.filteredGravity = self.defaultDropGravity
+                self.gravityBehavior.gravityDirection = self.filteredGravity
+                self.gravityBehavior.magnitude = self.settledGravityMagnitude
+
+                for id in self.orderedIDs {
+                    guard let tile = self.tilesByID[id] else { continue }
+                    self.itemBehavior.addLinearVelocity(
+                        CGPoint(x: 0, y: self.initialDropVelocity),
+                        for: tile
+                    )
+                    self.animator?.updateItem(usingCurrentState: tile)
+                }
+            }
+
             return true
         }
 
+        private func canPlaceInitialGrid(in bounds: CGRect) -> Bool {
+            let minimumWidth = parent.layout.tileSize * 3 + parent.layout.initialDropSpacing * 2 + parent.layout.contentInset
+            let minimumHeight = parent.layout.tileSize * 3 + parent.layout.initialDropSpacing * 2
+            return bounds.width >= minimumWidth && bounds.height >= minimumHeight
+        }
+
+        private func initialDropCenter(for index: Int, in bounds: CGRect, totalCount: Int) -> CGPoint {
+            let tileSize = parent.layout.tileSize
+            let halfSize = tileSize / 2
+            let columns = min(3, max(totalCount, 1))
+            let preferredSpacing = parent.layout.initialDropSpacing
+            let availableRowWidth = bounds.width - parent.layout.contentInset
+            let maximumSpacing: CGFloat
+
+            if columns > 1 {
+                maximumSpacing = max(
+                    (availableRowWidth - CGFloat(columns) * tileSize) / CGFloat(columns - 1),
+                    0
+                )
+            } else {
+                maximumSpacing = 0
+            }
+
+            let spacing = min(preferredSpacing, maximumSpacing)
+            let col = index % columns
+            let row = index / columns
+            let itemsInRow = min(totalCount - row * columns, columns)
+            let rowWidth = CGFloat(itemsInRow) * tileSize + CGFloat(max(itemsInRow - 1, 0)) * spacing
+            let startX = (bounds.width - rowWidth) / 2 + halfSize
+            let x = startX + CGFloat(col) * (tileSize + spacing)
+            let y = halfSize + parent.layout.initialDropTopInset + CGFloat(row) * (tileSize + spacing)
+
+            return CGPoint(x: x, y: y)
+        }
+
         private func updateCollisionBounds(in container: UIView) {
-            let tileSpan = parent.tileSize + 8
-            let estimatedRows = max(Int(ceil(Double(max(orderedIDs.count, 1)) / 3.0)), 1)
-            let headroom = CGFloat(estimatedRows) * tileSpan + parent.tileSize
             collisionBehavior.setTranslatesReferenceBoundsIntoBoundary(
-                with: UIEdgeInsets(top: -headroom, left: 0, bottom: 0, right: 0)
+                with: .zero
             )
         }
 
@@ -5101,12 +5259,22 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             }
         }
 
+        private func shouldApplyEntranceGravityAssist() -> Bool {
+            if !hasActivatedEntranceDrop {
+                return true
+            }
+            if needsEntranceGravityAssist() {
+                return true
+            }
+            return CFAbsoluteTimeGetCurrent() - initialDropStartTime < entranceAssistDuration
+        }
+
         private func keepTilesInsideBounds() {
             guard let container else { return }
             let bounds = container.bounds
             guard bounds.width > 0, bounds.height > 0 else { return }
 
-            let halfSize = parent.tileSize / 2
+            let halfSize = parent.layout.tileSize / 2
             for id in orderedIDs {
                 guard let tile = tilesByID[id] else { continue }
                 var center = tile.center
@@ -5157,7 +5325,7 @@ private struct AppIconPhysicsPicker: UIViewRepresentable {
             filteredGravity.dx += a * (CGFloat(dx) - filteredGravity.dx)
             filteredGravity.dy += a * (CGFloat(dy) - filteredGravity.dy)
 
-            if needsEntranceGravityAssist() {
+            if shouldApplyEntranceGravityAssist() {
                 filteredGravity.dx = max(min(filteredGravity.dx, maximumEntranceGravityX), -maximumEntranceGravityX)
                 filteredGravity.dy = max(filteredGravity.dy, minimumEntranceGravityY)
             }
@@ -5919,6 +6087,7 @@ private struct SettingsCardRow<Trailing: View>: View {
     let subtitle: String
     let titleFontSize: CGFloat
     let rowVerticalPadding: CGFloat
+    let contentMinHeight: CGFloat
     let showsSubtitle: Bool
     let showsDivider: Bool
     let matchPickerFont: Bool
@@ -5933,6 +6102,7 @@ private struct SettingsCardRow<Trailing: View>: View {
         subtitle: String,
         titleFontSize: CGFloat = 13,
         rowVerticalPadding: CGFloat = 16,
+        contentMinHeight: CGFloat = 34,
         showsSubtitle: Bool = false,
         showsDivider: Bool,
         matchPickerFont: Bool = false,
@@ -5945,6 +6115,7 @@ private struct SettingsCardRow<Trailing: View>: View {
         self.subtitle = subtitle
         self.titleFontSize = titleFontSize
         self.rowVerticalPadding = rowVerticalPadding
+        self.contentMinHeight = contentMinHeight
         self.showsSubtitle = showsSubtitle
         self.showsDivider = showsDivider
         self.matchPickerFont = matchPickerFont
@@ -5977,45 +6148,24 @@ private struct SettingsCardRow<Trailing: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Group {
-                    if let iconAssetName, let customIcon = loadCustomIcon(named: iconAssetName) {
-                        customIcon
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 26, height: 26)
-                    } else {
-                        Image(systemName: icon)
-                            .font(.system(size: 17, weight: .regular))
-                    }
-                }
-                .foregroundStyle(iconAssetName == nil ? iconColor : customIconColor)
-                .frame(width: 26, alignment: .center)
-
-                if showsSubtitle {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 6) {
-                            Text(title)
-                                .font(resolvedTitleFont)
-                                .foregroundStyle(titleColor)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.84)
-
-                            if let titleTrailingSymbol {
-                                Image(systemName: titleTrailingSymbol)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(subtitleColor)
-                            }
-                        }
-                        Text(subtitle)
-                            .font(resolvedSubtitleFont)
-                            .foregroundStyle(subtitleColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.84)
-                    }
+        HStack(spacing: 14) {
+            Group {
+                if let iconAssetName, let customIcon = loadCustomIcon(named: iconAssetName) {
+                    customIcon
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 26, height: 26)
                 } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 17, weight: .regular))
+                }
+            }
+            .foregroundStyle(iconAssetName == nil ? iconColor : customIconColor)
+            .frame(width: 26, alignment: .center)
+
+            if showsSubtitle {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
                         Text(title)
                             .font(resolvedTitleFont)
@@ -6029,15 +6179,38 @@ private struct SettingsCardRow<Trailing: View>: View {
                                 .foregroundStyle(subtitleColor)
                         }
                     }
+                    Text(subtitle)
+                        .font(resolvedSubtitleFont)
+                        .foregroundStyle(subtitleColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.84)
                 }
+            } else {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(resolvedTitleFont)
+                        .foregroundStyle(titleColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.84)
 
-                Spacer(minLength: 10)
-
-                trailing
+                    if let titleTrailingSymbol {
+                        Image(systemName: titleTrailingSymbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(subtitleColor)
+                    }
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, rowVerticalPadding)
 
+            Spacer(minLength: 10)
+
+            trailing
+        }
+        .frame(minHeight: contentMinHeight, alignment: .center)
+        .padding(.horizontal, 16)
+        .padding(.vertical, rowVerticalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay(alignment: .bottom) {
             if showsDivider {
                 Rectangle()
                     .fill(dividerColor)
@@ -6046,8 +6219,6 @@ private struct SettingsCardRow<Trailing: View>: View {
                     .padding(.trailing, 14)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
 
     private func loadCustomIcon(named name: String) -> Image? {
@@ -6202,7 +6373,7 @@ private struct NotificationReminderSettingsCard: View {
                     )
                 }
                 .frame(height: 42)
-                .padding(.horizontal, 8)
+            .padding(.horizontal, 2)
                 .padding(.top, 6)
 
                 Text(displayTime)
@@ -6536,8 +6707,15 @@ private actor DailyReminderService {
 
 private struct SettingsActionButtonsRow: View {
     let labels: [String]
+    let accessibilityLabels: [String]
     let onTap: (Int) -> Void
     @Environment(\.colorScheme) private var colorScheme
+
+    init(labels: [String], accessibilityLabels: [String]? = nil, onTap: @escaping (Int) -> Void) {
+        self.labels = labels
+        self.accessibilityLabels = accessibilityLabels ?? labels
+        self.onTap = onTap
+    }
 
     private var actionColor: Color {
         colorScheme == .dark
@@ -6547,6 +6725,40 @@ private struct SettingsActionButtonsRow: View {
 
     private var dividerColor: Color {
         colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)
+    }
+
+    private var xIconColor: Color {
+        colorScheme == .dark ? .white : .black
+    }
+
+    @ViewBuilder
+    private func actionLabel(_ label: String, accessibilityLabel: String) -> some View {
+        if label == "X" {
+            Image("XSocialIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 17, height: 17)
+                .foregroundStyle(xIconColor)
+                .accessibilityLabel(accessibilityLabel)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        } else if label.hasPrefix("SF:") {
+            let name = String(label.dropFirst(3))
+            Image(systemName: name)
+                .font(.system(size: 20, weight: .medium, design: .rounded))
+                .foregroundStyle(actionColor)
+                .accessibilityLabel(accessibilityLabel)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        } else {
+            Text(label)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(actionColor)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .accessibilityLabel(accessibilityLabel)
+        }
     }
 
     var body: some View {
@@ -6561,128 +6773,13 @@ private struct SettingsActionButtonsRow: View {
                     Button(action: {
                         onTap(idx)
                     }) {
-                        Text(label)
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundStyle(actionColor)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                        actionLabel(label, accessibilityLabel: accessibilityLabels.indices.contains(idx) ? accessibilityLabels[idx] : label)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 6)
             .padding(.top, 8)
-        }
-    }
-}
-
-private struct TipSupportSheetView: View {
-    let onSelect: (Int) -> Void
-    @EnvironmentObject private var appState: AppState
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var isDarkMode: Bool { colorScheme == .dark }
-    private var rowTitleColor: Color {
-        isDarkMode ? Color.white.opacity(0.90) : Color.black.opacity(0.86)
-    }
-    private var rowSubtitleColor: Color {
-        isDarkMode ? Color.white.opacity(0.58) : Color.black.opacity(0.50)
-    }
-    private var rowDividerColor: Color {
-        isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
-    }
-    private var containerFillColor: Color {
-        isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.03)
-    }
-    private var containerBorderColor: Color {
-        isDarkMode ? Color.white.opacity(0.18) : Color.black.opacity(0.08)
-    }
-
-    @ViewBuilder
-    private func tipRow(
-        imageAssetName: String,
-        title: String,
-        price: String,
-        showsDivider: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Image(imageAssetName)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 64, height: 35)
-                        .accessibilityHidden(true)
-
-                    Text(title)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(rowTitleColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.90)
-
-                    Spacer(minLength: 10)
-
-                    Text(price)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(rowSubtitleColor)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-
-                if showsDivider {
-                    Rectangle()
-                        .fill(rowDividerColor)
-                        .frame(height: 1)
-                        .padding(.leading, 16)
-                        .padding(.trailing, 16)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            VStack(spacing: 0) {
-                tipRow(
-                    imageAssetName: "TipCroissantOne",
-                    title: appState.localized("Buy him one croissant", "请他吃一个可颂", "उसे एक क्रोइसां खिलाएं"),
-                    price: "$1.90",
-                    showsDivider: true
-                ) {
-                    onSelect(0)
-                }
-
-                tipRow(
-                    imageAssetName: "TipCroissantTwo",
-                    title: appState.localized("Buy him two croissants", "请他吃两个可颂", "उसे दो क्रोइसां खिलाएं"),
-                    price: "$6.99",
-                    showsDivider: true
-                ) {
-                    onSelect(1)
-                }
-
-                tipRow(
-                    imageAssetName: "TipCroissantMany",
-                    title: appState.localized("Buy him a lot of croissants", "请他吃一堆可颂", "उसे बहुत सारे क्रोइसां खिलाएं"),
-                    price: "$19.90",
-                    showsDivider: false
-                ) {
-                    onSelect(2)
-                }
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(containerFillColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(containerBorderColor, lineWidth: 1)
-            )
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .offset(y: proxy.safeAreaInsets.bottom * 0.5)
         }
     }
 }

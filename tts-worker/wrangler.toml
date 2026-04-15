@@ -1,0 +1,7 @@
+name = "croissante-tts"
+main = "src/worker.ts"
+compatibility_date = "2024-09-25"
+workers_dev = true
+
+[observability]
+enabled = true

@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import StoreKit
+import WidgetKit
 
 @MainActor
 final class StoreKitManager: ObservableObject {
@@ -118,25 +119,42 @@ final class StoreKitManager: ObservableObject {
 
     func syncMembershipStatus() async {
         var highestEntitlement: MemberProduct?
+        var highestEntitlementExpirationDate: Date?
 
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             guard transaction.revocationDate == nil else { continue }
+            if let expirationDate = transaction.expirationDate, expirationDate <= Date() {
+                continue
+            }
             guard let plan = MemberProduct(productID: transaction.productID) else { continue }
 
             if let current = highestEntitlement {
                 if plan.priority > current.priority {
                     highestEntitlement = plan
+                    highestEntitlementExpirationDate = transaction.expirationDate
                 }
             } else {
                 highestEntitlement = plan
+                highestEntitlementExpirationDate = transaction.expirationDate
             }
         }
 
+        let resolvedMemberUnlocked = highestEntitlement != nil
+        let membershipChanged = memberUnlocked != resolvedMemberUnlocked
+        let widgetDefaultsChanged = WidgetDataService.writeMemberAccess(
+            resolvedMemberUnlocked,
+            expirationDate: highestEntitlementExpirationDate,
+            neverExpires: highestEntitlement == .lifetime
+        )
+
         purchasedProduct = highestEntitlement
-        memberUnlocked = highestEntitlement != nil
-        if appState.memberUnlocked != memberUnlocked {
-            appState.memberUnlocked = memberUnlocked
+        memberUnlocked = resolvedMemberUnlocked
+        if appState.memberUnlocked != resolvedMemberUnlocked {
+            appState.memberUnlocked = resolvedMemberUnlocked
+        }
+        if membershipChanged || widgetDefaultsChanged {
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 

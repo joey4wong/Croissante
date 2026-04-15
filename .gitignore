@@ -23,3 +23,5 @@ Croissante/Configs/Secrets.xcconfig
 !.dev.vars.example
 .env*
 !.env.example
+node_modules/
+backend/dist/
