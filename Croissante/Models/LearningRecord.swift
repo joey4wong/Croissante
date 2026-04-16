@@ -6,71 +6,84 @@ enum LearningMemoryState: String, Codable {
     case mastered
 }
 
+/// 单一权威字段是 `intervalDays`（当前复习间隔，0 表示未掌握）。
+/// `memoryState` 和“毕业”等概念均由 `intervalDays` 派生，不再单独存储。
 struct LearningRecord: Codable {
     let wordId: String
-    let consecutiveCorrects: Int
+    let intervalDays: Int
     let nextReviewDate: Date
-    let memoryState: LearningMemoryState
     let lastReviewedAt: Date?
-    let lastMistakeAt: Date?
-    
+
+    /// Progress 页桶位由间隔区间派生：
+    /// - 0      → forgot
+    /// - 1...7  → blurry
+    /// - ≥ 8    → mastered
+    var memoryState: LearningMemoryState {
+        if intervalDays == 0 { return .forgot }
+        if intervalDays < 8 { return .blurry }
+        return .mastered
+    }
+
     enum CodingKeys: String, CodingKey {
         case wordId
-        case consecutiveCorrects
+        case intervalDays
         case nextReviewDate
-        case memoryState
         case lastReviewedAt
-        case lastMistakeAt
+        // 兼容开发阶段可能残留的旧字段；读到就做一次性转换，之后不再写。
+        case consecutiveCorrects
     }
 
     private static let iso8601WithFractionalSeconds = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
     private static let iso8601WithoutFractionalSeconds = Date.ISO8601FormatStyle(includingFractionalSeconds: false)
-    
+
     init(
         wordId: String,
-        consecutiveCorrects: Int,
+        intervalDays: Int,
         nextReviewDate: Date,
-        memoryState: LearningMemoryState = .mastered,
-        lastReviewedAt: Date? = nil,
-        lastMistakeAt: Date? = nil
+        lastReviewedAt: Date? = nil
     ) {
         self.wordId = wordId
-        self.consecutiveCorrects = max(0, consecutiveCorrects)
+        self.intervalDays = max(0, intervalDays)
         self.nextReviewDate = nextReviewDate
-        self.memoryState = memoryState
         self.lastReviewedAt = lastReviewedAt
-        self.lastMistakeAt = lastMistakeAt
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.wordId = try container.decode(String.self, forKey: .wordId)
-        self.consecutiveCorrects = max(0, try container.decode(Int.self, forKey: .consecutiveCorrects))
-        
+
         let dateString = try container.decode(String.self, forKey: .nextReviewDate)
         self.nextReviewDate = Self.parseDate(dateString) ?? Date()
-        self.memoryState = Self.decodeMemoryState(from: container) ?? .mastered
         self.lastReviewedAt = Self.decodeDateIfPresent(from: container, forKey: .lastReviewedAt)
-        self.lastMistakeAt = Self.decodeDateIfPresent(from: container, forKey: .lastMistakeAt)
+
+        if let directInterval = try container.decodeIfPresent(Int.self, forKey: .intervalDays) {
+            self.intervalDays = max(0, directInterval)
+        } else if let legacyCC = try container.decodeIfPresent(Int.self, forKey: .consecutiveCorrects) {
+            self.intervalDays = Self.intervalFromLegacyConsecutiveCorrects(legacyCC)
+        } else {
+            self.intervalDays = 0
+        }
     }
-    
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(wordId, forKey: .wordId)
-        try container.encode(consecutiveCorrects, forKey: .consecutiveCorrects)
-        
-        let dateString = nextReviewDate.formatted(Self.iso8601WithFractionalSeconds)
-        try container.encode(dateString, forKey: .nextReviewDate)
-        try container.encode(memoryState.rawValue, forKey: .memoryState)
+        try container.encode(intervalDays, forKey: .intervalDays)
+        try container.encode(nextReviewDate.formatted(Self.iso8601WithFractionalSeconds), forKey: .nextReviewDate)
         try Self.encodeDateIfPresent(lastReviewedAt, into: &container, forKey: .lastReviewedAt)
-        try Self.encodeDateIfPresent(lastMistakeAt, into: &container, forKey: .lastMistakeAt)
     }
 
-    private static func decodeMemoryState(from container: KeyedDecodingContainer<CodingKeys>) -> LearningMemoryState? {
-        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: .memoryState) else {
-            return nil
+    /// 开发阶段兼容：把旧的 `consecutiveCorrects` 映射到最接近的 interval 阶梯值。
+    /// 上线后没有用户，这条仅服务于你自己的开发机残留数据。
+    private static func intervalFromLegacyConsecutiveCorrects(_ cc: Int) -> Int {
+        switch cc {
+        case ..<1: return 0
+        case 1:    return 1
+        case 2:    return 2
+        case 3:    return 4
+        case 4:    return 8
+        default:   return 15 // cc >= 5（旧毕业）→ 映到 mastered 区间首值
         }
-        return LearningMemoryState(rawValue: rawValue)
     }
 
     private static func decodeDateIfPresent(

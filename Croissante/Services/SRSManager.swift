@@ -3,10 +3,8 @@ import Combine
 
 private struct SRSScheduler {
     let calendar: Calendar
-    let masteryThreshold: Int
     let newCardQuotaRatio: Double
     let retryIntervalDays: Int
-    let graduationYears: Int
 
     func normalizedReviewDate(_ date: Date) -> Date {
         calendar.startOfDay(for: date)
@@ -16,27 +14,30 @@ private struct SRSScheduler {
         dateByAddingDays(retryIntervalDays, from: date)
     }
 
-    func scheduledReviewDate(for consecutiveCorrects: Int, from date: Date) -> Date {
+    /// 单纯按间隔天数推算下次复习日，不再有毕业概念。
+    func scheduledReviewDate(forInterval intervalDays: Int, from date: Date) -> Date {
         let anchor = normalizedReviewDate(date)
-        if consecutiveCorrects >= masteryThreshold {
-            return calendar.date(byAdding: .year, value: graduationYears, to: anchor) ?? anchor
-        }
-
-        let intervalDays: Int
-        switch consecutiveCorrects {
-        case ..<1:
-            intervalDays = 1
-        case 1:
-            intervalDays = 2
-        case 2:
-            intervalDays = 4
-        case 3:
-            intervalDays = 8
-        default:
-            intervalDays = 15
-        }
-
+        guard intervalDays > 0 else { return dateByAddingDays(1, from: anchor) }
         return dateByAddingDays(intervalDays, from: anchor)
+    }
+
+    /// 右滑掌握后的下一档间隔。
+    /// 软梯度：0 → 1 → 2 → 4 → 8 → 15 → 30，此后每次正确再 ×2（60、120、240…）。
+    /// 用户学得越稳，卡片出现得越稀疏，但永远留在系统里。
+    func nextMasteryInterval(from current: Int) -> Int {
+        switch current {
+        case ..<1:  return 1
+        case 1:     return 2
+        case 2:     return 4
+        case 4:     return 8
+        case 8:     return 15
+        case 15:    return 30
+        default:
+            // 30 以上按 ×2 继续，或在阶梯外的异常值（3/5/6/7）找下一档
+            if current >= 30 { return current * 2 }
+            let ladder = [1, 2, 4, 8, 15, 30]
+            return ladder.first { $0 > current } ?? 30
+        }
     }
 
     func buildDailyDeck(
@@ -147,7 +148,7 @@ private struct SRSScheduler {
         words
             .filter { word in
                 guard let record = records[word.id] else { return false }
-                return record.consecutiveCorrects < masteryThreshold && record.nextReviewDate <= now
+                return record.nextReviewDate <= now
             }
             .sorted { lhs, rhs in
                 let lhsDate = records[lhs.id]?.nextReviewDate ?? .distantFuture
@@ -248,9 +249,6 @@ public final class SRSManager: ObservableObject {
         let dailySwipedWordIds: [String]
         let learningQueueIds: [String]
         let levelDailyDeckSnapshots: [String: LevelDailyDeckSnapshot]
-        let forgotWordIds: [String]?
-        let blurryWordIds: [String]?
-        let masteredWordIds: [String]?
         let dailyCompletionRatios: [String: Double]
         let dailyStudyStates: [String: String]
         let isInfinitePracticeActive: Bool
@@ -258,8 +256,6 @@ public final class SRSManager: ObservableObject {
     }
 
     // MARK: - 调度配置
-    // 通关阈值：达到该连续答对次数后视为毕业，不再参与抽卡。
-    private let masteryThreshold = 5
     // 默认每日最多发牌数量。
     private let defaultDailyDeckLimit = 50
     // 用户可选的每日发牌数量。
@@ -274,10 +270,8 @@ public final class SRSManager: ObservableObject {
     }
     // 每日发牌中，新词的最低保障比例（20%）。
     private let newCardQuotaRatio = 0.20
-    // “模糊/忘记”后的固定复习间隔（天）。
+    // 降级（模糊/忘记）后的固定下次复习间隔（天）。
     private let retryIntervalDays = 1
-    // 达到通关阈值后推迟的年数（视为毕业）。
-    private let graduationYears = 10
 
     // MARK: - 外部联动通知
     public static let didMarkForgotWordNotification = Notification.Name("SRSManager.didMarkForgotWord")
@@ -293,9 +287,6 @@ public final class SRSManager: ObservableObject {
         static let learningQueueIds = "learning_queue_ids"
         static let dailySwipedWordIds = "daily_swiped_word_ids"
         static let levelDailyDeckSnapshots = "level_daily_deck_snapshots_v1"
-        static let forgotWordIds = "forgot_word_ids"
-        static let blurryWordIds = "blurry_word_ids"
-        static let masteredWordIds = "mastered_word_ids"
         static let dailyCompletionRatios = "daily_completion_ratios"
         static let dailyStudyStates = "daily_study_states"
         static let lastLearningStateMutationAt = "learning_state_mutation_at"
@@ -325,7 +316,7 @@ public final class SRSManager: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
-    private let syncPayloadSchemaVersion = 1
+    private let syncPayloadSchemaVersion = 2
     private var cancellables: Set<AnyCancellable> = []
     private var pendingLearningStateSaveTask: Task<Void, Never>? = nil
     private var lastLearningStateMutationAt: Date = .distantPast
@@ -341,10 +332,8 @@ public final class SRSManager: ObservableObject {
     private var scheduler: SRSScheduler {
         SRSScheduler(
             calendar: calendar,
-            masteryThreshold: masteryThreshold,
             newCardQuotaRatio: newCardQuotaRatio,
-            retryIntervalDays: retryIntervalDays,
-            graduationYears: graduationYears
+            retryIntervalDays: retryIntervalDays
         )
     }
     
@@ -431,17 +420,6 @@ public final class SRSManager: ObservableObject {
             }
         }
         
-        let legacyForgotWordIds = Set(userDefaults.stringArray(forKey: Keys.forgotWordIds) ?? [])
-        let legacyBlurryWordIds = Set(userDefaults.stringArray(forKey: Keys.blurryWordIds) ?? [])
-        let legacyMasteredWordIds = Set(userDefaults.stringArray(forKey: Keys.masteredWordIds) ?? [])
-        migrateLegacyProgressBucketsIntoLearningRecords(
-            forgotWordIds: legacyForgotWordIds,
-            blurryWordIds: legacyBlurryWordIds,
-            masteredWordIds: legacyMasteredWordIds,
-            now: Date()
-        )
-        clearLegacyProgressBucketDefaults()
-        
         let savedDeckDate = userDefaults.string(forKey: Keys.dailyDeckDate) ?? ""
         let today = todayKey()
 
@@ -519,7 +497,6 @@ public final class SRSManager: ObservableObject {
         userDefaults.set(learningQueueIds, forKey: Keys.learningQueueIds)
         userDefaults.set(Array(dailySwipedWordIds), forKey: Keys.dailySwipedWordIds)
         
-        clearLegacyProgressBucketDefaults()
         userDefaults.set(dailyCompletionRatios, forKey: Keys.dailyCompletionRatios)
         userDefaults.set(dailyStudyStates, forKey: Keys.dailyStudyStates)
         if let snapshotData = try? JSONEncoder().encode(levelDailyDeckSnapshots) {
@@ -549,72 +526,6 @@ public final class SRSManager: ObservableObject {
             guard !Task.isCancelled else { return }
             saveLearningState(touchMutation: touchMutation)
         }
-    }
-
-    private func migrateLegacyProgressBucketsIntoLearningRecords(
-        forgotWordIds: Set<String>,
-        blurryWordIds: Set<String>,
-        masteredWordIds: Set<String>,
-        now: Date
-    ) {
-        guard !forgotWordIds.isEmpty || !blurryWordIds.isEmpty || !masteredWordIds.isEmpty else {
-            return
-        }
-
-        // Apply from lowest to highest risk so overlapping legacy sets settle on the riskiest state.
-        applyLegacyProgressBucket(masteredWordIds, state: .mastered, now: now)
-        applyLegacyProgressBucket(blurryWordIds, state: .blurry, now: now)
-        applyLegacyProgressBucket(forgotWordIds, state: .forgot, now: now)
-    }
-
-    private func applyLegacyProgressBucket(
-        _ wordIds: Set<String>,
-        state: LearningMemoryState,
-        now: Date
-    ) {
-        for wordId in wordIds where !wordId.isEmpty {
-            let existingRecord = learningRecords[wordId]
-            let consecutiveCorrects: Int
-            switch state {
-            case .forgot:
-                consecutiveCorrects = 0
-            case .blurry:
-                consecutiveCorrects = existingRecord?.consecutiveCorrects ?? 0
-            case .mastered:
-                consecutiveCorrects = max(1, existingRecord?.consecutiveCorrects ?? 1)
-            }
-
-            let nextReviewDate: Date
-            if let existingRecord {
-                nextReviewDate = existingRecord.nextReviewDate
-            } else if state == .mastered {
-                nextReviewDate = scheduler.scheduledReviewDate(for: consecutiveCorrects, from: now)
-            } else {
-                nextReviewDate = scheduler.retryReviewDate(from: now)
-            }
-
-            let lastMistakeAt: Date?
-            if state == .forgot || state == .blurry {
-                lastMistakeAt = existingRecord?.lastMistakeAt ?? now
-            } else {
-                lastMistakeAt = existingRecord?.lastMistakeAt
-            }
-
-            learningRecords[wordId] = LearningRecord(
-                wordId: wordId,
-                consecutiveCorrects: consecutiveCorrects,
-                nextReviewDate: nextReviewDate,
-                memoryState: state,
-                lastReviewedAt: existingRecord?.lastReviewedAt,
-                lastMistakeAt: lastMistakeAt
-            )
-        }
-    }
-
-    private func clearLegacyProgressBucketDefaults() {
-        userDefaults.removeObject(forKey: Keys.forgotWordIds)
-        userDefaults.removeObject(forKey: Keys.blurryWordIds)
-        userDefaults.removeObject(forKey: Keys.masteredWordIds)
     }
 
     private func refreshDailyDeckIfNeeded(knownDeckDate: String? = nil) {
@@ -659,84 +570,65 @@ public final class SRSManager: ObservableObject {
     }
     
     // MARK: - Learning Actions
-    
-    public func markWordMastered(
-        _ wordId: String,
-        persistDuringInfinitePractice: Bool = false,
-        affectsDailyProgress: Bool = true,
-        trustUserIntent: Bool = false
-    ) {
-        recordReview(
-            wordId,
-            outcome: .mastered,
-            persistDuringInfinitePractice: persistDuringInfinitePractice,
-            affectsDailyProgress: affectsDailyProgress,
-            trustUserIntent: trustUserIntent
-        )
-    }
-    
-    public func markWordBlurry(
-        _ wordId: String,
-        persistDuringInfinitePractice: Bool = false,
-        affectsDailyProgress: Bool = true
-    ) {
-        recordReview(
-            wordId,
-            outcome: .blurry,
-            persistDuringInfinitePractice: persistDuringInfinitePractice,
-            affectsDailyProgress: affectsDailyProgress
-        )
-    }
-    
-    public func markWordForgot(
-        _ wordId: String,
-        persistDuringInfinitePractice: Bool = false,
-        affectsDailyProgress: Bool = true
-    ) {
-        recordReview(
-            wordId,
-            outcome: .forgot,
-            persistDuringInfinitePractice: persistDuringInfinitePractice,
-            affectsDailyProgress: affectsDailyProgress
-        )
+
+    /// 描述一次 swipe 是从哪个 UI 入口来的。
+    public enum ReviewSource {
+        /// Discover 主牌堆在日课阶段的滑动：计入今日目标。
+        case dailyDeck
+        /// 日课完成后的 Continue ∞ 加练、银河模式的滑动：不计入今日目标。
+        case extraPractice
+        /// Search 搜词、Widget 深链等非队列入口：不计入今日目标。
+        case lookup
+        /// Progress 页展开卡：用户手动整理记忆档案，不计今日目标，不推进当前牌堆。
+        case progress
     }
 
+    public func markWordMastered(_ wordId: String, source: ReviewSource) {
+        recordReview(wordId, outcome: .mastered, source: source)
+    }
+
+    public func markWordBlurry(_ wordId: String, source: ReviewSource) {
+        recordReview(wordId, outcome: .blurry, source: source)
+    }
+
+    public func markWordForgot(_ wordId: String, source: ReviewSource) {
+        recordReview(wordId, outcome: .forgot, source: source)
+    }
+
+    /// 记录一次复习。
+    ///
+    /// **统一规则：**
+    /// - 日课、Continue ∞、Search/Widget 中，同一张卡若今天已经被滑过一次，任何“升级”方向的滑动（mastered）都会被跳过，档案不变。
+    /// - Progress 页右滑是手动整理档案：只把间隔补到掌握下限，不无限加权。
+    /// - “降级”方向（blurry/forgot）任何时候都允许写入——错了就该诚实记下。
+    /// - 不再有毕业。
     private func recordReview(
         _ wordId: String,
         outcome: ReviewOutcome,
-        persistDuringInfinitePractice: Bool,
-        affectsDailyProgress: Bool,
-        trustUserIntent: Bool = false
+        source: ReviewSource
     ) {
         let now = Date()
-        if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
-            return
-        }
-        let wasInLearningQueue = learningQueueIds.contains(wordId)
         let oldRecord = learningRecords[wordId]
 
-        // 无限模式以"当日首次滑动"为准：同一张卡今天已被记录过的话，
-        // 后续 swipe 只推进队列和触发反馈，不再改写记忆档案。
-        // trustUserIntent（Progress 页显式标记）作为显式意图可越过此闸。
-        let alreadyRecordedTodayInInfinitePractice = isInfinitePracticeActive
-            && !trustUserIntent
-            && (oldRecord?.lastReviewedAt.map { calendar.isDate($0, inSameDayAs: now) } ?? false)
+        // 每日升级闸：同一张卡一天内最多升级一次。
+        // 降级不受限——用户任何时候都可以说“我其实不会”。
+        let reviewedToday = oldRecord?.lastReviewedAt
+            .map { calendar.isDate($0, inSameDayAs: now) } ?? false
+        let blockedAsDailyUpgrade = reviewedToday && outcome == .mastered && source != .progress
 
-        if !alreadyRecordedTodayInInfinitePractice {
-            let newRecord = learningRecord(
-                for: wordId,
+        if !blockedAsDailyUpgrade {
+            learningRecords[wordId] = buildLearningRecord(
+                wordId: wordId,
                 outcome: outcome,
+                source: source,
                 oldRecord: oldRecord,
-                now: now,
-                trustUserIntent: trustUserIntent
+                now: now
             )
-            learningRecords[wordId] = newRecord
         }
 
         updateQueueAfterReview(
             wordId,
-            affectsDailyProgress: affectsDailyProgress,
-            wasInLearningQueue: wasInLearningQueue,
+            source: source,
             now: now
         )
 
@@ -751,75 +643,67 @@ public final class SRSManager: ObservableObject {
         saveLearningState(touchMutation: true)
     }
 
-    private func learningRecord(
-        for wordId: String,
+    private func buildLearningRecord(
+        wordId: String,
         outcome: ReviewOutcome,
+        source: ReviewSource,
         oldRecord: LearningRecord?,
-        now: Date,
-        trustUserIntent: Bool = false
+        now: Date
     ) -> LearningRecord {
+        let currentInterval = oldRecord?.intervalDays ?? 0
         switch outcome {
         case .mastered:
-            let oldCorrects = oldRecord?.consecutiveCorrects ?? 0
-            let nextCorrects = oldRecord == nil ? 1 : min(oldCorrects + 1, masteryThreshold)
-            let hadMistakeToday = trustUserIntent
-                ? false
-                : (oldRecord.map { didMarkMistakeOnSameDay(in: $0, as: now) } ?? false)
+            if source == .progress {
+                // Progress 页是用户手动整理档案：补到掌握下限，但不借机无限升级。
+                let nextInterval = max(currentInterval, 8)
+                return LearningRecord(
+                    wordId: wordId,
+                    intervalDays: nextInterval,
+                    nextReviewDate: scheduler.scheduledReviewDate(forInterval: nextInterval, from: now),
+                    lastReviewedAt: now
+                )
+            }
+            // 右滑：间隔沿梯度上升。
+            let nextInterval = scheduler.nextMasteryInterval(from: currentInterval)
             return LearningRecord(
                 wordId: wordId,
-                consecutiveCorrects: nextCorrects,
-                nextReviewDate: hadMistakeToday
-                    ? scheduler.retryReviewDate(from: now)
-                    : scheduler.scheduledReviewDate(for: nextCorrects, from: now),
-                memoryState: hadMistakeToday ? .blurry : .mastered,
-                lastReviewedAt: now,
-                lastMistakeAt: oldRecord?.lastMistakeAt
+                intervalDays: nextInterval,
+                nextReviewDate: scheduler.scheduledReviewDate(forInterval: nextInterval, from: now),
+                lastReviewedAt: now
             )
         case .blurry:
-            let nextCorrects = max(0, (oldRecord?.consecutiveCorrects ?? 0) - 1)
+            // 下滑：间隔保持不变，但明天再看一次（临时降级）。
             return LearningRecord(
                 wordId: wordId,
-                consecutiveCorrects: nextCorrects,
+                intervalDays: currentInterval,
                 nextReviewDate: scheduler.retryReviewDate(from: now),
-                memoryState: .blurry,
-                lastReviewedAt: now,
-                lastMistakeAt: now
+                lastReviewedAt: now
             )
         case .forgot:
+            // 左滑：间隔归零，明天重头再来。
             return LearningRecord(
                 wordId: wordId,
-                consecutiveCorrects: 0,
+                intervalDays: 0,
                 nextReviewDate: scheduler.retryReviewDate(from: now),
-                memoryState: .forgot,
-                lastReviewedAt: now,
-                lastMistakeAt: now
+                lastReviewedAt: now
             )
         }
     }
 
     private func updateQueueAfterReview(
         _ wordId: String,
-        affectsDailyProgress: Bool,
-        wasInLearningQueue: Bool,
+        source: ReviewSource,
         now: Date
     ) {
-        if affectsDailyProgress, dailyDeckWordIds.contains(wordId) {
+        // 仅 dailyDeck 来源 & 该词确实在今天这副牌里时，才计入今日目标进度。
+        if source == .dailyDeck, dailyDeckWordIds.contains(wordId) {
             dailySwipedWordIds.insert(wordId)
         }
 
-        guard affectsDailyProgress || (isInfinitePracticeActive && wasInLearningQueue) else { return }
-
+        // 只有队列入口推进队列；lookup/progress 只写记忆档案，不影响当前牌堆。
+        guard source == .dailyDeck || source == .extraPractice else { return }
         removeWordFromLearningQueue(wordId)
         refillInfiniteQueueIfNeeded(now: now)
-    }
-
-    @discardableResult
-    private func handleInfinitePracticeSwipe(_ wordId: String, now: Date) -> Bool {
-        guard isInfinitePracticeActive else { return false }
-        removeWordFromLearningQueue(wordId)
-        refillInfiniteQueueIfNeeded(now: now)
-        saveLearningState()
-        return true
     }
 
     public func resetWordToNew(_ wordId: String) {
@@ -946,20 +830,14 @@ public final class SRSManager: ObservableObject {
             let normalizedDate = normalizedReviewDate(record.nextReviewDate)
             partialResult[pair.key] = LearningRecord(
                 wordId: record.wordId,
-                consecutiveCorrects: record.consecutiveCorrects,
+                intervalDays: record.intervalDays,
                 nextReviewDate: normalizedDate,
-                memoryState: record.memoryState,
-                lastReviewedAt: record.lastReviewedAt,
-                lastMistakeAt: record.lastMistakeAt
+                lastReviewedAt: record.lastReviewedAt
             )
         }
     }
 
-    private func didMarkMistakeOnSameDay(in record: LearningRecord, as date: Date) -> Bool {
-        guard let lastMistakeAt = record.lastMistakeAt else { return false }
-        return calendar.isDate(lastMistakeAt, inSameDayAs: date)
-    }
-    
+
     func setTargetLevel(_ level: String) {
         let normalizedLevel = canonicalTargetLevel(level)
         guard targetLevel != normalizedLevel else { return }
@@ -1163,8 +1041,8 @@ public final class SRSManager: ObservableObject {
         return learningRecords.values
             .filter { $0.memoryState == state }
             .sorted { lhs, rhs in
-                let lhsDate = lhs.lastReviewedAt ?? lhs.lastMistakeAt ?? lhs.nextReviewDate
-                let rhsDate = rhs.lastReviewedAt ?? rhs.lastMistakeAt ?? rhs.nextReviewDate
+                let lhsDate = lhs.lastReviewedAt ?? lhs.nextReviewDate
+                let rhsDate = rhs.lastReviewedAt ?? rhs.nextReviewDate
                 if lhsDate == rhsDate { return lhs.wordId < rhs.wordId }
                 return lhsDate > rhsDate
             }
@@ -1206,7 +1084,7 @@ public final class SRSManager: ObservableObject {
         guard !levelWords.isEmpty else { return false }
         for word in levelWords {
             guard let record = learningRecords[word.id],
-                  record.consecutiveCorrects >= masteryThreshold else {
+                  record.memoryState == .mastered else {
                 return false
             }
         }
@@ -1530,9 +1408,6 @@ public final class SRSManager: ObservableObject {
             dailySwipedWordIds: Array(dailySwipedWordIds).sorted(),
             learningQueueIds: learningQueueIds,
             levelDailyDeckSnapshots: levelDailyDeckSnapshots,
-            forgotWordIds: nil,
-            blurryWordIds: nil,
-            masteredWordIds: nil,
             dailyCompletionRatios: dailyCompletionRatios,
             dailyStudyStates: dailyStudyStates,
             isInfinitePracticeActive: isInfinitePracticeActive,
@@ -1569,12 +1444,6 @@ public final class SRSManager: ObservableObject {
         dailySwipedWordIds = Set(payload.dailySwipedWordIds)
         learningQueueIds = payload.learningQueueIds
         levelDailyDeckSnapshots = payload.levelDailyDeckSnapshots
-        migrateLegacyProgressBucketsIntoLearningRecords(
-            forgotWordIds: Set(payload.forgotWordIds ?? []),
-            blurryWordIds: Set(payload.blurryWordIds ?? []),
-            masteredWordIds: Set(payload.masteredWordIds ?? []),
-            now: Date()
-        )
         dailyCompletionRatios = payload.dailyCompletionRatios
         dailyStudyStates = payload.dailyStudyStates.filter { DailyStudyState(rawValue: $0.value) != nil }
         isInfinitePracticeActive = payload.isInfinitePracticeActive

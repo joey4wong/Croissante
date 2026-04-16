@@ -241,17 +241,17 @@ public struct ContentView: View {
     }
 
     private func markPresentedWordForgot(_ id: String, openedFromWidget: Bool) {
-        srsManager.markWordForgot(id, persistDuringInfinitePractice: true)
+        srsManager.markWordForgot(id, source: .lookup)
         refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
     }
 
     private func markPresentedWordMastered(_ id: String, openedFromWidget: Bool) {
-        srsManager.markWordMastered(id, persistDuringInfinitePractice: true)
+        srsManager.markWordMastered(id, source: .lookup)
         refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
     }
 
     private func markPresentedWordBlurry(_ id: String, openedFromWidget: Bool) {
-        srsManager.markWordBlurry(id, persistDuringInfinitePractice: true)
+        srsManager.markWordBlurry(id, source: .lookup)
         refreshWidgetAfterMarking(wordId: id, openedFromWidget: openedFromWidget)
     }
 
@@ -273,32 +273,20 @@ public struct ContentView: View {
     }
 
     private func markDiscoverWordForgot(_ id: String) {
-        let isInfinitePractice = srsManager.isInfinitePracticeActive
-        srsManager.markWordForgot(
-            id,
-            persistDuringInfinitePractice: isInfinitePractice,
-            affectsDailyProgress: !isInfinitePractice
-        )
+        let source: SRSManager.ReviewSource = srsManager.isInfinitePracticeActive ? .extraPractice : .dailyDeck
+        srsManager.markWordForgot(id, source: source)
         advanceDiscover()
     }
 
     private func markDiscoverWordMastered(_ id: String) {
-        let isInfinitePractice = srsManager.isInfinitePracticeActive
-        srsManager.markWordMastered(
-            id,
-            persistDuringInfinitePractice: isInfinitePractice,
-            affectsDailyProgress: !isInfinitePractice
-        )
+        let source: SRSManager.ReviewSource = srsManager.isInfinitePracticeActive ? .extraPractice : .dailyDeck
+        srsManager.markWordMastered(id, source: source)
         advanceDiscover()
     }
 
     private func markDiscoverWordBlurry(_ id: String) {
-        let isInfinitePractice = srsManager.isInfinitePracticeActive
-        srsManager.markWordBlurry(
-            id,
-            persistDuringInfinitePractice: isInfinitePractice,
-            affectsDailyProgress: !isInfinitePractice
-        )
+        let source: SRSManager.ReviewSource = srsManager.isInfinitePracticeActive ? .extraPractice : .dailyDeck
+        srsManager.markWordBlurry(id, source: source)
         advanceDiscover()
     }
 
@@ -3191,28 +3179,9 @@ private struct ProgressScreen: View {
                         dismissOnTap: true,
                         embeddedInTabView: true,
                         onDismiss: { dismissWordCard() },
-                        onSwipeForgot: {
-                            srsManager.markWordForgot(
-                                $0,
-                                persistDuringInfinitePractice: true,
-                                affectsDailyProgress: false
-                            )
-                        },
-                        onSwipeMastered: {
-                            srsManager.markWordMastered(
-                                $0,
-                                persistDuringInfinitePractice: true,
-                                affectsDailyProgress: false,
-                                trustUserIntent: true
-                            )
-                        },
-                        onSwipeBlurry: {
-                            srsManager.markWordBlurry(
-                                $0,
-                                persistDuringInfinitePractice: true,
-                                affectsDailyProgress: false
-                            )
-                        }
+                        onSwipeForgot: { srsManager.markWordForgot($0, source: .progress) },
+                        onSwipeMastered: { srsManager.markWordMastered($0, source: .progress) },
+                        onSwipeBlurry: { srsManager.markWordBlurry($0, source: .progress) }
                     )
                     .id(word.id)
                     .mask(
@@ -3690,9 +3659,9 @@ private struct SettingsScreen: View {
                     "Once I swipe a card, does it come back today?"
                 ),
                 answer: appState.localized(
-                    "In today's main set, each card appears exactly once — Forgot or Blurry counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules a short-term review for tomorrow. In Continue ∞ (the optional extra practice after you hit today's goal), the same card can reappear for re-practice, but subsequent swipes on the same day won't overwrite the record — the first swipe is authoritative.",
-                    "今天的主牌组里，每张卡片只会出现一次。忘记或模糊就是你今天对这张卡的回答，卡片立即完成并移出主队列，SRS 引擎会安排明天的短期复习。在 Continue ∞（达成今日目标后的可选加练流）里，同一张卡可能会再次出现供你练习，但当天后续的滑动不会覆盖记忆档案——以第一次滑动为准。",
-                    "In today's main set, each card appears exactly once — Forgot or Blurry counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules a short-term review for tomorrow. In Continue ∞ (the optional extra practice after you hit today's goal), the same card can reappear for re-practice, but subsequent swipes on the same day won't overwrite the record — the first swipe is authoritative."
+                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. In Continue ∞ (the optional extra practice after you hit today's goal) the same card can reappear. In study flows, once a card has been reviewed today, you can no longer upgrade it that same day (a Mastered swipe is ignored), but you can always downgrade it (Blurry or Forgot always writes). The Progress page is different: it is a manual archive view, so right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck.",
+                    "今天的主牌组里，每张卡片只会出现一次——掌握、模糊、忘记任意一种都算你今天对它的回答，卡片会立即移出主队列，SRS 引擎安排下次复习。在 Continue ∞（完成今日目标后的可选加练流）里，同一张卡可能会再次出现。在学习流里，同一张卡一天内已经复习过之后，就不能再“升级”了——再次右滑“掌握”会被忽略；但你任何时候都可以“降级”——模糊或忘记一定会写入。进度页不同：它是手动整理档案的地方，在那里右滑“掌握”可以把词放进掌握桶，但不会改变今天的牌堆。",
+                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. In Continue ∞ the same card can reappear. Study flows cap same-day upgrades, but Progress is a manual archive view: right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck."
                 )
             ),
             FAQItem(
@@ -3716,9 +3685,9 @@ private struct SettingsScreen: View {
                     "What is Continue ∞ and when does it appear?"
                 ),
                 answer: appState.localized(
-                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. The first swipe on a card in Continue ∞ writes the memory state, progress bucket, and next review schedule normally. If the same card surfaces again within the day, later swipes won't overwrite the record — the first swipe is authoritative, so you can't drift a Forgot word up to Mastered by re-swiping. Swipes in Continue ∞ never change today's base completion or heatmap.",
-                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。在 Continue ∞ 中首次滑动一张卡，会照常写入记忆状态、进度分类和下次复习安排；若同一张卡当天再次出现，后续的滑动不会覆盖记忆档案——以第一次滑动为准，因此你无法通过反复右滑把“忘记”的词刷成“掌握”。Continue ∞ 的任何滑动都不会改动今日基础目标的完成状态或热力图。",
-                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. The first swipe on a card in Continue ∞ writes the memory state, progress bucket, and next review schedule normally. If the same card surfaces again within the day, later swipes won't overwrite the record — the first swipe is authoritative, so you can't drift a Forgot word up to Mastered by re-swiping. Swipes in Continue ∞ never change today's base completion or heatmap."
+                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Every swipe here updates the memory archive and the next review schedule — Continue ∞ is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day (first Mastered wins; a later Mastered after you already reviewed it today is ignored), but any downgrade (Blurry or Forgot) always writes. Swipes in Continue ∞ never change today's base completion percentage or the heatmap.",
+                    "只有当你完整达成当天基础目标后，首页才会出现 Continue ∞，点击后进入“当前等级”的可选加练流。加练流里的每一次滑动都会更新记忆档案和下次复习安排——Continue ∞ 不是一次性练习。同日规则对这里同样生效：一张卡一天只能被“升级”一次（第一次右滑掌握才算；之后再次右滑会被忽略），但任何“降级”（模糊或忘记）任何时候都会写入。加练流里的滑动不会改动今日基础目标的完成比例或热力图。",
+                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Every swipe here updates the memory archive and the next review schedule — Continue ∞ is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day, but any downgrade always writes. Swipes in Continue ∞ never change today's base completion percentage or the heatmap."
                 )
             ),
             FAQItem(
@@ -3781,9 +3750,9 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. All three count toward today's goal and complete the card for the day. Your Progress page tracks the long-term memory state, so a word marked Blurry or Forgot will show as unsettled even if you later swipe it Mastered.",
-                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑不记录。三种滑动都计入今日目标并完成当天该张卡片。进度页跟踪的是长期记忆状态，因此被标记“模糊”或“忘记”的单词在进度页中仍会显示为未稳固状态。",
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. All three count toward today's goal and complete the card for the day. Your Progress page tracks the long-term memory state, so a word marked Blurry or Forgot will show as unsettled even if you later swipe it Mastered."
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal and complete that card for the day. In study flows, Mastered promotes the interval along 0 → 1 → 2 → 4 → 8 → 15 → 30 days and keeps doubling after that; Blurry keeps the interval but retries tomorrow; Forgot resets the interval to 0 and retries tomorrow. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered without changing today's deck.",
+                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑不记录。在日课阶段，掌握、模糊、忘记都会计入今日目标并完成当天的这张卡。在学习流里，“掌握”会让复习间隔沿着 0 → 1 → 2 → 4 → 8 → 15 → 30 天的阶梯往上走；超过 30 天之后每次正确再 ×2（60、120、240…）。“模糊”保留当前间隔，但安排明天再复习一次。“忘记”把间隔清零，也安排明天再看。在进度页里，右滑“掌握”是手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会改变今天的牌堆。",
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal. In study flows, Mastered climbs the interval ladder one step at a time; Blurry retries tomorrow without changing the interval; Forgot resets the interval to 0. In Progress, right-swiping Mastered manually raises the interval to at least 8 days without changing today's deck."
                 )
             ),
             FAQItem(
@@ -3794,22 +3763,22 @@ private struct SettingsScreen: View {
                     "Blurry और Forgot से रिव्यू कैसे बदलता है?"
                 ),
                 answer: appState.localized(
-                    "Both count toward today's goal immediately — the card is done after one swipe. Forgot resets consecutive corrects to 0 and schedules a short review tomorrow; Blurry reduces consecutive corrects by 1 and does the same. Your Progress page will record the word as unsettled. It returns to Mastered only after a future scheduled review is also marked Mastered.",
-                    "“模糊”和“忘记”不会给今天额外加卡。这个词会留在今天的目标池里，直到你今天把它标记为“掌握”；两者都会安排到明天短期复习。区别是：“忘记”会把连续正确数归 0，“模糊”只会让连续正确数减 1。如果同一天后面又标记“掌握”，今天的目标可以把它算作通过，但长期进度仍会把它视为未稳固；只有之后到期复习也标记“掌握”，它才会真正回到“掌握”。",
-                    "Both count toward today's goal immediately. Forgot resets consecutive corrects to 0; Blurry reduces them by 1. Both schedule a short review tomorrow. शब्द आज के सेट में तब तक रहता है जब तक आप उसे Mastered नहीं कर देते, और दोनों को कल छोटे रिव्यू के लिए रखा जाता है। Forgot लगातार सही जवाबों को 0 कर देता है; Blurry उन्हें सिर्फ 1 घटाता है। अगर आप उसी दिन बाद में Mastered कर दें, तो आज का लक्ष्य उसे पास मान सकता है, लेकिन लंबी अवधि की प्रगति उसे अभी भी अस्थिर मानती है। वह बाद की scheduled review में फिर से Mastered होने पर ही Mastered में लौटता है."
+                    "Both complete the card for the day on the first swipe — no duplicate cards get injected. Forgot resets the review interval to 0 and schedules a retry tomorrow (the word drops into the Forgot bucket on the Progress page). Blurry keeps the current interval unchanged but still schedules a retry tomorrow (so a word that was already deep in Mastered stays Mastered in the progress bucket, it just gets a closer check-in). In Explore and Continue ∞, returning a Forgot word to Mastered means climbing the interval ladder again. In Progress, you can manually right-swipe Mastered to place it back into the Mastered bucket.",
+                    "“模糊”和“忘记”都在一次滑动后就完成当天该张卡，不会额外加卡。“忘记”把复习间隔归零，并安排明天重新复习（进度页会掉到“忘记”桶）。“模糊”保留当前间隔不变，但同样安排明天再看一次——所以原本在深度“掌握”的词被标“模糊”后仍然留在“掌握”桶里，只是近期会再 check 一次。在首页和 Continue ∞ 里，要把一个被标“忘记”的词重新推回“掌握”，需要沿间隔阶梯重新爬上去；在进度页里，你可以手动右滑“掌握”，把它直接放回掌握桶。",
+                    "Both complete the card for the day on the first swipe. Forgot resets the interval to 0 and retries tomorrow. Blurry keeps the current interval but also retries tomorrow. In Explore and Continue ∞, a word climbs back through the interval ladder; in Progress, right-swiping Mastered manually places it in the Mastered bucket."
                 )
             ),
             FAQItem(
                 id: "progress-buckets",
                 question: appState.localized(
-                    "Why can a word stay Blurry after I mark it Mastered?",
-                    "为什么我点了“掌握”，它还会留在“模糊”？",
-                    "Why can a word stay Blurry after I mark it Mastered?"
+                    "How do the three Progress buckets (Forgot / Blurry / Mastered) get decided?",
+                    "进度页的“忘记 / 模糊 / 掌握”三档是怎么划分的？",
+                    "How do the three Progress buckets (Forgot / Blurry / Mastered) get decided?"
                 ),
                 answer: appState.localized(
-                    "Because Progress is not a last-swipe list. If a word was missed today, the same-day Mastered swipe only proves you can pass it after practice. The word moves back to Mastered after a later scheduled review also succeeds.",
-                    "因为进度页不是“最后一次手势列表”。如果一个词今天出错过，同一天后面的“掌握”只能说明你通过练习后暂时答对了；等后续到期复习再次成功，它才会回到“掌握”。",
-                    "Because Progress is not a last-swipe list. If a word was missed today, the same-day Mastered swipe only proves you can pass it after practice. The word moves back to Mastered after a later scheduled review also succeeds."
+                    "The bucket is derived directly from a word's current review interval — nothing is stored separately. Interval = 0 days → Forgot. Interval = 1-7 days → Blurry. Interval ≥ 8 days → Mastered. In Explore and Continue ∞, Mastered swipes climb the ladder one step at a time and same-day upgrades are capped. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered, without affecting today's deck.",
+                    "进度页的桶直接由该词当前的复习间隔派生，没有额外存储。间隔 = 0 天 → 忘记。间隔 1-7 天 → 模糊。间隔 ≥ 8 天 → 掌握。在首页和 Continue ∞ 里，右滑“掌握”会沿阶梯一档一档上升，并受每日升级上限限制。在进度页里，右滑“掌握”是一次手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会影响今天的牌堆。",
+                    "The bucket is derived from the current review interval: 0 days → Forgot, 1-7 days → Blurry, 8+ days → Mastered. Explore and Continue ∞ climb one step at a time; Progress right-swipe Mastered manually raises the interval to at least 8 days without changing today's deck."
                 )
             ),
             FAQItem(
