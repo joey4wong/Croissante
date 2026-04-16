@@ -5,3 +5,7 @@ workers_dev = true
 
 [observability]
 enabled = true
+
+[[r2_buckets]]
+binding = "TTS_CACHE"
+bucket_name = "croissante-tts-audio"

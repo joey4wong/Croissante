@@ -13,6 +13,7 @@ type ContentType = "word" | "sentence";
 
 interface Env {
   ELEVENLABS_API_KEY?: string;
+  TTS_CACHE?: R2Bucket;
 }
 
 interface TTSRequestBody {
@@ -89,6 +90,22 @@ export default {
 
     const stability = contentType === "word" ? 0.75 : 0.5;
 
+    const r2Key = await computeR2Key(requestedVoice || DEFAULT_VOICE_KEY, contentType, input);
+
+    if (env.TTS_CACHE) {
+      const cached = await env.TTS_CACHE.get(r2Key);
+      if (cached) {
+        return new Response(cached.body, {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "audio/mpeg",
+            "Cache-Control": "public, max-age=31536000",
+          },
+        });
+      }
+    }
+
     const upstreamResponse = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
       {
@@ -118,13 +135,28 @@ export default {
       );
     }
 
-    return new Response(await upstreamResponse.arrayBuffer(), {
+    const audioBuffer = await upstreamResponse.arrayBuffer();
+
+    if (env.TTS_CACHE) {
+      await env.TTS_CACHE.put(r2Key, audioBuffer.slice(0), {
+        httpMetadata: { contentType: "audio/mpeg" },
+      });
+    }
+
+    return new Response(audioBuffer, {
       status: 200,
       headers: {
         ...corsHeaders,
-        "Cache-Control": "no-store",
         "Content-Type": "audio/mpeg",
+        "Cache-Control": "public, max-age=31536000",
       },
     });
   },
 };
+
+async function computeR2Key(voiceKey: string, contentType: string, input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return `${voiceKey}/${contentType}/${hex}.mp3`;
+}
