@@ -663,13 +663,15 @@ public final class SRSManager: ObservableObject {
     public func markWordMastered(
         _ wordId: String,
         persistDuringInfinitePractice: Bool = false,
-        affectsDailyProgress: Bool = true
+        affectsDailyProgress: Bool = true,
+        trustUserIntent: Bool = false
     ) {
         recordReview(
             wordId,
             outcome: .mastered,
             persistDuringInfinitePractice: persistDuringInfinitePractice,
-            affectsDailyProgress: affectsDailyProgress
+            affectsDailyProgress: affectsDailyProgress,
+            trustUserIntent: trustUserIntent
         )
     }
     
@@ -703,7 +705,8 @@ public final class SRSManager: ObservableObject {
         _ wordId: String,
         outcome: ReviewOutcome,
         persistDuringInfinitePractice: Bool,
-        affectsDailyProgress: Bool
+        affectsDailyProgress: Bool,
+        trustUserIntent: Bool = false
     ) {
         let now = Date()
         if !persistDuringInfinitePractice, handleInfinitePracticeSwipe(wordId, now: now) {
@@ -715,7 +718,8 @@ public final class SRSManager: ObservableObject {
             for: wordId,
             outcome: outcome,
             oldRecord: oldRecord,
-            now: now
+            now: now,
+            trustUserIntent: trustUserIntent
         )
         learningRecords[wordId] = newRecord
 
@@ -741,13 +745,16 @@ public final class SRSManager: ObservableObject {
         for wordId: String,
         outcome: ReviewOutcome,
         oldRecord: LearningRecord?,
-        now: Date
+        now: Date,
+        trustUserIntent: Bool = false
     ) -> LearningRecord {
         switch outcome {
         case .mastered:
             let oldCorrects = oldRecord?.consecutiveCorrects ?? 0
             let nextCorrects = oldRecord == nil ? 1 : min(oldCorrects + 1, masteryThreshold)
-            let hadMistakeToday = oldRecord.map { didMarkMistakeOnSameDay(in: $0, as: now) } ?? false
+            let hadMistakeToday = trustUserIntent
+                ? false
+                : (oldRecord.map { didMarkMistakeOnSameDay(in: $0, as: now) } ?? false)
             return LearningRecord(
                 wordId: wordId,
                 consecutiveCorrects: nextCorrects,

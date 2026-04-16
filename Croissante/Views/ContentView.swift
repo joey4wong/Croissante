@@ -1976,22 +1976,11 @@ struct SearchSelectedWordCardView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    #if os(iOS)
-    private static let exploreTabBarHeight: CGFloat = 49
-    #endif
-
     var body: some View {
         GeometryReader { geo in
             let contentWidth = DiscoverCardLayout.contentWidth(forScreenWidth: geo.size.width)
             let cardHeight = DiscoverCardLayout.cardHeight(forCardWidth: contentWidth)
-            #if os(iOS)
-            let containerHeight: CGFloat = {
-                if embeddedInTabView { return geo.size.height }
-                return max(0, geo.size.height - Self.exploreTabBarHeight)
-            }()
-            #else
             let containerHeight = geo.size.height
-            #endif
             let cardYOffset = DiscoverCardLayout.restingCardYOffset(containerHeight: containerHeight)
             ZStack {
                 if dismissOnTap {
@@ -2043,6 +2032,9 @@ struct SearchSelectedWordCardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .interactiveDismissDisabled()
+        #if os(iOS)
+        .ignoresSafeArea(.container, edges: .bottom)
+        #endif
     }
 }
 
@@ -3210,7 +3202,8 @@ private struct ProgressScreen: View {
                             srsManager.markWordMastered(
                                 $0,
                                 persistDuringInfinitePractice: true,
-                                affectsDailyProgress: false
+                                affectsDailyProgress: false,
+                                trustUserIntent: true
                             )
                         },
                         onSwipeBlurry: {
