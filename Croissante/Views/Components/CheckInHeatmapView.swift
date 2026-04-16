@@ -58,7 +58,7 @@ struct CheckInHeatmapView: View {
     }
 
     private var shouldBlinkTodayDot: Bool {
-        srsManager.todayStudyState == .inProgress && srsManager.todayMasteryProgressRatio < 0.20
+        srsManager.todayStudyState == .inProgress && srsManager.todayDeckCompletionRatio < 0.20
     }
 
     private var panelBackground: Color {
@@ -283,7 +283,7 @@ struct CheckInHeatmapView: View {
         }
 
         let isToday = calendar.isDate(date, inSameDayAs: today)
-        let ratio = srsManager.masteryProgressRatio(for: date)
+        let ratio = srsManager.deckCompletionRatio(for: date)
         let state = srsManager.studyState(for: date)
 
         let fillColor: Color

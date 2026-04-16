@@ -648,7 +648,7 @@ private struct DiscoverScreen: View {
     }
 
     private var shouldShowCompletionCelebration: Bool {
-        hasSeenCardsInSession && words.isEmpty && srsManager.hasReachedDailyMasteryGoal
+        hasSeenCardsInSession && words.isEmpty && srsManager.hasCompletedDailyGoal
     }
 
     private var presentedWord: SimpleWord? {

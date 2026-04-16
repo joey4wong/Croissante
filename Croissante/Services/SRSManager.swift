@@ -25,19 +25,13 @@ private struct SRSScheduler {
     /// 软梯度：0 → 1 → 2 → 4 → 8 → 15 → 30，此后每次正确再 ×2（60、120、240…）。
     /// 用户学得越稳，卡片出现得越稀疏，但永远留在系统里。
     func nextMasteryInterval(from current: Int) -> Int {
-        switch current {
-        case ..<1:  return 1
-        case 1:     return 2
-        case 2:     return 4
-        case 4:     return 8
-        case 8:     return 15
-        case 15:    return 30
-        default:
-            // 30 以上按 ×2 继续，或在阶梯外的异常值（3/5/6/7）找下一档
-            if current >= 30 { return current * 2 }
-            let ladder = [1, 2, 4, 8, 15, 30]
-            return ladder.first { $0 > current } ?? 30
+        let ladder = SRSRules.masteryLadder
+        if let nextStep = ladder.first(where: { current < $0 }) {
+            return nextStep
         }
+
+        let highestStep = ladder.last ?? 1
+        return max(current * 2, highestStep * 2)
     }
 
     func buildDailyDeck(
@@ -581,6 +575,22 @@ public final class SRSManager: ObservableObject {
         case lookup
         /// Progress 页展开卡：用户手动整理记忆档案，不计今日目标，不推进当前牌堆。
         case progress
+
+        var countsTowardDailyGoal: Bool {
+            self == .dailyDeck
+        }
+
+        var advancesQueue: Bool {
+            self == .dailyDeck || self == .extraPractice
+        }
+
+        var bypassesSameDayMasteryCap: Bool {
+            self == .progress
+        }
+
+        var usesManualMasteryFloor: Bool {
+            self == .progress
+        }
     }
 
     public func markWordMastered(_ wordId: String, source: ReviewSource) {
@@ -614,7 +624,8 @@ public final class SRSManager: ObservableObject {
         // 降级不受限——用户任何时候都可以说“我其实不会”。
         let reviewedToday = oldRecord?.lastReviewedAt
             .map { calendar.isDate($0, inSameDayAs: now) } ?? false
-        let blockedAsDailyUpgrade = reviewedToday && outcome == .mastered && source != .progress
+        let blockedAsDailyUpgrade = reviewedToday && outcome == .mastered && !source.bypassesSameDayMasteryCap
+        var didMutateLearningState = false
 
         if !blockedAsDailyUpgrade {
             learningRecords[wordId] = buildLearningRecord(
@@ -624,13 +635,14 @@ public final class SRSManager: ObservableObject {
                 oldRecord: oldRecord,
                 now: now
             )
+            didMutateLearningState = true
         }
 
-        updateQueueAfterReview(
+        didMutateLearningState = updateQueueAfterReview(
             wordId,
             source: source,
             now: now
-        )
+        ) || didMutateLearningState
 
         if outcome == .forgot {
             NotificationCenter.default.post(
@@ -640,7 +652,9 @@ public final class SRSManager: ObservableObject {
             )
         }
 
-        saveLearningState(touchMutation: true)
+        if didMutateLearningState {
+            saveLearningState(touchMutation: true)
+        }
     }
 
     private func buildLearningRecord(
@@ -653,9 +667,9 @@ public final class SRSManager: ObservableObject {
         let currentInterval = oldRecord?.intervalDays ?? 0
         switch outcome {
         case .mastered:
-            if source == .progress {
+            if source.usesManualMasteryFloor {
                 // Progress 页是用户手动整理档案：补到掌握下限，但不借机无限升级。
-                let nextInterval = max(currentInterval, 8)
+                let nextInterval = max(currentInterval, SRSRules.masteredIntervalThreshold)
                 return LearningRecord(
                     wordId: wordId,
                     intervalDays: nextInterval,
@@ -690,20 +704,25 @@ public final class SRSManager: ObservableObject {
         }
     }
 
+    @discardableResult
     private func updateQueueAfterReview(
         _ wordId: String,
         source: ReviewSource,
         now: Date
-    ) {
+    ) -> Bool {
+        var didMutateQueueState = false
+
         // 仅 dailyDeck 来源 & 该词确实在今天这副牌里时，才计入今日目标进度。
-        if source == .dailyDeck, dailyDeckWordIds.contains(wordId) {
-            dailySwipedWordIds.insert(wordId)
+        if source.countsTowardDailyGoal, dailyDeckWordIds.contains(wordId) {
+            didMutateQueueState = dailySwipedWordIds.insert(wordId).inserted || didMutateQueueState
         }
 
         // 只有队列入口推进队列；lookup/progress 只写记忆档案，不影响当前牌堆。
-        guard source == .dailyDeck || source == .extraPractice else { return }
+        guard source.advancesQueue else { return didMutateQueueState }
+        let previousQueueIds = learningQueueIds
         removeWordFromLearningQueue(wordId)
         refillInfiniteQueueIfNeeded(now: now)
+        return didMutateQueueState || previousQueueIds != learningQueueIds
     }
 
     public func resetWordToNew(_ wordId: String) {
@@ -816,7 +835,7 @@ public final class SRSManager: ObservableObject {
         dailyCompletionRatios[dateKey] = max(dailyCompletionRatios[dateKey] ?? 0, ratio)
         dailyStudyStates[dateKey] = stateFrom(
             deckCount: deckWordIds.count,
-            masteredCount: swipedCount
+            completedCount: swipedCount
         ).rawValue
     }
 
@@ -934,7 +953,7 @@ public final class SRSManager: ObservableObject {
         if resolved.isEmpty,
            !isInfinitePracticeActive,
            todayStudyState == .completed,
-           hasReachedDailyMasteryGoal {
+           hasCompletedDailyGoal {
             completeDailyGoalAndEnterInfinitePractice()
             resolved = learningQueueIds.compactMap { appState.getWordById($0) }
         }
@@ -1071,13 +1090,13 @@ public final class SRSManager: ObservableObject {
         dailySwipedWordIds.count
     }
 
-    var hasReachedDailyMasteryGoal: Bool {
+    var hasCompletedDailyGoal: Bool {
         let goalCount = dailyDeckWordIds.count
         guard goalCount > 0 else { return false }
         return todayDeckSwipedCount >= goalCount
     }
 
-    public func isCurrentLevelLexiconFullyGraduated(allWords: [SimpleWord]) -> Bool {
+    public func isCurrentLevelLexiconFullyMastered(allWords: [SimpleWord]) -> Bool {
         let level = targetLevel
         guard level != "All" else { return false }
         let levelWords = allWords.filter { $0.level == level }
@@ -1092,7 +1111,7 @@ public final class SRSManager: ObservableObject {
     }
 
     public func completeDailyGoalAndEnterInfinitePractice() {
-        guard hasReachedDailyMasteryGoal else { return }
+        guard hasCompletedDailyGoal else { return }
         guard let appState else { return }
 
         let sourceLevel = infinitePracticeSourceLevel(afterCompleting: targetLevel, allWords: appState.words)
@@ -1109,7 +1128,7 @@ public final class SRSManager: ObservableObject {
     private func infinitePracticeSourceLevel(afterCompleting level: String, allWords: [SimpleWord]) -> String {
         let normalizedLevel = canonicalTargetLevel(level)
         guard normalizedLevel != "All",
-              isCurrentLevelLexiconFullyGraduated(allWords: allWords),
+              isCurrentLevelLexiconFullyMastered(allWords: allWords),
               let next = Self.nextProficiencyLevel(after: normalizedLevel) else {
             return normalizedLevel
         }
@@ -1123,24 +1142,24 @@ public final class SRSManager: ObservableObject {
         saveLearningState(touchMutation: true)
     }
 
-    var todayMasteryProgressRatio: Double {
+    var todayDeckCompletionRatio: Double {
         guard !dailyDeckWordIds.isEmpty else { return 0 }
         let ratio = Double(todayDeckSwipedCount) / Double(dailyDeckWordIds.count)
         return min(max(ratio, 0), 1)
     }
 
     var todayStudyState: DailyStudyState {
-        stateFrom(deckCount: dailyDeckWordIds.count, masteredCount: todayDeckSwipedCount)
+        stateFrom(deckCount: dailyDeckWordIds.count, completedCount: todayDeckSwipedCount)
     }
 
     var hasNoEligibleCardsToday: Bool {
         todayStudyState == .noEligibleCards
     }
 
-    func masteryProgressRatio(for date: Date) -> Double {
+    func deckCompletionRatio(for date: Date) -> Double {
         let key = dayFormatter.string(from: calendar.startOfDay(for: date))
         if key == todayKey() {
-            return todayMasteryProgressRatio
+            return todayDeckCompletionRatio
         }
         return min(max(dailyCompletionRatios[key] ?? 0, 0), 1)
     }
@@ -1163,14 +1182,14 @@ public final class SRSManager: ObservableObject {
         return .noEligibleCards
     }
 
-    private func stateFrom(deckCount: Int, masteredCount: Int) -> DailyStudyState {
+    private func stateFrom(deckCount: Int, completedCount: Int) -> DailyStudyState {
         guard deckCount > 0 else { return .noEligibleCards }
-        return masteredCount >= deckCount ? .completed : .inProgress
+        return completedCount >= deckCount ? .completed : .inProgress
     }
 
     private func updateTodaySnapshots() {
         let key = todayKey()
-        dailyCompletionRatios[key] = todayMasteryProgressRatio
+        dailyCompletionRatios[key] = todayDeckCompletionRatio
         dailyStudyStates[key] = todayStudyState.rawValue
     }
 
