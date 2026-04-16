@@ -3690,9 +3690,9 @@ private struct SettingsScreen: View {
                     "Once I swipe a card, does it come back today?"
                 ),
                 answer: appState.localized(
-                    "No. Each card in today's set appears exactly once. Forgot or Blurry counts as your answer for today — the card is done and removed from the queue. The SRS engine schedules it for a short-term review tomorrow, and your Progress page will show its memory state honestly.",
-                    "不会。今天的每张卡片只会出现一次。忘记或模糊就是你今天对这张卡的回答，卡片立即完成并移出队列。SRS 引擎会安排明天的短期复习，进度页也会如实展示该词的记忆状态。",
-                    "No. Each card in today's set appears exactly once. Forgot or Blurry counts as your answer for today — the card is done and removed from the queue. The SRS engine schedules it for a short-term review tomorrow, and your Progress page will show its memory state honestly."
+                    "In today's main set, each card appears exactly once — Forgot or Blurry counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules a short-term review for tomorrow. In Continue ∞ (the optional extra practice after you hit today's goal), the same card can reappear for re-practice, but subsequent swipes on the same day won't overwrite the record — the first swipe is authoritative.",
+                    "今天的主牌组里，每张卡片只会出现一次。忘记或模糊就是你今天对这张卡的回答，卡片立即完成并移出主队列，SRS 引擎会安排明天的短期复习。在 Continue ∞（达成今日目标后的可选加练流）里，同一张卡可能会再次出现供你练习，但当天后续的滑动不会覆盖记忆档案——以第一次滑动为准。",
+                    "In today's main set, each card appears exactly once — Forgot or Blurry counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules a short-term review for tomorrow. In Continue ∞ (the optional extra practice after you hit today's goal), the same card can reappear for re-practice, but subsequent swipes on the same day won't overwrite the record — the first swipe is authoritative."
                 )
             ),
             FAQItem(
@@ -3716,9 +3716,9 @@ private struct SettingsScreen: View {
                     "What is Continue ∞ and when does it appear?"
                 ),
                 answer: appState.localized(
-                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap.",
-                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。这里的滑动会写入记忆状态、进度分类和下次复习安排，但不会改动今日基础目标的完成状态或热力图。",
-                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Swipes there update memory state, progress buckets, and the next review schedule, but they do not change today's base completion or heatmap."
+                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. The first swipe on a card in Continue ∞ writes the memory state, progress bucket, and next review schedule normally. If the same card surfaces again within the day, later swipes won't overwrite the record — the first swipe is authoritative, so you can't drift a Forgot word up to Mastered by re-swiping. Swipes in Continue ∞ never change today's base completion or heatmap.",
+                    "只有当你完整达成当天基础掌握目标后，首页才会出现 Continue ∞。点击后会进入“当前等级”的可选加练流。在 Continue ∞ 中首次滑动一张卡，会照常写入记忆状态、进度分类和下次复习安排；若同一张卡当天再次出现，后续的滑动不会覆盖记忆档案——以第一次滑动为准，因此你无法通过反复右滑把“忘记”的词刷成“掌握”。Continue ∞ 的任何滑动都不会改动今日基础目标的完成状态或热力图。",
+                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. The first swipe on a card in Continue ∞ writes the memory state, progress bucket, and next review schedule normally. If the same card surfaces again within the day, later swipes won't overwrite the record — the first swipe is authoritative, so you can't drift a Forgot word up to Mastered by re-swiping. Swipes in Continue ∞ never change today's base completion or heatmap."
                 )
             ),
             FAQItem(

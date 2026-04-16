@@ -714,14 +714,24 @@ public final class SRSManager: ObservableObject {
         }
         let wasInLearningQueue = learningQueueIds.contains(wordId)
         let oldRecord = learningRecords[wordId]
-        let newRecord = learningRecord(
-            for: wordId,
-            outcome: outcome,
-            oldRecord: oldRecord,
-            now: now,
-            trustUserIntent: trustUserIntent
-        )
-        learningRecords[wordId] = newRecord
+
+        // 无限模式以"当日首次滑动"为准：同一张卡今天已被记录过的话，
+        // 后续 swipe 只推进队列和触发反馈，不再改写记忆档案。
+        // trustUserIntent（Progress 页显式标记）作为显式意图可越过此闸。
+        let alreadyRecordedTodayInInfinitePractice = isInfinitePracticeActive
+            && !trustUserIntent
+            && (oldRecord?.lastReviewedAt.map { calendar.isDate($0, inSameDayAs: now) } ?? false)
+
+        if !alreadyRecordedTodayInInfinitePractice {
+            let newRecord = learningRecord(
+                for: wordId,
+                outcome: outcome,
+                oldRecord: oldRecord,
+                now: now,
+                trustUserIntent: trustUserIntent
+            )
+            learningRecords[wordId] = newRecord
+        }
 
         updateQueueAfterReview(
             wordId,
