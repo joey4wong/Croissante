@@ -1616,6 +1616,7 @@ private struct ActiveDiscoverCardHost: View {
         DiscoverCard(
             word: word,
             screenWidth: containerSize.width,
+            screenHeight: containerSize.height,
             cardWidth: containerSize.width,
             cardHeight: restingCardContentHeight,
             isActiveTab: isActiveTab && interactionEnabled,
@@ -2001,6 +2002,7 @@ struct SearchSelectedWordCardView: View {
                 DiscoverCard(
                     word: word,
                     screenWidth: contentWidth,
+                    screenHeight: containerHeight,
                     cardWidth: contentWidth,
                     cardHeight: cardHeight,
                     isActiveTab: true,
@@ -2202,6 +2204,7 @@ private struct PartyPopperSymbolView: View {
 private struct DiscoverCard: View {
     let word: SimpleWord
     let screenWidth: CGFloat
+    let screenHeight: CGFloat
     let cardWidth: CGFloat?
     let cardHeight: CGFloat?
     let isActiveTab: Bool
@@ -2236,6 +2239,7 @@ private struct DiscoverCard: View {
     init(
         word: SimpleWord,
         screenWidth: CGFloat,
+        screenHeight: CGFloat,
         cardWidth: CGFloat? = nil,
         cardHeight: CGFloat? = nil,
         isActiveTab: Bool,
@@ -2255,6 +2259,7 @@ private struct DiscoverCard: View {
     ) {
         self.word = word
         self.screenWidth = screenWidth
+        self.screenHeight = screenHeight
         self.cardWidth = cardWidth
         self.cardHeight = cardHeight
         self.isActiveTab = isActiveTab
@@ -2361,17 +2366,24 @@ private struct DiscoverCard: View {
         return t * t * (3.0 - 2.0 * t)
     }
 
+    private var peekContentOpacity: Double {
+        let start: Double = 0.2
+        let t = max(0, min(1, (peekSmoothProgress - start) / (1 - start)))
+        return pow(t, 1.8)
+    }
+
     @ViewBuilder
     private func peekBehindWordCard(peek: SimpleWord, progress: Double) -> some View {
         DiscoverCard(
             word: peek,
             screenWidth: screenWidth,
+            screenHeight: screenHeight,
             cardWidth: cardWidth,
             cardHeight: cardHeight,
             isActiveTab: false,
             detailProgress: 1,
             glowStrength: progress,
-            contentOpacity: progress,
+            contentOpacity: peekContentOpacity,
             interactionsEnabled: false,
             onSwipeForgot: { _ in },
             onSwipeMastered: { _ in },
@@ -2639,7 +2651,7 @@ private struct DiscoverCard: View {
                         } else if dy > swipeThreshold && allowsBlurrySwipe {
                             let swipedWordId = displayedWord.id
                             onFlyAwayStart?()
-                            completeSwipe(to: CGSize(width: 0, height: 400)) {
+                            completeSwipe(to: CGSize(width: 0, height: screenHeight * 1.3)) {
                                 onSwipeBlurry(swipedWordId)
                             }
                         } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
@@ -3035,6 +3047,7 @@ private struct NounCornerAccentShape: Shape {
             nounUIEntityType: "named_entity"
         ),
         screenWidth: 390,
+        screenHeight: 844,
         cardHeight: 342,
         isActiveTab: true,
         onSwipeForgot: { _ in },
