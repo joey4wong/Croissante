@@ -339,11 +339,16 @@ struct ImagePickerView: UIViewControllerRepresentable {
         let picker = UIImagePickerController()
         if sourceType == .camera, UIImagePickerController.isSourceTypeAvailable(.camera) {
             picker.sourceType = .camera
+            picker.cameraCaptureMode = .photo
+            if UIImagePickerController.isCameraDeviceAvailable(.front) {
+                picker.cameraDevice = .front
+            }
         } else {
             picker.sourceType = .photoLibrary
         }
         picker.allowsEditing = false
         picker.delegate = context.coordinator
+        picker.modalPresentationStyle = .fullScreen
         return picker
     }
     
@@ -389,10 +394,15 @@ struct AvatarEditorView: View {
         var id: Int { hashValue }
     }
 
+    private enum PermissionAlert {
+        case photoLibrary, camera
+    }
+
     #if os(iOS)
     @State private var avatarImage: UIImage?
     #endif
     @State private var activeImageSource: ImageSource?
+    @State private var permissionAlert: PermissionAlert?
     @State private var isSaving = false
     @State private var showError = false
     @State private var errorMessage = ""
@@ -474,7 +484,7 @@ struct AvatarEditorView: View {
                     subtitle: appState.localized("Choose from your Library", "从相册中选择", "लाइब्रेरी से चुनें"),
                     showsDivider: true
                 ) {
-                    activeImageSource = .photoLibrary
+                    presentPhotoLibraryPicker()
                 }
 
                 sourceRow(
@@ -483,7 +493,7 @@ struct AvatarEditorView: View {
                     subtitle: appState.localized("Capture a new photo", "拍摄一张新照片", "नई फोटो लें"),
                     showsDivider: false
                 ) {
-                    activeImageSource = .camera
+                    presentCameraPicker()
                 }
                 #endif
             }
@@ -518,6 +528,20 @@ struct AvatarEditorView: View {
             } message: {
                 Text(errorMessage)
             }
+            .alert(permissionAlertTitle, isPresented: Binding(
+                get: { permissionAlert != nil },
+                set: { if !$0 { permissionAlert = nil } }
+            )) {
+                Button(appState.localized("Cancel", "取消", "रद्द करें"), role: .cancel) {
+                    permissionAlert = nil
+                }
+                Button(appState.localized("Settings", "设置", "सेटिंग्स")) {
+                    openAppSettings()
+                    permissionAlert = nil
+                }
+            } message: {
+                Text(permissionAlertMessage)
+            }
             #if os(iOS)
             .onChange(of: avatarImage) { _, newImage in
                 guard newImage != nil, !isSaving else { return }
@@ -527,6 +551,93 @@ struct AvatarEditorView: View {
     }
     
     #if os(iOS)
+    private var permissionAlertTitle: String {
+        switch permissionAlert {
+        case .photoLibrary:
+            appState.localized("Photo Access Needed", "需要照片权限", "फ़ोटो एक्सेस चाहिए")
+        case .camera:
+            appState.localized("Camera Access Needed", "需要相机权限", "कैमरा एक्सेस चाहिए")
+        case .none:
+            ""
+        }
+    }
+
+    private var permissionAlertMessage: String {
+        switch permissionAlert {
+        case .photoLibrary:
+            appState.localized(
+                "Allow photo access in Settings to choose an avatar.",
+                "请在设置中允许访问照片，才能选择头像。",
+                "अवतार चुनने के लिए सेटिंग्स में फ़ोटो एक्सेस की अनुमति दें।"
+            )
+        case .camera:
+            appState.localized(
+                "Allow camera access in Settings to take an avatar photo.",
+                "请在设置中允许访问相机，才能拍摄头像。",
+                "अवतार फ़ोटो लेने के लिए सेटिंग्स में कैमरा एक्सेस की अनुमति दें।"
+            )
+        case .none:
+            ""
+        }
+    }
+
+    private func presentPhotoLibraryPicker() {
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized, .limited:
+            activeImageSource = .photoLibrary
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                Task { @MainActor in
+                    if status == .authorized || status == .limited {
+                        activeImageSource = .photoLibrary
+                    } else {
+                        permissionAlert = .photoLibrary
+                    }
+                }
+            }
+        case .denied, .restricted:
+            permissionAlert = .photoLibrary
+        @unknown default:
+            permissionAlert = .photoLibrary
+        }
+    }
+
+    private func presentCameraPicker() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            errorMessage = appState.localized(
+                "Camera is not available on this device.",
+                "此设备没有可用的相机。",
+                "इस डिवाइस पर कैमरा उपलब्ध नहीं है।"
+            )
+            showError = true
+            return
+        }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            activeImageSource = .camera
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    if granted {
+                        activeImageSource = .camera
+                    } else {
+                        permissionAlert = .camera
+                    }
+                }
+            }
+        case .denied, .restricted:
+            permissionAlert = .camera
+        @unknown default:
+            permissionAlert = .camera
+        }
+    }
+
+    private func openAppSettings() {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL)
+    }
+
     private func saveAvatar() {
         guard let image = avatarImage else { return }
         
