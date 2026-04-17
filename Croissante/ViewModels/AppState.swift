@@ -896,8 +896,9 @@ public final class AppState: ObservableObject {
     }
 
     nonisolated private static func senseGroupingKey(for word: SimpleWord) -> String {
-        // Multi-sense grouping should preserve accents; search can stay accent-insensitive.
-        SearchTextNormalizer.normalizeExact(word.word.isEmpty ? word.displayWord : word.word)
+        // Multi-sense grouping should preserve lexical casing and accents; search can stay more permissive.
+        (word.word.isEmpty ? word.displayWord : word.word)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func scheduleSpotlightIndexing(words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) {

@@ -2004,13 +2004,22 @@ struct SearchSelectedWordCardView: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isCardInlineEditing = false
 
     var body: some View {
         GeometryReader { geo in
             let contentWidth = DiscoverCardLayout.contentWidth(forScreenWidth: geo.size.width)
             let cardHeight = DiscoverCardLayout.cardHeight(forCardWidth: contentWidth)
             let containerHeight = geo.size.height
-            let cardYOffset = DiscoverCardLayout.restingCardYOffset(containerHeight: containerHeight)
+            let restingCardYOffset = DiscoverCardLayout.restingCardYOffset(containerHeight: containerHeight)
+            let editingDockingOffset = isCardInlineEditing
+                ? DiscoverCardLayout.keyboardDockingOffset(
+                    containerHeight: containerHeight,
+                    cardContentHeight: cardHeight,
+                    restingYOffset: restingCardYOffset
+                )
+                : 0
+            let cardYOffset = restingCardYOffset + editingDockingOffset
             ZStack {
                 if dismissOnTap {
                     ThemedBackgroundView(
@@ -2035,7 +2044,7 @@ struct SearchSelectedWordCardView: View {
                     isActiveTab: true,
                     resetTransformAfterSwipe: false,
                     allowsBlurrySwipe: allowsBlurrySwipe,
-                    onSwipeUpAction: dismissOnTap ? { _ in } : nil,
+                    allowsInlineEditing: true,
                     onSwipeForgot: { swipedWordId in
                         onDismiss()
                         DispatchQueue.main.async {
@@ -2053,12 +2062,20 @@ struct SearchSelectedWordCardView: View {
                         DispatchQueue.main.async {
                             onSwipeBlurry(swipedWordId)
                         }
+                    },
+                    onInlineEditingChange: { editing in
+                        withAnimation(.easeOut(duration: editing ? 0.22 : 0.16)) {
+                            isCardInlineEditing = editing
+                        }
                     }
                 )
                 .id(word.id)
                 .frame(width: contentWidth, height: containerHeight)
                 .position(x: geo.size.width / 2, y: containerHeight / 2 + cardYOffset)
             }
+        }
+        .onChange(of: word.id) { _, _ in
+            isCardInlineEditing = false
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .interactiveDismissDisabled()
@@ -2563,8 +2580,8 @@ private struct DiscoverCard: View {
         let editingWordId = displayedWord.id
         let flyOutOffset = upwardFlyOutOffset
         let flyOutDuration: TimeInterval = 0.18
-        let editHandoffDelay: TimeInterval = 0.20
-        let keyboardSettleDelay: TimeInterval = 0.14
+        let editHandoffDelay: TimeInterval = 0.18
+        let keyboardSettleDelay: TimeInterval = 0.02
         let landingDuration: TimeInterval = 0.78
         let landingAnimation = Animation.timingCurve(0.08, 0.92, 0.14, 1.0, duration: landingDuration)
         let landingSpinDegrees = 360.0 * 18
