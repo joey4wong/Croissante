@@ -653,7 +653,11 @@ public final class SRSManager: ObservableObject {
         }
 
         if didMutateLearningState {
-            saveLearningState(touchMutation: true)
+            // Defer the JSON encode + UserDefaults write off the swipe-completion
+            // frame. The heavy save used to land right as the peek card was rising,
+            // blocking the main thread and causing a dropped frame in the transition.
+            // scheduleLearningStateSave coalesces rapid swipes into a single save.
+            scheduleLearningStateSave(touchMutation: true)
         }
     }
 

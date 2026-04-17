@@ -2704,15 +2704,15 @@ private struct CardGlowModifier: ViewModifier {
     let isDarkMode: Bool
 
     func body(content: Content) -> some View {
-        if strength > 0.001 {
-            let s = strength
-            let c: Color = isDarkMode
-                ? Color.white.opacity(0.10 * s)
-                : Color.black.opacity(0.12 * s)
-            content.shadow(color: c, radius: 18, x: 0, y: 0)
-        } else {
-            content
-        }
+        // Shadow intentionally disabled: interpolating a radius-18 blurred
+        // shadow every frame while `strength` tweens from 0→1 caused visible
+        // frame drops during the swipe-away + peek-card-rising transition.
+        // GPU shadow blur is recomputed every frame and dominated the budget.
+        // The card reads fine without it; revisit with a cheaper static
+        // backdrop shadow if a depth cue is ever reintroduced.
+        _ = strength
+        _ = isDarkMode
+        return content
     }
 }
 
