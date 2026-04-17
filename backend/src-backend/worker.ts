@@ -43,7 +43,7 @@ app.post('/api/tts', async (c) => {
     return c.json({ error: 'TTS backend is not configured.' }, 503);
   }
 
-  let requestBody: { input?: unknown; voice?: unknown; contentType?: unknown };
+  let requestBody: { input?: unknown; voice?: unknown; contentType?: unknown; cachePolicy?: unknown };
   try {
     requestBody = await c.req.json();
   } catch {

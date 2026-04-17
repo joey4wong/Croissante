@@ -600,7 +600,7 @@ public final class SRSManager: ObservableObject {
     public enum ReviewSource {
         /// Discover 主牌堆在日课阶段的滑动：计入今日目标。
         case dailyDeck
-        /// 日课完成后的 Continue ∞ 加练、银河模式的滑动：不计入今日目标。
+        /// 日课完成后的额外练习、银河模式的滑动：不计入今日目标。
         case extraPractice
         /// Search 搜词、Widget 深链等非队列入口：不计入今日目标。
         case lookup
@@ -639,7 +639,7 @@ public final class SRSManager: ObservableObject {
     /// 记录一次复习。
     ///
     /// **统一规则：**
-    /// - 日课、Continue ∞、Search/Widget 中，同一张卡若今天已经被滑过一次，任何“升级”方向的滑动（mastered）都会被跳过，档案不变。
+    /// - 日课、额外练习、Search/Widget 中，同一张卡若今天已经被滑过一次，任何“升级”方向的滑动（mastered）都会被跳过，档案不变。
     /// - Progress 页右滑是手动整理档案：只把间隔补到掌握下限，不无限加权。
     /// - “降级”方向（blurry/forgot）任何时候都允许写入——错了就该诚实记下。
     /// - 不再有毕业。

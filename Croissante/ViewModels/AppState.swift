@@ -237,6 +237,45 @@ fileprivate struct DeferredLoadedResources: Sendable {
     let wordSearchIndex: WordSearchIndex
 }
 
+struct UserWordContentOverride: Codable, Equatable, Sendable, Identifiable {
+    let wordId: String
+    var translationEn: String?
+    var translationZh: String?
+    var translationHi: String?
+    var exampleFr: String?
+    var exampleEn: String?
+    var exampleZh: String?
+    var exampleHi: String?
+
+    var id: String { wordId }
+
+    var isEmpty: Bool {
+        translationEn == nil &&
+            translationZh == nil &&
+            translationHi == nil &&
+            exampleFr == nil &&
+            exampleEn == nil &&
+            exampleZh == nil &&
+            exampleHi == nil
+    }
+}
+
+enum UserWordContentField {
+    case translationEn
+    case translationZh
+    case translationHi
+    case exampleFr
+    case exampleEn
+    case exampleZh
+    case exampleHi
+}
+
+struct UserWordLocalizedContent: Equatable, Sendable {
+    var translation: String
+    var frenchExample: String
+    var example: String
+}
+
 @MainActor
 public final class AppState: ObservableObject {
     private static let supportedVoiceIds = Set(TTSVoice.allCases.map(\.rawValue))
@@ -256,6 +295,7 @@ public final class AppState: ObservableObject {
         static let memberUnlocked = "memberUnlocked"
         static let avatarPath = "avatarPath"
         static let selectedVoiceId = "selectedVoiceId"
+        static let userWordContentOverrides = "user_word_content_overrides_v1"
     }
 
     @Published public var words: [SimpleWord] = []
@@ -265,6 +305,7 @@ public final class AppState: ObservableObject {
     @Published public var conjugationFormsByLemma: [String: [String]] = [:]
     @Published var wordSearchIndex: WordSearchIndex = .empty
     @Published public private(set) var hasCompletedInitialResourceLoad: Bool = false
+    @Published private var userWordContentOverrides: [String: UserWordContentOverride] = [:]
     
     @Published public var themeMode: ThemeMode = .system {
         didSet { saveThemeMode() }
@@ -415,25 +456,148 @@ public final class AppState: ObservableObject {
     }
 
     public func translationText(for word: SimpleWord) -> String {
-        let en = word.translationEn.trimmingCharacters(in: .whitespacesAndNewlines)
-        let zh = word.translationZh.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hi = word.translationHi.trimmingCharacters(in: .whitespacesAndNewlines)
+        let override = userWordContentOverrides[word.id]
         switch currentLanguage {
-        case .en: return en.isEmpty ? (zh.isEmpty ? hi : zh) : en
-        case .zh: return zh.isEmpty ? (en.isEmpty ? hi : en) : zh
-        case .hi: return hi.isEmpty ? (en.isEmpty ? zh : en) : hi
+        case .en:
+            if let value = override?.translationEn { return normalizedOverrideText(value) }
+            return firstNonEmpty(
+                resolvedText(override?.translationEn, fallback: word.translationEn),
+                resolvedText(override?.translationZh, fallback: word.translationZh),
+                resolvedText(override?.translationHi, fallback: word.translationHi)
+            )
+        case .zh:
+            if let value = override?.translationZh { return normalizedOverrideText(value) }
+            return firstNonEmpty(
+                resolvedText(override?.translationZh, fallback: word.translationZh),
+                resolvedText(override?.translationEn, fallback: word.translationEn),
+                resolvedText(override?.translationHi, fallback: word.translationHi)
+            )
+        case .hi:
+            if let value = override?.translationHi { return normalizedOverrideText(value) }
+            return firstNonEmpty(
+                resolvedText(override?.translationHi, fallback: word.translationHi),
+                resolvedText(override?.translationEn, fallback: word.translationEn),
+                resolvedText(override?.translationZh, fallback: word.translationZh)
+            )
         }
     }
 
     public func translatedExampleText(for word: SimpleWord) -> String {
-        let en = word.exampleEn.trimmingCharacters(in: .whitespacesAndNewlines)
-        let zh = word.exampleZh.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hi = word.exampleHi.trimmingCharacters(in: .whitespacesAndNewlines)
+        let override = userWordContentOverrides[word.id]
         switch currentLanguage {
-        case .en: return en
-        case .zh: return zh
-        case .hi: return hi
+        case .en: return resolvedText(override?.exampleEn, fallback: word.exampleEn)
+        case .zh: return resolvedText(override?.exampleZh, fallback: word.exampleZh)
+        case .hi: return resolvedText(override?.exampleHi, fallback: word.exampleHi)
         }
+    }
+
+    public func frenchExampleText(for word: SimpleWord) -> String {
+        resolvedText(userWordContentOverrides[word.id]?.exampleFr, fallback: word.exampleFr)
+    }
+
+    func editableLocalizedContent(for word: SimpleWord) -> UserWordLocalizedContent {
+        let override = userWordContentOverrides[word.id]
+        switch currentLanguage {
+        case .en:
+            return UserWordLocalizedContent(
+                translation: override?.translationEn ?? normalizedOverrideText(word.translationEn),
+                frenchExample: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
+                example: override?.exampleEn ?? normalizedOverrideText(word.exampleEn)
+            )
+        case .zh:
+            return UserWordLocalizedContent(
+                translation: override?.translationZh ?? normalizedOverrideText(word.translationZh),
+                frenchExample: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
+                example: override?.exampleZh ?? normalizedOverrideText(word.exampleZh)
+            )
+        case .hi:
+            return UserWordLocalizedContent(
+                translation: override?.translationHi ?? normalizedOverrideText(word.translationHi),
+                frenchExample: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
+                example: override?.exampleHi ?? normalizedOverrideText(word.exampleHi)
+            )
+        }
+    }
+
+    func editableContent(for word: SimpleWord) -> UserWordContentOverride {
+        let override = userWordContentOverrides[word.id]
+        return UserWordContentOverride(
+            wordId: word.id,
+            translationEn: override?.translationEn ?? normalizedOverrideText(word.translationEn),
+            translationZh: override?.translationZh ?? normalizedOverrideText(word.translationZh),
+            translationHi: override?.translationHi ?? normalizedOverrideText(word.translationHi),
+            exampleFr: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
+            exampleEn: override?.exampleEn ?? normalizedOverrideText(word.exampleEn),
+            exampleZh: override?.exampleZh ?? normalizedOverrideText(word.exampleZh),
+            exampleHi: override?.exampleHi ?? normalizedOverrideText(word.exampleHi)
+        )
+    }
+
+    func hasUserWordContentOverride(for word: SimpleWord, field: UserWordContentField) -> Bool {
+        guard let override = userWordContentOverrides[word.id] else { return false }
+        switch field {
+        case .translationEn: return override.translationEn != nil
+        case .translationZh: return override.translationZh != nil
+        case .translationHi: return override.translationHi != nil
+        case .exampleFr: return override.exampleFr != nil
+        case .exampleEn: return override.exampleEn != nil
+        case .exampleZh: return override.exampleZh != nil
+        case .exampleHi: return override.exampleHi != nil
+        }
+    }
+
+    func saveUserWordContentOverride(_ content: UserWordContentOverride, for word: SimpleWord) {
+        let override = UserWordContentOverride(
+            wordId: word.id,
+            translationEn: overrideValue(content.translationEn, official: word.translationEn),
+            translationZh: overrideValue(content.translationZh, official: word.translationZh),
+            translationHi: overrideValue(content.translationHi, official: word.translationHi),
+            exampleFr: overrideValue(content.exampleFr, official: word.exampleFr),
+            exampleEn: overrideValue(content.exampleEn, official: word.exampleEn),
+            exampleZh: overrideValue(content.exampleZh, official: word.exampleZh),
+            exampleHi: overrideValue(content.exampleHi, official: word.exampleHi)
+        )
+
+        if override.isEmpty {
+            resetUserWordContentOverride(for: word)
+            return
+        }
+
+        var overrides = userWordContentOverrides
+        overrides[word.id] = override
+        userWordContentOverrides = overrides
+        saveUserWordContentOverrides()
+    }
+
+    func saveLocalizedContent(_ content: UserWordLocalizedContent, for word: SimpleWord) {
+        var override = editableContent(for: word)
+        override.exampleFr = content.frenchExample
+        switch currentLanguage {
+        case .en:
+            override.translationEn = content.translation
+            override.exampleEn = content.example
+        case .zh:
+            override.translationZh = content.translation
+            override.exampleZh = content.example
+        case .hi:
+            override.translationHi = content.translation
+            override.exampleHi = content.example
+        }
+        saveUserWordContentOverride(override, for: word)
+    }
+
+    func resetUserWordContentOverride(for word: SimpleWord) {
+        guard userWordContentOverrides[word.id] != nil else { return }
+        var overrides = userWordContentOverrides
+        overrides.removeValue(forKey: word.id)
+        userWordContentOverrides = overrides
+        saveUserWordContentOverrides()
+    }
+
+    func clearUserWordContentOverrides() {
+        guard !userWordContentOverrides.isEmpty else { return }
+        userWordContentOverrides = [:]
+        saveUserWordContentOverrides()
     }
     
     // MARK: - User Preferences Loading
@@ -490,6 +654,7 @@ public final class AppState: ObservableObject {
         if let savedVoiceId = userDefaults.string(forKey: Keys.selectedVoiceId) {
             selectedVoiceId = savedVoiceId
         }
+        loadUserWordContentOverrides()
     }
     
     // MARK: - User Preferences Saving
@@ -563,6 +728,24 @@ public final class AppState: ObservableObject {
     private func saveSelectedVoiceId() {
         userDefaults.set(selectedVoiceId, forKey: Keys.selectedVoiceId)
     }
+
+    private func loadUserWordContentOverrides() {
+        guard let data = userDefaults.data(forKey: Keys.userWordContentOverrides),
+              let overrides = try? JSONDecoder().decode([String: UserWordContentOverride].self, from: data) else {
+            userWordContentOverrides = [:]
+            return
+        }
+        userWordContentOverrides = overrides.filter { !$0.key.isEmpty && !$0.value.isEmpty }
+    }
+
+    private func saveUserWordContentOverrides() {
+        if userWordContentOverrides.isEmpty {
+            userDefaults.removeObject(forKey: Keys.userWordContentOverrides)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(userWordContentOverrides) else { return }
+        userDefaults.set(data, forKey: Keys.userWordContentOverrides)
+    }
     
     // MARK: - Data Loading
     
@@ -570,6 +753,7 @@ public final class AppState: ObservableObject {
         words = resources.words
         wordByIdMap = resources.wordByIdMap
         wordSiblingMap = resources.wordSiblingMap
+        pruneUserWordContentOverrides(validWordIds: Set(resources.wordByIdMap.keys))
     }
 
     private func applyDeferredResources(_ resources: DeferredLoadedResources) {
@@ -580,6 +764,34 @@ public final class AppState: ObservableObject {
 
     private func rebuildSearchIndex() {
         wordSearchIndex = WordSearchIndex.build(words: words, conjugationData: conjugationData)
+    }
+
+    private func pruneUserWordContentOverrides(validWordIds: Set<String>) {
+        guard !validWordIds.isEmpty else { return }
+        let filtered = userWordContentOverrides.filter { validWordIds.contains($0.key) && !$0.value.isEmpty }
+        guard filtered.count != userWordContentOverrides.count else { return }
+        userWordContentOverrides = filtered
+        saveUserWordContentOverrides()
+    }
+
+    private func resolvedText(_ override: String?, fallback: String) -> String {
+        normalizedOverrideText(override ?? fallback)
+    }
+
+    private func normalizedOverrideText(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func firstNonEmpty(_ values: String...) -> String {
+        for value in values where !value.isEmpty {
+            return value
+        }
+        return ""
+    }
+
+    private func overrideValue(_ value: String?, official: String) -> String? {
+        let normalized = normalizedOverrideText(value ?? "")
+        return normalized == normalizedOverrideText(official) ? nil : normalized
     }
 
     nonisolated private static func loadCoreResources(bundlePath: String, fallbackWords: [SimpleWord]) async -> CoreLoadedResources {
@@ -643,7 +855,7 @@ public final class AppState: ObservableObject {
     }
 
     public func getAllSenses(_ word: SimpleWord) -> [SimpleWord] {
-        let key = normalizeText(word.word.isEmpty ? word.displayWord : word.word)
+        let key = Self.senseGroupingKey(for: word)
         let ids = wordSiblingMap[key] ?? []
         return ids
             .compactMap { wordByIdMap[$0] }
@@ -668,16 +880,12 @@ public final class AppState: ObservableObject {
         return hasMultipleEntries(word)
     }
 
-    private func normalizeText(_ text: String) -> String {
-        SearchTextNormalizer.normalize(text)
-    }
-
     nonisolated private static func buildWordLinks(_ words: [SimpleWord]) -> (siblingMap: [String: [String]], byIdMap: [String: SimpleWord]) {
         var siblingMap: [String: [String]] = [:]
         var byIdMap: [String: SimpleWord] = [:]
 
         for word in words {
-            let key = SearchTextNormalizer.normalize(word.word.isEmpty ? word.displayWord : word.word)
+            let key = senseGroupingKey(for: word)
             if !key.isEmpty {
                 siblingMap[key, default: []].append(word.id)
             }
@@ -685,6 +893,11 @@ public final class AppState: ObservableObject {
         }
 
         return (siblingMap, byIdMap)
+    }
+
+    nonisolated private static func senseGroupingKey(for word: SimpleWord) -> String {
+        // Multi-sense grouping should preserve accents; search can stay accent-insensitive.
+        SearchTextNormalizer.normalizeExact(word.word.isEmpty ? word.displayWord : word.word)
     }
 
     private func scheduleSpotlightIndexing(words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) {

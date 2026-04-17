@@ -8,6 +8,25 @@ public class ElevenLabsTTSService {
         case sentence
     }
 
+    enum CachePolicy {
+        case official
+        case userOverride
+
+        var backendValue: String {
+            switch self {
+            case .official: return "default"
+            case .userOverride: return "bypass"
+            }
+        }
+
+        var localNamespace: AudioCacheNamespace {
+            switch self {
+            case .official: return .official
+            case .userOverride: return .userOverride
+            }
+        }
+    }
+
     private static var sharedInstance: ElevenLabsTTSService?
     private static var shared: ElevenLabsTTSService {
         if let existing = sharedInstance {
@@ -58,12 +77,13 @@ public class ElevenLabsTTSService {
     func speak(
         _ text: String,
         language: String = "fr-FR",
-        contentType: ContentType = .sentence
+        contentType: ContentType = .sentence,
+        cachePolicy: CachePolicy = .official
     ) async {
         stop()
 
         currentTask = Task { @MainActor in
-            await performSpeak(text, language: language, contentType: contentType)
+            await performSpeak(text, language: language, contentType: contentType, cachePolicy: cachePolicy)
         }
     }
 
@@ -90,7 +110,8 @@ public class ElevenLabsTTSService {
     private func performSpeak(
         _ text: String,
         language: String,
-        contentType: ContentType
+        contentType: ContentType,
+        cachePolicy: CachePolicy
     ) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
@@ -115,7 +136,7 @@ public class ElevenLabsTTSService {
         }
 
         let cacheText = cacheTextKey(for: trimmedText, language: language, contentType: contentType)
-        if let cachedURL = audioCache.getCachedAudioURL(forText: cacheText) {
+        if let cachedURL = audioCache.getCachedAudioURL(forText: cacheText, namespace: cachePolicy.localNamespace) {
             await playAudio(from: cachedURL)
             return
         }
@@ -124,10 +145,15 @@ public class ElevenLabsTTSService {
             let audioData = try await fetchAudioFromBackend(
                 trimmedText,
                 language: language,
-                contentType: contentType
+                contentType: contentType,
+                cachePolicy: cachePolicy
             )
 
-            if let cachedURL = audioCache.cacheAudioData(audioData, forText: cacheText) {
+            if let cachedURL = audioCache.cacheAudioData(
+                audioData,
+                forText: cacheText,
+                namespace: cachePolicy.localNamespace
+            ) {
                 await playAudio(from: cachedURL)
             } else {
                 await playAudio(from: audioData)
@@ -145,18 +171,20 @@ public class ElevenLabsTTSService {
         systemSynthesizer.speak(utterance)
     }
 
-    private func makeRequestBody(for text: String, contentType: ContentType) -> [String: Any] {
+    private func makeRequestBody(for text: String, contentType: ContentType, cachePolicy: CachePolicy) -> [String: Any] {
         [
             "voice": voice,
             "input": text,
-            "contentType": contentType.rawValue
+            "contentType": contentType.rawValue,
+            "cachePolicy": cachePolicy.backendValue
         ]
     }
 
     private func fetchAudioFromBackend(
         _ text: String,
         language: String,
-        contentType: ContentType
+        contentType: ContentType,
+        cachePolicy: CachePolicy
     ) async throws -> Data {
         guard let url = ttsEndpointURL else { throw ElevenLabsTTSError.networkError }
 
@@ -164,7 +192,7 @@ public class ElevenLabsTTSService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(
-            withJSONObject: makeRequestBody(for: text, contentType: contentType)
+            withJSONObject: makeRequestBody(for: text, contentType: contentType, cachePolicy: cachePolicy)
         )
 
         let (data, response) = try await urlSession.data(for: request)
@@ -222,7 +250,8 @@ public class ElevenLabsTTSService {
                 let audioData = try await fetchAudioFromBackend(
                     trimmedText,
                     language: language,
-                    contentType: contentType
+                    contentType: contentType,
+                    cachePolicy: .official
                 )
                 _ = audioCache.cacheAudioData(audioData, forText: cacheText)
                 try await Task.sleep(nanoseconds: 100_000_000)
@@ -304,10 +333,11 @@ extension ElevenLabsTTSService {
     static func speakText(
         _ text: String,
         language: String = "fr-FR",
-        contentType: ContentType = .sentence
+        contentType: ContentType = .sentence,
+        cachePolicy: CachePolicy = .official
     ) {
         Task {
-            await shared.speak(text, language: language, contentType: contentType)
+            await shared.speak(text, language: language, contentType: contentType, cachePolicy: cachePolicy)
         }
     }
 

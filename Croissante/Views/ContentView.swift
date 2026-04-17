@@ -1481,6 +1481,17 @@ private enum DiscoverCardLayout {
         -min(56, max(36, containerHeight * 0.06))
     }
 
+    static func keyboardDockingOffset(
+        containerHeight: CGFloat,
+        cardContentHeight: CGFloat,
+        restingYOffset: CGFloat
+    ) -> CGFloat {
+        let visibleCardHeight = cardContentHeight + cardBodyVerticalPaddingTotal
+        let currentCardBottom = containerHeight / 2 + restingYOffset + visibleCardHeight / 2
+        let targetCardBottom = containerHeight - 18
+        return max(0, targetCardBottom - currentCardBottom)
+    }
+
     static let peekDragNorm: CGFloat = 1.02
     static let peekScaleMin: CGFloat = 0.94
     static let peekScaleRange: CGFloat = 0.06
@@ -1529,6 +1540,7 @@ private struct ActiveDiscoverCardHost: View {
     // transition time.
     @State private var peekGlowBox = PeekGlowProgressBox()
     @State private var didFlyAway = false
+    @State private var isCardInlineEditing = false
 
     private let transitionDuration: Double = 0.48
     private var restingCardYOffset: CGFloat {
@@ -1575,6 +1587,7 @@ private struct ActiveDiscoverCardHost: View {
             guard transitionRequest == nil else { return }
             let wasFullyRevealed = didFlyAway
             didFlyAway = false
+            isCardInlineEditing = false
             guard !wasFullyRevealed else { return }
             let carriedGlow = peekGlowBox.value
             peekGlowBox.value = 0
@@ -1608,7 +1621,15 @@ private struct ActiveDiscoverCardHost: View {
         let glowStrength = isTransitioning ? min(1.0, detailProgress) : swipeInGlowProgress
         let cardContentOpacity = isTransitioning ? 1.0 : swipeInOpacity
         let interactionEnabled = !isTransitioning && allowsInteractions
-        let cardYOffset = restingCardYOffset * CGFloat(detailProgress)
+        let baseCardYOffset = restingCardYOffset * CGFloat(detailProgress)
+        let editingDockingOffset = isCardInlineEditing && !isTransitioning
+            ? DiscoverCardLayout.keyboardDockingOffset(
+                containerHeight: containerSize.height,
+                cardContentHeight: restingCardContentHeight,
+                restingYOffset: restingCardYOffset
+            )
+            : 0
+        let cardYOffset = baseCardYOffset + editingDockingOffset
         let state: SelectedGalaxyCardState = transitionRequest.map {
             transitionRenderState(for: $0, targetCardWidth: containerSize.width, progress: progress)
         } ?? SelectedGalaxyCardState(offset: .zero, scale: 1, tiltY: 0, tiltZ: 0, opacity: 1, blur: 0)
@@ -1624,10 +1645,16 @@ private struct ActiveDiscoverCardHost: View {
             glowStrength: glowStrength,
             contentOpacity: cardContentOpacity,
             interactionsEnabled: interactionEnabled,
-            onSwipeForgot: onSwipeForgot,
-            onSwipeMastered: onSwipeMastered,
-            onSwipeBlurry: onSwipeBlurry,
+            allowsInlineEditing: true,
+            onSwipeForgot: { _ in onSwipeForgot(word.id) },
+            onSwipeMastered: { _ in onSwipeMastered(word.id) },
+            onSwipeBlurry: { _ in onSwipeBlurry(word.id) },
             onFlyAwayStart: { didFlyAway = true },
+            onInlineEditingChange: { editing in
+                withAnimation(.easeOut(duration: editing ? 0.22 : 0.16)) {
+                    isCardInlineEditing = editing
+                }
+            },
             peekNextWord: transitionRequest == nil ? peekNextWord : nil,
             onPeekGlowProgress: { [peekGlowBox] in peekGlowBox.value = $0 }
         )
@@ -2008,7 +2035,7 @@ struct SearchSelectedWordCardView: View {
                     isActiveTab: true,
                     resetTransformAfterSwipe: false,
                     allowsBlurrySwipe: allowsBlurrySwipe,
-                    onSwipeUpWithoutAction: dismissOnTap ? { onDismiss() } : nil,
+                    onSwipeUpAction: dismissOnTap ? { _ in } : nil,
                     onSwipeForgot: { swipedWordId in
                         onDismiss()
                         DispatchQueue.main.async {
@@ -2201,6 +2228,12 @@ private struct PartyPopperSymbolView: View {
     }
 }
 
+private enum LocalizedCardEditField: Hashable {
+    case translation
+    case frenchExample
+    case example
+}
+
 private struct DiscoverCard: View {
     let word: SimpleWord
     let screenWidth: CGFloat
@@ -2214,11 +2247,13 @@ private struct DiscoverCard: View {
     let interactionsEnabled: Bool
     let resetTransformAfterSwipe: Bool
     let allowsBlurrySwipe: Bool
-    let onSwipeUpWithoutAction: (() -> Void)?
+    let allowsInlineEditing: Bool
+    let onSwipeUpAction: ((SimpleWord) -> Void)?
     let onSwipeForgot: (String) -> Void
     let onSwipeMastered: (String) -> Void
     let onSwipeBlurry: (String) -> Void
     let onFlyAwayStart: (() -> Void)?
+    let onInlineEditingChange: ((Bool) -> Void)?
     let peekNextWord: SimpleWord?
     let onPeekGlowProgress: ((Double) -> Void)?
 
@@ -2226,6 +2261,8 @@ private struct DiscoverCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var dragOffset: CGSize = .zero
     @State private var dragRotation: Angle = .zero
+    @State private var editLandingSpinDegrees: Double = 0
+    @State private var isInlineEditFlightActive = false
     @State private var isSwipeCompleting = false
     @State private var dragLockedAxis: Axis? = nil
     @State private var swipeOutOpacity: Double = 1.0
@@ -2235,6 +2272,11 @@ private struct DiscoverCard: View {
     @State private var displayedWord: SimpleWord
     @State private var allSenses: [SimpleWord] = []
     @State private var currentSensePosition: Int = 0
+    @State private var isEditingLocalizedContent = false
+    @State private var localizedTranslationDraft = ""
+    @State private var localizedFrenchExampleDraft = ""
+    @State private var localizedExampleDraft = ""
+    @FocusState private var focusedEditField: LocalizedCardEditField?
 
     init(
         word: SimpleWord,
@@ -2249,11 +2291,13 @@ private struct DiscoverCard: View {
         interactionsEnabled: Bool = true,
         resetTransformAfterSwipe: Bool = true,
         allowsBlurrySwipe: Bool = true,
-        onSwipeUpWithoutAction: (() -> Void)? = nil,
+        allowsInlineEditing: Bool = false,
+        onSwipeUpAction: ((SimpleWord) -> Void)? = nil,
         onSwipeForgot: @escaping (String) -> Void,
         onSwipeMastered: @escaping (String) -> Void,
         onSwipeBlurry: @escaping (String) -> Void,
         onFlyAwayStart: (() -> Void)? = nil,
+        onInlineEditingChange: ((Bool) -> Void)? = nil,
         peekNextWord: SimpleWord? = nil,
         onPeekGlowProgress: ((Double) -> Void)? = nil
     ) {
@@ -2269,11 +2313,13 @@ private struct DiscoverCard: View {
         self.interactionsEnabled = interactionsEnabled
         self.resetTransformAfterSwipe = resetTransformAfterSwipe
         self.allowsBlurrySwipe = allowsBlurrySwipe
-        self.onSwipeUpWithoutAction = onSwipeUpWithoutAction
+        self.allowsInlineEditing = allowsInlineEditing
+        self.onSwipeUpAction = onSwipeUpAction
         self.onSwipeForgot = onSwipeForgot
         self.onSwipeMastered = onSwipeMastered
         self.onSwipeBlurry = onSwipeBlurry
         self.onFlyAwayStart = onFlyAwayStart
+        self.onInlineEditingChange = onInlineEditingChange
         self.peekNextWord = peekNextWord
         self.onPeekGlowProgress = onPeekGlowProgress
         _displayedWord = State(initialValue: word)
@@ -2284,7 +2330,6 @@ private struct DiscoverCard: View {
         case forgot
         case mastered
         case blurry
-        case noAction
     }
     private var activeHintDirection: SwipeHintDirection? {
         let absX = abs(dragOffset.width)
@@ -2293,9 +2338,6 @@ private struct DiscoverCard: View {
         if absY >= absX {
             if dragOffset.height > 0, allowsBlurrySwipe {
                 return .blurry
-            }
-            if dragOffset.height < 0, onSwipeUpWithoutAction != nil {
-                return .noAction
             }
         } else {
             if dragOffset.width < 0 {
@@ -2319,15 +2361,20 @@ private struct DiscoverCard: View {
         guard activeHintDirection == .blurry, dragOffset.height > 0 else { return 0 }
         return min(0.15 + Double(abs(dragOffset.height) / 90), 1)
     }
-    private var noActionHintOpacity: Double {
-        guard activeHintDirection == .noAction, dragOffset.height < 0, onSwipeUpWithoutAction != nil else { return 0 }
-        return min(0.20 + Double(abs(dragOffset.height) / 90), 1)
-    }
     private var resolvedCardWidth: CGFloat {
         max(cardWidth ?? screenWidth, 0)
     }
     private var resolvedCardHeight: CGFloat {
         max(cardHeight ?? DiscoverCardLayout.cardHeight(forCardWidth: resolvedCardWidth), 0)
+    }
+    private var supportsUpwardAction: Bool {
+        allowsInlineEditing || onSwipeUpAction != nil
+    }
+    private var upwardFlyOutOffset: CGSize {
+        CGSize(
+            width: 0,
+            height: -max(screenHeight * 0.92, resolvedCardHeight + 280)
+        )
     }
     private var isDarkMode: Bool { colorScheme == .dark }
     private var secondaryTextColor: Color {
@@ -2372,6 +2419,10 @@ private struct DiscoverCard: View {
         return pow(t, 1.8)
     }
 
+    private var shouldShowPeekCard: Bool {
+        peekNextWord != nil && !isInlineEditFlightActive
+    }
+
     @ViewBuilder
     private func peekBehindWordCard(peek: SimpleWord, progress: Double) -> some View {
         DiscoverCard(
@@ -2405,11 +2456,20 @@ private struct DiscoverCard: View {
     }
 
     private func speakExampleSentence() {
-        let trimmedExample = displayedWord.exampleFr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedExample = appState.frenchExampleText(for: displayedWord)
         guard !trimmedExample.isEmpty else { return }
 
         ElevenLabsTTSService.stopPlayback()
-        ElevenLabsTTSService.speakText(trimmedExample, language: "fr-FR", contentType: .sentence)
+        let cachePolicy: ElevenLabsTTSService.CachePolicy = appState.hasUserWordContentOverride(
+            for: displayedWord,
+            field: .exampleFr
+        ) ? .userOverride : .official
+        ElevenLabsTTSService.speakText(
+            trimmedExample,
+            language: "fr-FR",
+            contentType: .sentence,
+            cachePolicy: cachePolicy
+        )
     }
 
     private func cancelScheduledSpeech() {
@@ -2472,6 +2532,142 @@ private struct DiscoverCard: View {
         }
     }
 
+    private func loadLocalizedEditDrafts(for word: SimpleWord) {
+        let content = appState.editableLocalizedContent(for: word)
+        localizedTranslationDraft = content.translation
+        localizedFrenchExampleDraft = content.frenchExample
+        localizedExampleDraft = content.example
+    }
+
+    private func saveLocalizedEditDrafts() {
+        guard isEditingLocalizedContent else { return }
+        appState.saveLocalizedContent(
+            UserWordLocalizedContent(
+                translation: localizedTranslationDraft,
+                frenchExample: localizedFrenchExampleDraft,
+                example: localizedExampleDraft
+            ),
+            for: displayedWord
+        )
+    }
+
+    private func beginInlineEditing() {
+        guard allowsInlineEditing, !isEditingLocalizedContent else { return }
+        stopSpeechPlayback()
+        loadLocalizedEditDrafts(for: displayedWord)
+        isSwipeCompleting = true
+        isInlineEditFlightActive = true
+        dragLockedAxis = nil
+        onPeekGlowProgress?(0)
+
+        let editingWordId = displayedWord.id
+        let flyOutOffset = upwardFlyOutOffset
+        let flyOutDuration: TimeInterval = 0.18
+        let editHandoffDelay: TimeInterval = 0.20
+        let keyboardSettleDelay: TimeInterval = 0.14
+        let landingDuration: TimeInterval = 0.78
+        let landingAnimation = Animation.timingCurve(0.08, 0.92, 0.14, 1.0, duration: landingDuration)
+        let landingSpinDegrees = 360.0 * 18
+        editLandingSpinDegrees = 0
+
+        withAnimation(.easeIn(duration: flyOutDuration)) {
+            dragOffset = flyOutOffset
+            dragRotation = .zero
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + editHandoffDelay) {
+            guard displayedWord.id == editingWordId, isActiveTab else {
+                isSwipeCompleting = false
+                isInlineEditFlightActive = false
+                return
+            }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                dragOffset = flyOutOffset
+                dragRotation = .zero
+                editLandingSpinDegrees = 0
+                isEditingLocalizedContent = true
+            }
+            onInlineEditingChange?(true)
+
+            focusedEditField = .translation
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + keyboardSettleDelay) {
+                guard displayedWord.id == editingWordId else {
+                    isSwipeCompleting = false
+                    isInlineEditFlightActive = false
+                    return
+                }
+
+                withAnimation(landingAnimation) {
+                    dragOffset = .zero
+                }
+                withAnimation(landingAnimation) {
+                    editLandingSpinDegrees = landingSpinDegrees
+                }
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + landingDuration + 0.02) {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        editLandingSpinDegrees = 0
+                    }
+                    dragRotation = .zero
+                    dragOffset = .zero
+                    swipeOutOpacity = 1
+                    swipeOutBlur = 0
+                    isSwipeCompleting = false
+                    isInlineEditFlightActive = false
+                }
+            }
+        }
+    }
+
+    private func finishInlineEditing() {
+        guard isEditingLocalizedContent else { return }
+        saveLocalizedEditDrafts()
+        onInlineEditingChange?(false)
+        withAnimation(.easeOut(duration: 0.16)) {
+            isEditingLocalizedContent = false
+        }
+        focusedEditField = nil
+    }
+
+    private func completeUpwardReturnSwipe(action: @escaping () -> Void) {
+        guard !isSwipeCompleting else { return }
+        isSwipeCompleting = true
+        dragLockedAxis = nil
+        onPeekGlowProgress?(0)
+
+        let flyOutDuration: TimeInterval = 0.18
+        let returnDelay: TimeInterval = 0.05
+        let returnDuration: TimeInterval = 0.52
+        let returnAnimation = Animation.timingCurve(0.08, 0.88, 0.18, 1.0, duration: returnDuration)
+
+        withAnimation(.easeIn(duration: flyOutDuration)) {
+            dragOffset = upwardFlyOutOffset
+            dragRotation = .zero
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + flyOutDuration + returnDelay) {
+            action()
+            withAnimation(returnAnimation) {
+                dragOffset = .zero
+                dragRotation = .zero
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + returnDuration + 0.02) {
+                dragOffset = .zero
+                dragRotation = .zero
+                swipeOutOpacity = 1
+                swipeOutBlur = 0
+                isSwipeCompleting = false
+            }
+        }
+    }
+
     private func completeSwipe(
         to offset: CGSize,
         after delay: TimeInterval = 0.32,
@@ -2511,32 +2707,25 @@ private struct DiscoverCard: View {
 
     var body: some View {
         ZStack {
-            if let peek = peekNextWord {
+            if let peek = peekNextWord, shouldShowPeekCard {
                 peekBehindWordCard(peek: peek, progress: peekSmoothProgress)
             }
 
             VStack(spacing: 10) {
-                if noActionHintOpacity > 0 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(secondaryTextColor)
-                        Text(appState.localized("No action", "无操作", "कोई कार्रवाई नहीं"))
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(secondaryTextColor)
-                    }
-                    .opacity(noActionHintOpacity)
-                    .frame(maxWidth: resolvedCardWidth)
-                }
-
                 CardBody(
                     word: displayedWord,
                     cardWidth: cardWidth ?? 0,
                     cardHeight: cardHeight ?? 0,
                     detailProgress: detailProgress,
                     contentOpacity: contentOpacity,
-                    onTitleTap: { [self] in cancelScheduledSpeech(); speakWord() },
-                    onDetailTap: { [self] in cancelScheduledSpeech(); speakExampleSentence() }
+                    isEditingLocalizedContent: isEditingLocalizedContent,
+                    localizedTranslationDraft: $localizedTranslationDraft,
+                    localizedFrenchExampleDraft: $localizedFrenchExampleDraft,
+                    localizedExampleDraft: $localizedExampleDraft,
+                    focusedEditField: $focusedEditField,
+                    onEditSubmit: finishInlineEditing,
+                    onTitleTap: isEditingLocalizedContent ? nil : { [self] in cancelScheduledSpeech(); speakWord() },
+                    onDetailTap: isEditingLocalizedContent ? nil : { [self] in cancelScheduledSpeech(); speakExampleSentence() }
                 )
                     .overlay(alignment: .bottomTrailing) {
                         bottomMetaBar
@@ -2576,19 +2765,24 @@ private struct DiscoverCard: View {
             }
             .offset(dragOffset)
             .rotationEffect(dragRotation)
+            .rotation3DEffect(
+                .degrees(editLandingSpinDegrees),
+                axis: (x: 0, y: 1, z: 0),
+                perspective: 0.55
+            )
             .opacity(swipeOutOpacity)
             .blur(radius: swipeOutBlur)
             .allowsHitTesting(interactionsEnabled)
             .gesture(
                 DragGesture(minimumDistance: 15)
                     .onChanged { v in
-                        guard interactionsEnabled, !isSwipeCompleting else { return }
+                        guard interactionsEnabled, !isSwipeCompleting, !isEditingLocalizedContent else { return }
                         let dx = v.translation.width
                         let dy = v.translation.height
                         if dragLockedAxis == nil {
                             let mag = hypot(dx, dy)
                             if mag > 8 {
-                                if onSwipeUpWithoutAction != nil, dy < 0, abs(dy) >= abs(dx) {
+                                if supportsUpwardAction, dy < 0, abs(dy) >= abs(dx) {
                                     dragLockedAxis = .vertical
                                 } else {
                                     dragLockedAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
@@ -2610,7 +2804,7 @@ private struct DiscoverCard: View {
                         dragOffset = constrained
                     }
                     .onEnded { v in
-                        guard interactionsEnabled, !isSwipeCompleting else { return }
+                        guard interactionsEnabled, !isSwipeCompleting, !isEditingLocalizedContent else { return }
                         let locked = dragLockedAxis
                         dragLockedAxis = nil
                         let rawDx = v.translation.width
@@ -2625,7 +2819,7 @@ private struct DiscoverCard: View {
                             dx = 0
                             dy = rawDy
                         case nil:
-                            if onSwipeUpWithoutAction != nil, rawDy < 0, abs(rawDy) >= abs(rawDx) {
+                            if supportsUpwardAction, rawDy < 0, abs(rawDy) >= abs(rawDx) {
                                 dx = 0
                                 dy = rawDy
                             } else if abs(rawDx) > abs(rawDy) {
@@ -2654,8 +2848,15 @@ private struct DiscoverCard: View {
                             completeSwipe(to: CGSize(width: 0, height: screenHeight * 1.3)) {
                                 onSwipeBlurry(swipedWordId)
                             }
-                        } else if dy < -swipeThreshold, let onSwipeUpWithoutAction {
-                            onSwipeUpWithoutAction()
+                        } else if dy < -swipeThreshold, supportsUpwardAction {
+                            if allowsInlineEditing {
+                                beginInlineEditing()
+                            } else if let onSwipeUpAction {
+                                let upwardActionWord = displayedWord
+                                completeUpwardReturnSwipe {
+                                    onSwipeUpAction(upwardActionWord)
+                                }
+                            }
                         } else {
                             onPeekGlowProgress?(0)
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -2666,7 +2867,7 @@ private struct DiscoverCard: View {
                     }
             )
             .onChange(of: dragOffset) { _, _ in
-                guard peekNextWord != nil else { return }
+                guard shouldShowPeekCard else { return }
                 onPeekGlowProgress?(peekSmoothProgress)
             }
             .onChange(of: appState.autoPlay) { _, enabled in
@@ -2676,16 +2877,31 @@ private struct DiscoverCard: View {
             }
             .onChange(of: isActiveTab) { _, active in
                 if !active {
+                    finishInlineEditing()
                     stopSpeechPlayback()
                 }
             }
+            .onChange(of: appState.language) { _, _ in
+                guard isEditingLocalizedContent else { return }
+                loadLocalizedEditDrafts(for: displayedWord)
+                DispatchQueue.main.async {
+                    focusedEditField = .translation
+                }
+            }
+            .onChange(of: focusedEditField) { _, newValue in
+                if isEditingLocalizedContent && newValue == nil {
+                    finishInlineEditing()
+                }
+            }
             .onChange(of: word.id) { _, _ in
+                finishInlineEditing()
                 refreshSenses(using: word)
                 if interactionsEnabled && isActiveTab && appState.autoPlay {
                     scheduleAutoPlay()
                 }
             }
             .onDisappear {
+                finishInlineEditing()
                 stopSpeechPlayback()
             }
             .onAppear {
@@ -2765,6 +2981,12 @@ private struct CardBody: View {
     let cardHeight: CGFloat
     let detailProgress: Double
     var contentOpacity: Double = 1.0
+    let isEditingLocalizedContent: Bool
+    @Binding var localizedTranslationDraft: String
+    @Binding var localizedFrenchExampleDraft: String
+    @Binding var localizedExampleDraft: String
+    let focusedEditField: FocusState<LocalizedCardEditField?>.Binding
+    let onEditSubmit: () -> Void
     var onTitleTap: (() -> Void)? = nil
     var onDetailTap: (() -> Void)? = nil
 
@@ -2797,6 +3019,9 @@ private struct CardBody: View {
     }
     private var exampleTranslationColor: Color {
         isDarkMode ? AppColors.nocturneTextTertiary : Color.black.opacity(0.48)
+    }
+    private var editFieldFill: Color {
+        isDarkMode ? Color.white.opacity(0.07) : Color.black.opacity(0.045)
     }
 
     private var titleBaseFontSize: CGFloat {
@@ -2904,6 +3129,57 @@ private struct CardBody: View {
         return t * t * (3.0 - 2.0 * t)
     }
 
+    private func editableField(
+        text: Binding<String>,
+        field: LocalizedCardEditField,
+        fontSize: CGFloat,
+        textColor: Color,
+        minHeight: CGFloat,
+        lineLimit: PartialRangeThrough<Int>
+    ) -> some View {
+        let measurementText = text.wrappedValue.isEmpty ? " " : text.wrappedValue
+
+        return ZStack(alignment: .leading) {
+            Text(measurementText)
+                .font(cardFont(size: fontSize))
+                .lineSpacing(3)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+                .opacity(0)
+                .accessibilityHidden(true)
+
+            TextField("", text: text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(cardFont(size: fontSize))
+                .lineSpacing(3)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .submitLabel(.done)
+                .focused(focusedEditField, equals: field)
+                .foregroundStyle(textColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(editFieldFill)
+            )
+            .onChange(of: text.wrappedValue) { _, newValue in
+                guard newValue.rangeOfCharacter(from: .newlines) != nil else { return }
+                text.wrappedValue = newValue
+                    .components(separatedBy: .newlines)
+                    .joined(separator: " ")
+                    .trimmingCharacters(in: .whitespaces)
+                onEditSubmit()
+            }
+            .onSubmit(onEditSubmit)
+    }
+
     var body: some View {
         cardContent
             .padding(.horizontal, 24)
@@ -2960,23 +3236,44 @@ private struct CardBody: View {
                     Text(posLabel(word.tag))
                         .font(cardFont(size: 16, weight: .medium))
                         .foregroundStyle(secondaryTextColor)
-                        .padding(.top, 1)
+                        .padding(.top, isEditingLocalizedContent ? 8 : 1)
 
-                    Text(appState.translationText(for: word))
-                        .font(cardFont(size: 16))
-                        .lineSpacing(5)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(bodyTextColor)
+                    if isEditingLocalizedContent {
+                        editableField(
+                            text: $localizedTranslationDraft,
+                            field: .translation,
+                            fontSize: 16,
+                            textColor: bodyTextColor,
+                            minHeight: 36,
+                            lineLimit: ...3
+                        )
+                    } else {
+                        Text(appState.translationText(for: word))
+                            .font(cardFont(size: 16))
+                            .lineSpacing(5)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(bodyTextColor)
+                    }
                 }
                 .multilineTextAlignment(.leading)
                 .opacity(primaryReveal * layerOpacity(delay: 0.60))
 
+                let frenchExample = appState.frenchExampleText(for: word)
                 let translatedExample = appState.translatedExampleText(for: word)
-                if !word.exampleFr.isEmpty || !translatedExample.isEmpty {
+                if isEditingLocalizedContent || !frenchExample.isEmpty || !translatedExample.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        if !word.exampleFr.isEmpty {
-                            Text(word.exampleFr)
+                        if isEditingLocalizedContent {
+                            editableField(
+                                text: $localizedFrenchExampleDraft,
+                                field: .frenchExample,
+                                fontSize: 16,
+                                textColor: exampleTextColor,
+                                minHeight: 42,
+                                lineLimit: ...4
+                            )
+                        } else if !frenchExample.isEmpty {
+                            Text(frenchExample)
                                 .foregroundStyle(exampleTextColor)
                                 .font(cardFont(size: 16))
                                 .multilineTextAlignment(.leading)
@@ -2985,7 +3282,16 @@ private struct CardBody: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        if !translatedExample.isEmpty {
+                        if isEditingLocalizedContent {
+                            editableField(
+                                text: $localizedExampleDraft,
+                                field: .example,
+                                fontSize: 15,
+                                textColor: exampleTranslationColor,
+                                minHeight: 42,
+                                lineLimit: ...4
+                            )
+                        } else if !translatedExample.isEmpty {
                             Text(translatedExample)
                                 .font(cardFont(size: 15))
                                 .multilineTextAlignment(.leading)
@@ -3666,9 +3972,9 @@ private struct SettingsScreen: View {
                     "What happens if I change my daily goal or level during the day?"
                 ),
                 answer: appState.localized(
-                    "Changing either the daily goal or the level rebuilds today's study plan from scratch. The app generates a new target pool from your current level and current goal, clears today's completion progress, and recalculates today's heatmap from zero. If the rebuilt plan still has eligible cards, today usually goes back to the blinking green dot; if not, today stays gray in the no-eligible state.",
-                    "只要你在当天修改每日目标或等级，系统就会把“今天的学习计划”整套重建。它会按你当前的等级和目标重新生成今天的目标池，清空今天的完成进度，并把今天的热力图按新计划从 0 重新计算。若重建后仍有可发卡，今天通常会回到闪烁的小绿点；若重建后没有可发卡，今天就会保持灰色，也就是“暂无可发卡”状态。",
-                    "Changing either the daily goal or the level rebuilds today's study plan from scratch. The app generates a new target pool from your current level and current goal, clears today's completion progress, and recalculates today's heatmap from zero. If the rebuilt plan still has eligible cards, today usually goes back to the blinking green dot; if not, today stays gray in the no-eligible state."
+                    "Changing either the daily goal or the level rebuilds today's study plan from scratch. The app generates a new target pool from your current level and current goal, clears today's completion progress, and recalculates today's heatmap from zero.",
+                    "只要你在当天修改每日目标或等级，系统就会把“今天的学习计划”整套重建。它会按你当前的等级和目标重新生成今天的目标池，清空今天的完成进度，并把今天的热力图按新计划从 0 重新计算。",
+                    "Changing either the daily goal or the level rebuilds today's study plan from scratch. The app generates a new target pool from your current level and current goal, clears today's completion progress, and recalculates today's heatmap from zero."
                 )
             ),
             FAQItem(
@@ -3679,9 +3985,9 @@ private struct SettingsScreen: View {
                     "Once I swipe a card, does it come back today?"
                 ),
                 answer: appState.localized(
-                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. In Continue ∞ (the optional extra practice after you hit today's goal) the same card can reappear. In study flows, once a card has been reviewed today, you can no longer upgrade it that same day (a Mastered swipe is ignored), but you can always downgrade it (Blurry or Forgot always writes). The Progress page is different: it is a manual archive view, so right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck.",
-                    "今天的主牌组里，每张卡片只会出现一次——掌握、模糊、忘记任意一种都算你今天对它的回答，卡片会立即移出主队列，SRS 引擎安排下次复习。在 Continue ∞（完成今日目标后的可选加练流）里，同一张卡可能会再次出现。在学习流里，同一张卡一天内已经复习过之后，就不能再“升级”了——再次右滑“掌握”会被忽略；但你任何时候都可以“降级”——模糊或忘记一定会写入。进度页不同：它是手动整理档案的地方，在那里右滑“掌握”可以把词放进掌握桶，但不会改变今天的牌堆。",
-                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. In Continue ∞ the same card can reappear. Study flows cap same-day upgrades, but Progress is a manual archive view: right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck."
+                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. After today's goal is complete, extra practice may show the same card again. In study flows, once a card has been reviewed today, you can no longer upgrade it that same day (a Mastered swipe is ignored), but you can always downgrade it (Blurry or Forgot always writes). The Progress page is different: it is a manual archive view, so right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck.",
+                    "今天的主牌组里，每张卡片只会出现一次——掌握、模糊、忘记任意一种都算你今天对它的回答，卡片会立即移出主队列，SRS 引擎安排下次复习。完成今日目标后，系统会自动进入额外练习；在额外练习里，同一张卡可能会再次出现。在学习流里，同一张卡一天内已经复习过之后，就不能再“升级”了——再次右滑“掌握”会被忽略；但你任何时候都可以“降级”——模糊或忘记一定会写入。进度页不同：它是手动整理档案的地方，在那里右滑“掌握”可以把词放进掌握桶，但不会改变今天的牌堆。",
+                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. After today's goal is complete, extra practice may show the same card again. Study flows cap same-day upgrades, but Progress is a manual archive view: right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck."
                 )
             ),
             FAQItem(
@@ -3698,29 +4004,16 @@ private struct SettingsScreen: View {
                 )
             ),
             FAQItem(
-                id: "continue-infinity",
+                id: "extra-practice",
                 question: appState.localized(
-                    "What is Continue ∞ and when does it appear?",
-                    "Continue ∞ 是什么？什么时候出现？",
-                    "What is Continue ∞ and when does it appear?"
+                    "What happens after today's goal is complete?",
+                    "完成今日目标后会发生什么？",
+                    "What happens after today's goal is complete?"
                 ),
                 answer: appState.localized(
-                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Every swipe here updates the memory archive and the next review schedule — Continue ∞ is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day (first Mastered wins; a later Mastered after you already reviewed it today is ignored), but any downgrade (Blurry or Forgot) always writes. Swipes in Continue ∞ never change today's base completion percentage or the heatmap.",
-                    "只有当你完整达成当天基础目标后，首页才会出现 Continue ∞，点击后进入“当前等级”的可选加练流。加练流里的每一次滑动都会更新记忆档案和下次复习安排——Continue ∞ 不是一次性练习。同日规则对这里同样生效：一张卡一天只能被“升级”一次（第一次右滑掌握才算；之后再次右滑会被忽略），但任何“降级”（模糊或忘记）任何时候都会写入。加练流里的滑动不会改动今日基础目标的完成比例或热力图。",
-                    "Continue ∞ appears only after you fully complete today's base swipe goal. It starts an optional extra-practice flow for your current level. Every swipe here updates the memory archive and the next review schedule — Continue ∞ is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day, but any downgrade always writes. Swipes in Continue ∞ never change today's base completion percentage or the heatmap."
-                )
-            ),
-            FAQItem(
-                id: "empty-state-meaning",
-                question: appState.localized(
-                    "What's the difference between 'goal complete' and 'no eligible cards'?",
-                    "“今日完成”和“当前等级暂无可发卡”有什么区别？",
-                    "What's the difference between 'goal complete' and 'no eligible cards'?"
-                ),
-                answer: appState.localized(
-                    "'Goal complete' means you finished today's planned deck. 'No eligible cards' means that, for your current level right now, there are no new cards and no due reviews to issue.",
-                    "“今日完成”表示你已完成今天计划牌堆；“当前等级暂无可发卡”表示按你当前等级与当前时点，既没有新词，也没有到期复习词可以发放。",
-                    "'Goal complete' means you finished today's planned deck. 'No eligible cards' means that, for your current level right now, there are no new cards and no due reviews to issue."
+                    "After you complete today's goal, the app automatically enters extra practice. Every swipe here updates the memory archive and the next review schedule — it is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day (first Mastered wins; a later Mastered after you already reviewed it today is ignored), but any downgrade (Blurry or Forgot) always writes. Extra-practice swipes never change today's base completion percentage or the heatmap.",
+                    "完成今日目标后，系统会自动进入额外练习。额外练习里的每一次滑动都会更新记忆档案和下次复习安排，不是一次性练习。同日规则仍然适用：一张卡一天只能被“升级”一次（第一次右滑掌握才算；之后再次右滑会被忽略），但任何“降级”（模糊或忘记）任何时候都会写入。额外练习里的滑动不会改动今日基础目标的完成比例或热力图。",
+                    "After you complete today's goal, the app automatically enters extra practice. Every swipe here updates the memory archive and the next review schedule — it is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day, but any downgrade always writes. Extra-practice swipes never change today's base completion percentage or the heatmap."
                 )
             ),
             FAQItem(
@@ -3770,9 +4063,9 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal and complete that card for the day. In study flows, Mastered promotes the interval along 0 → 1 → 2 → 4 → 8 → 15 → 30 days and keeps doubling after that; Blurry keeps the interval but retries tomorrow; Forgot resets the interval to 0 and retries tomorrow. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered without changing today's deck.",
-                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑不记录。在日课阶段，掌握、模糊、忘记都会计入今日目标并完成当天的这张卡。在学习流里，“掌握”会让复习间隔沿着 0 → 1 → 2 → 4 → 8 → 15 → 30 天的阶梯往上走；超过 30 天之后每次正确再 ×2（60、120、240…）。“模糊”保留当前间隔，但安排明天再复习一次。“忘记”把间隔清零，也安排明天再看。在进度页里，右滑“掌握”是手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会改变今天的牌堆。",
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up does nothing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal. In study flows, Mastered climbs the interval ladder one step at a time; Blurry retries tomorrow without changing the interval; Forgot resets the interval to 0. In Progress, right-swiping Mastered manually raises the interval to at least 8 days without changing today's deck."
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal and complete that card for the day. In study flows, Mastered promotes the interval along 0 → 1 → 2 → 4 → 8 → 15 → 30 days and keeps doubling after that; Blurry keeps the interval but retries tomorrow; Forgot resets the interval to 0 and retries tomorrow. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered without changing today's deck.",
+                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑会打开卡牌编辑。在日课阶段，掌握、模糊、忘记都会计入今日目标并完成当天的这张卡。在学习流里，“掌握”会让复习间隔沿着 0 → 1 → 2 → 4 → 8 → 15 → 30 天的阶梯往上走；超过 30 天之后每次正确再 ×2（60、120、240…）。“模糊”保留当前间隔，但安排明天再复习一次。“忘记”把间隔清零，也安排明天再看。在进度页里，右滑“掌握”是手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会改变今天的牌堆。",
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal. In study flows, Mastered climbs the interval ladder one step at a time; Blurry retries tomorrow without changing the interval; Forgot resets the interval to 0. In Progress, right-swiping Mastered manually raises the interval to at least 8 days without changing today's deck."
                 )
             ),
             FAQItem(
@@ -3783,9 +4076,9 @@ private struct SettingsScreen: View {
                     "Blurry और Forgot से रिव्यू कैसे बदलता है?"
                 ),
                 answer: appState.localized(
-                    "Both complete the card for the day on the first swipe — no duplicate cards get injected. Forgot resets the review interval to 0 and schedules a retry tomorrow (the word drops into the Forgot bucket on the Progress page). Blurry keeps the current interval unchanged but still schedules a retry tomorrow (so a word that was already deep in Mastered stays Mastered in the progress bucket, it just gets a closer check-in). In Explore and Continue ∞, returning a Forgot word to Mastered means climbing the interval ladder again. In Progress, you can manually right-swipe Mastered to place it back into the Mastered bucket.",
-                    "“模糊”和“忘记”都在一次滑动后就完成当天该张卡，不会额外加卡。“忘记”把复习间隔归零，并安排明天重新复习（进度页会掉到“忘记”桶）。“模糊”保留当前间隔不变，但同样安排明天再看一次——所以原本在深度“掌握”的词被标“模糊”后仍然留在“掌握”桶里，只是近期会再 check 一次。在首页和 Continue ∞ 里，要把一个被标“忘记”的词重新推回“掌握”，需要沿间隔阶梯重新爬上去；在进度页里，你可以手动右滑“掌握”，把它直接放回掌握桶。",
-                    "Both complete the card for the day on the first swipe. Forgot resets the interval to 0 and retries tomorrow. Blurry keeps the current interval but also retries tomorrow. In Explore and Continue ∞, a word climbs back through the interval ladder; in Progress, right-swiping Mastered manually places it in the Mastered bucket."
+                    "Both complete the card for the day on the first swipe — no duplicate cards get injected. Forgot resets the review interval to 0 and schedules a retry tomorrow (the word drops into the Forgot bucket on the Progress page). Blurry keeps the current interval unchanged but still schedules a retry tomorrow (so a word that was already deep in Mastered stays Mastered in the progress bucket, it just gets a closer check-in). In Explore and extra practice, returning a Forgot word to Mastered means climbing the interval ladder again. In Progress, you can manually right-swipe Mastered to place it back into the Mastered bucket.",
+                    "“模糊”和“忘记”都在一次滑动后就完成当天该张卡，不会额外加卡。“忘记”把复习间隔归零，并安排明天重新复习（进度页会掉到“忘记”桶）。“模糊”保留当前间隔不变，但同样安排明天再看一次——所以原本在深度“掌握”的词被标“模糊”后仍然留在“掌握”桶里，只是近期会再 check 一次。在首页和额外练习里，要把一个被标“忘记”的词重新推回“掌握”，需要沿间隔阶梯重新爬上去；在进度页里，你可以手动右滑“掌握”，把它直接放回掌握桶。",
+                    "Both complete the card for the day on the first swipe. Forgot resets the interval to 0 and retries tomorrow. Blurry keeps the current interval but also retries tomorrow. In Explore and extra practice, a word climbs back through the interval ladder; in Progress, right-swiping Mastered manually places it in the Mastered bucket."
                 )
             ),
             FAQItem(
@@ -3796,9 +4089,9 @@ private struct SettingsScreen: View {
                     "How do the three Progress buckets (Forgot / Blurry / Mastered) get decided?"
                 ),
                 answer: appState.localized(
-                    "The bucket is derived directly from a word's current review interval — nothing is stored separately. Interval = 0 days → Forgot. Interval = 1-7 days → Blurry. Interval ≥ 8 days → Mastered. In Explore and Continue ∞, Mastered swipes climb the ladder one step at a time and same-day upgrades are capped. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered, without affecting today's deck.",
-                    "进度页的桶直接由该词当前的复习间隔派生，没有额外存储。间隔 = 0 天 → 忘记。间隔 1-7 天 → 模糊。间隔 ≥ 8 天 → 掌握。在首页和 Continue ∞ 里，右滑“掌握”会沿阶梯一档一档上升，并受每日升级上限限制。在进度页里，右滑“掌握”是一次手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会影响今天的牌堆。",
-                    "The bucket is derived from the current review interval: 0 days → Forgot, 1-7 days → Blurry, 8+ days → Mastered. Explore and Continue ∞ climb one step at a time; Progress right-swipe Mastered manually raises the interval to at least 8 days without changing today's deck."
+                    "The bucket is derived directly from a word's current review interval — nothing is stored separately. Interval = 0 days → Forgot. Interval = 1-7 days → Blurry. Interval ≥ 8 days → Mastered. In Explore and extra practice, Mastered swipes climb the ladder one step at a time and same-day upgrades are capped. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered, without affecting today's deck.",
+                    "进度页的桶直接由该词当前的复习间隔派生，没有额外存储。间隔 = 0 天 → 忘记。间隔 1-7 天 → 模糊。间隔 ≥ 8 天 → 掌握。在首页和额外练习里，右滑“掌握”会沿阶梯一档一档上升，并受每日升级上限限制。在进度页里，右滑“掌握”是一次手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会影响今天的牌堆。",
+                    "The bucket is derived from the current review interval: 0 days → Forgot, 1-7 days → Blurry, 8+ days → Mastered. Explore and extra practice climb one step at a time; Progress right-swipe Mastered manually raises the interval to at least 8 days without changing today's deck."
                 )
             ),
             FAQItem(
@@ -4429,7 +4722,7 @@ private struct SettingsScreen: View {
             Text(appIconErrorMessage ?? appState.localized("Please try again later.", "请稍后再试。", "कृपया बाद में फिर कोशिश करें।"))
         }
         .alert(
-            appState.localized("Reset Learning Data", "重置学习数据", "सीखने का डेटा रीसेट करें"),
+            appState.localized("Reset Data", "重置数据", "डेटा रीसेट करें"),
             isPresented: $showingResetLearningDataAlert
         ) {
             Button(appState.localized("Cancel", "取消", "रद्द करें"), role: .cancel) {}
@@ -4439,9 +4732,9 @@ private struct SettingsScreen: View {
         } message: {
             Text(
                 appState.localized(
-                    "This will clear your learning progress and cannot be undone.",
-                    "这会清空你的学习进度，且无法撤销。",
-                    "यह आपकी सीखने की प्रगति साफ कर देगा और इसे वापस नहीं किया जा सकता।"
+                    "This will clear your learning progress, recent searches, edited card text, and private audio generated from edited text. It also restores the system theme and official word content. This cannot be undone.",
+                    "这会清空你的学习进度、最近搜索记录、你编辑过的卡牌文本，以及由编辑文本生成的本机私有语音缓存。同时会恢复系统主题和官方单词内容。此操作无法撤销。",
+                    "यह आपकी सीखने की प्रगति, हाल की खोजें, संपादित कार्ड टेक्स्ट, और संपादित टेक्स्ट से बनी निजी स्थानीय आवाज़ कैश साफ कर देगा। यह सिस्टम थीम और आधिकारिक शब्द सामग्री भी बहाल करेगा। इसे वापस नहीं किया जा सकता।"
                 )
             )
         }
@@ -4520,6 +4813,8 @@ private struct SettingsScreen: View {
 
     private func resetLearningData() {
         srsManager.resetLearningData()
+        appState.clearUserWordContentOverrides()
+        AudioCacheManager.shared.clearCache(namespace: .userOverride)
         UserDefaults.standard.removeObject(forKey: "search_recent_word_ids")
         themeApplyTask?.cancel()
         themeSelectionOverride = nil

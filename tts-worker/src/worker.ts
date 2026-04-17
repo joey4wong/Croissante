@@ -20,6 +20,7 @@ interface TTSRequestBody {
   input?: unknown;
   voice?: unknown;
   contentType?: unknown;
+  cachePolicy?: unknown;
 }
 
 const corsHeaders = {
@@ -89,10 +90,16 @@ export default {
       : "sentence";
 
     const stability = contentType === "word" ? 0.75 : 0.5;
+    const requestedCachePolicy = typeof requestBody.cachePolicy === "string"
+      ? requestBody.cachePolicy.trim().toLowerCase()
+      : "default";
+    const bypassCache = requestedCachePolicy === "bypass";
 
-    const r2Key = await computeR2Key(requestedVoice || DEFAULT_VOICE_KEY, contentType, input);
+    const r2Key = bypassCache
+      ? ""
+      : await computeR2Key(requestedVoice || DEFAULT_VOICE_KEY, contentType, input);
 
-    if (env.TTS_CACHE) {
+    if (!bypassCache && env.TTS_CACHE) {
       const cached = await env.TTS_CACHE.get(r2Key);
       if (cached) {
         return new Response(cached.body, {
@@ -137,7 +144,7 @@ export default {
 
     const audioBuffer = await upstreamResponse.arrayBuffer();
 
-    if (env.TTS_CACHE) {
+    if (!bypassCache && env.TTS_CACHE) {
       await env.TTS_CACHE.put(r2Key, audioBuffer.slice(0), {
         httpMetadata: { contentType: "audio/mpeg" },
       });
@@ -148,7 +155,7 @@ export default {
       headers: {
         ...corsHeaders,
         "Content-Type": "audio/mpeg",
-        "Cache-Control": "public, max-age=31536000",
+        "Cache-Control": bypassCache ? "no-store" : "public, max-age=31536000",
       },
     });
   },
