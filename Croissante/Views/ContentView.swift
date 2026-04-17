@@ -2368,15 +2368,7 @@ private struct DiscoverCard: View {
             cardHeight: cardHeight,
             isActiveTab: false,
             detailProgress: 1,
-            // Peek card renders without shadow. Animating a radius-18 blurred
-            // shadow (`glowStrength = progress`) every frame while the peek
-            // card rises caused a visible stutter in the late part of the
-            // swipe-away animation: the GPU was re-blurring two overlapping
-            // shadows (departing top card + rising peek) on every frame, with
-            // the cost peaking right as the top card was about to leave.
-            // `contentOpacity: progress` still fades the peek content in, so
-            // the rising effect is preserved without the shadow-blur cost.
-            glowStrength: 0,
+            glowStrength: progress,
             contentOpacity: progress,
             interactionsEnabled: false,
             onSwipeForgot: { _ in },
