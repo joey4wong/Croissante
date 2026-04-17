@@ -302,6 +302,15 @@ public final class SRSManager: ObservableObject {
     
     private let userDefaults = UserDefaults.standard
     private let iCloudSyncService = ICloudSyncService.shared
+    /// Serial background queue that owns JSON encoding + UserDefaults writes
+    /// for learning state. Keeps the 5-10 ms encode of `learningRecords` off
+    /// the main thread so it can never land in the same frame as a swipe-in
+    /// animation. Serial ordering guarantees writes land in the order they
+    /// were dispatched, matching the prior synchronous behavior.
+    private let persistenceQueue = DispatchQueue(
+        label: "com.croissante.srs.persistence",
+        qos: .utility
+    )
     private let calendar = Calendar.current
     private let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -476,32 +485,48 @@ public final class SRSManager: ObservableObject {
         pruneHeatmapDataToCurrentYear(today: today)
         storeCurrentLevelSnapshot(for: today)
 
-        // Save learning records
-        if let recordsData = try? JSONEncoder().encode(learningRecords) {
-            userDefaults.set(recordsData, forKey: Keys.learningRecords)
-        }
-        
-        // Save target level
-        userDefaults.set(targetLevel, forKey: Keys.targetLevel)
-        userDefaults.set(dailyDeckLimit, forKey: Keys.dailyDeckLimit)
-        
-        // Save daily deck
-        userDefaults.set(today, forKey: Keys.dailyDeckDate)
-        userDefaults.set(dailyDeckWordIds, forKey: Keys.dailyDeckWordIds)
-        userDefaults.set(learningQueueIds, forKey: Keys.learningQueueIds)
-        userDefaults.set(Array(dailySwipedWordIds), forKey: Keys.dailySwipedWordIds)
-        
-        userDefaults.set(dailyCompletionRatios, forKey: Keys.dailyCompletionRatios)
-        userDefaults.set(dailyStudyStates, forKey: Keys.dailyStudyStates)
-        if let snapshotData = try? JSONEncoder().encode(levelDailyDeckSnapshots) {
-            userDefaults.set(snapshotData, forKey: Keys.levelDailyDeckSnapshots)
-        }
-
         if touchMutation && !isApplyingRemoteSyncPayload {
             lastLearningStateMutationAt = Date()
         }
-        userDefaults.set(lastLearningStateMutationAt, forKey: Keys.lastLearningStateMutationAt)
-        userDefaults.set(learningSyncResetVersion, forKey: Keys.learningSyncResetVersion)
+
+        // Snapshot all values on the main actor (COW: cheap for dicts/arrays)
+        // so the background queue can encode + write without touching state.
+        let recordsSnapshot = learningRecords
+        let snapshotsSnapshot = levelDailyDeckSnapshots
+        let targetLevelCopy = targetLevel
+        let dailyDeckLimitCopy = dailyDeckLimit
+        let dailyDeckWordIdsCopy = dailyDeckWordIds
+        let learningQueueIdsCopy = learningQueueIds
+        let dailySwipedWordIdsCopy = Array(dailySwipedWordIds)
+        let dailyCompletionRatiosCopy = dailyCompletionRatios
+        let dailyStudyStatesCopy = dailyStudyStates
+        let mutationAtCopy = lastLearningStateMutationAt
+        let syncResetVersionCopy = learningSyncResetVersion
+        let ud = userDefaults
+        let todayCopy = today
+
+        // Encode + write off the main thread. The JSON encode of
+        // `learningRecords` is the hot cost (can be several ms with thousands
+        // of entries) and used to land right on the swipe-in frame. Serial
+        // queue preserves write ordering.
+        persistenceQueue.async {
+            if let recordsData = try? JSONEncoder().encode(recordsSnapshot) {
+                ud.set(recordsData, forKey: Keys.learningRecords)
+            }
+            ud.set(targetLevelCopy, forKey: Keys.targetLevel)
+            ud.set(dailyDeckLimitCopy, forKey: Keys.dailyDeckLimit)
+            ud.set(todayCopy, forKey: Keys.dailyDeckDate)
+            ud.set(dailyDeckWordIdsCopy, forKey: Keys.dailyDeckWordIds)
+            ud.set(learningQueueIdsCopy, forKey: Keys.learningQueueIds)
+            ud.set(dailySwipedWordIdsCopy, forKey: Keys.dailySwipedWordIds)
+            ud.set(dailyCompletionRatiosCopy, forKey: Keys.dailyCompletionRatios)
+            ud.set(dailyStudyStatesCopy, forKey: Keys.dailyStudyStates)
+            if let snapshotData = try? JSONEncoder().encode(snapshotsSnapshot) {
+                ud.set(snapshotData, forKey: Keys.levelDailyDeckSnapshots)
+            }
+            ud.set(mutationAtCopy, forKey: Keys.lastLearningStateMutationAt)
+            ud.set(syncResetVersionCopy, forKey: Keys.learningSyncResetVersion)
+        }
 
         if touchMutation && !isApplyingRemoteSyncPayload {
             pushLearningStateToICloudIfNeeded()

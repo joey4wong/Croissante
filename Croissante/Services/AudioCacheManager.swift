@@ -7,7 +7,7 @@ class AudioCacheManager {
     
     private let fileManager = FileManager.default
     private let cacheDirectory: URL
-    private let maxCacheSize: Int64 = 5 * 1024 * 1024 * 1024
+    private let maxCacheSize: Int64 = 300 * 1024 * 1024
     private let cacheInfoFile: URL
     private var cacheInfo: [String: CacheInfo] = [:]
     

@@ -1495,6 +1495,16 @@ private enum DiscoverCardLayout {
     static let swipeInGlowMinRemaining: Double = 0.04
 }
 
+/// Reference-type box for values that the peek card writes every frame.
+/// Storing the glow progress in a class instance lets us mutate it from the
+/// child card (on every `dragOffset` change) without invalidating the parent
+/// view's `@State` and forcing a per-frame body re-evaluation. The value is
+/// only read at card-change time (`onChange(of: word.id)`), so SwiftUI never
+/// needs to observe it reactively.
+private final class PeekGlowProgressBox {
+    var value: Double = 0
+}
+
 private struct ActiveDiscoverCardHost: View {
     let word: SimpleWord
     let peekNextWord: SimpleWord?
@@ -1513,7 +1523,11 @@ private struct ActiveDiscoverCardHost: View {
     @State private var swipeInScale: CGFloat = 1.0
     @State private var swipeInOpacity: Double = 1.0
     @State private var swipeInGlowProgress: Double = 1.0
-    @State private var lastPeekGlowProgress: Double = 0
+    // Reference-type box: written every frame by the peek card during drag,
+    // but stored in a class so the writes don't invalidate @State and force
+    // the parent view body to re-evaluate each frame. Read only at card
+    // transition time.
+    @State private var peekGlowBox = PeekGlowProgressBox()
     @State private var didFlyAway = false
 
     private let transitionDuration: Double = 0.48
@@ -1562,8 +1576,8 @@ private struct ActiveDiscoverCardHost: View {
             let wasFullyRevealed = didFlyAway
             didFlyAway = false
             guard !wasFullyRevealed else { return }
-            let carriedGlow = lastPeekGlowProgress
-            lastPeekGlowProgress = 0
+            let carriedGlow = peekGlowBox.value
+            peekGlowBox.value = 0
             applySwipeInForNewWord(carriedGlow: carriedGlow)
         }
     }
@@ -1614,7 +1628,7 @@ private struct ActiveDiscoverCardHost: View {
             onSwipeBlurry: onSwipeBlurry,
             onFlyAwayStart: { didFlyAway = true },
             peekNextWord: transitionRequest == nil ? peekNextWord : nil,
-            onPeekGlowProgress: { lastPeekGlowProgress = $0 }
+            onPeekGlowProgress: { [peekGlowBox] in peekGlowBox.value = $0 }
         )
         .id(word.id)
         .offset(y: swipeInOffsetY)
@@ -2704,15 +2718,15 @@ private struct CardGlowModifier: ViewModifier {
     let isDarkMode: Bool
 
     func body(content: Content) -> some View {
-        // Shadow intentionally disabled: interpolating a radius-18 blurred
-        // shadow every frame while `strength` tweens from 0→1 caused visible
-        // frame drops during the swipe-away + peek-card-rising transition.
-        // GPU shadow blur is recomputed every frame and dominated the budget.
-        // The card reads fine without it; revisit with a cheaper static
-        // backdrop shadow if a depth cue is ever reintroduced.
-        _ = strength
-        _ = isDarkMode
-        return content
+        if strength > 0.001 {
+            let s = strength
+            let c: Color = isDarkMode
+                ? Color.white.opacity(0.10 * s)
+                : Color.black.opacity(0.12 * s)
+            content.shadow(color: c, radius: 18, x: 0, y: 0)
+        } else {
+            content
+        }
     }
 }
 
