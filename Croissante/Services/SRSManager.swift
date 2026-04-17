@@ -1,6 +1,11 @@
 import Foundation
 import Combine
 
+private struct UncheckedSendableBox<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
 private struct SRSScheduler {
     let calendar: Calendar
     let newCardQuotaRatio: Double
@@ -502,7 +507,7 @@ public final class SRSManager: ObservableObject {
         let dailyStudyStatesCopy = dailyStudyStates
         let mutationAtCopy = lastLearningStateMutationAt
         let syncResetVersionCopy = learningSyncResetVersion
-        let ud = userDefaults
+        let ud = UncheckedSendableBox(userDefaults)
         let todayCopy = today
 
         // Encode + write off the main thread. The JSON encode of
@@ -510,22 +515,23 @@ public final class SRSManager: ObservableObject {
         // of entries) and used to land right on the swipe-in frame. Serial
         // queue preserves write ordering.
         persistenceQueue.async {
+            let d = ud.value
             if let recordsData = try? JSONEncoder().encode(recordsSnapshot) {
-                ud.set(recordsData, forKey: Keys.learningRecords)
+                d.set(recordsData, forKey: Keys.learningRecords)
             }
-            ud.set(targetLevelCopy, forKey: Keys.targetLevel)
-            ud.set(dailyDeckLimitCopy, forKey: Keys.dailyDeckLimit)
-            ud.set(todayCopy, forKey: Keys.dailyDeckDate)
-            ud.set(dailyDeckWordIdsCopy, forKey: Keys.dailyDeckWordIds)
-            ud.set(learningQueueIdsCopy, forKey: Keys.learningQueueIds)
-            ud.set(dailySwipedWordIdsCopy, forKey: Keys.dailySwipedWordIds)
-            ud.set(dailyCompletionRatiosCopy, forKey: Keys.dailyCompletionRatios)
-            ud.set(dailyStudyStatesCopy, forKey: Keys.dailyStudyStates)
+            d.set(targetLevelCopy, forKey: Keys.targetLevel)
+            d.set(dailyDeckLimitCopy, forKey: Keys.dailyDeckLimit)
+            d.set(todayCopy, forKey: Keys.dailyDeckDate)
+            d.set(dailyDeckWordIdsCopy, forKey: Keys.dailyDeckWordIds)
+            d.set(learningQueueIdsCopy, forKey: Keys.learningQueueIds)
+            d.set(dailySwipedWordIdsCopy, forKey: Keys.dailySwipedWordIds)
+            d.set(dailyCompletionRatiosCopy, forKey: Keys.dailyCompletionRatios)
+            d.set(dailyStudyStatesCopy, forKey: Keys.dailyStudyStates)
             if let snapshotData = try? JSONEncoder().encode(snapshotsSnapshot) {
-                ud.set(snapshotData, forKey: Keys.levelDailyDeckSnapshots)
+                d.set(snapshotData, forKey: Keys.levelDailyDeckSnapshots)
             }
-            ud.set(mutationAtCopy, forKey: Keys.lastLearningStateMutationAt)
-            ud.set(syncResetVersionCopy, forKey: Keys.learningSyncResetVersion)
+            d.set(mutationAtCopy, forKey: Keys.lastLearningStateMutationAt)
+            d.set(syncResetVersionCopy, forKey: Keys.learningSyncResetVersion)
         }
 
         if touchMutation && !isApplyingRemoteSyncPayload {

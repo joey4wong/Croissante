@@ -2225,6 +2225,8 @@ private struct DiscoverCard: View {
     @State private var dragRotation: Angle = .zero
     @State private var isSwipeCompleting = false
     @State private var dragLockedAxis: Axis? = nil
+    @State private var swipeOutOpacity: Double = 1.0
+    @State private var swipeOutBlur: CGFloat = 0
     private let arcMaxHeight: CGFloat = 32
     @State private var pendingSpeechTask: Task<Void, Never>?
     @State private var displayedWord: SimpleWord
@@ -2466,8 +2468,21 @@ private struct DiscoverCard: View {
         guard !isSwipeCompleting else { return }
         isSwipeCompleting = true
 
+        let isHorizontal = offset.width != 0
+        let sign: CGFloat = offset.width >= 0 ? 1 : -1
+
         withAnimation(.easeIn(duration: delay)) {
             dragOffset = offset
+            if isHorizontal {
+                dragRotation = .degrees(Double(sign) * 22)
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay * 0.5) {
+            withAnimation(.easeOut(duration: delay * 0.5)) {
+                swipeOutOpacity = 0
+                swipeOutBlur = 8
+            }
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -2475,6 +2490,8 @@ private struct DiscoverCard: View {
             if resetTransformAfterSwipe {
                 dragOffset = .zero
                 dragRotation = .zero
+                swipeOutOpacity = 1
+                swipeOutBlur = 0
             }
             isSwipeCompleting = false
         }
@@ -2547,6 +2564,8 @@ private struct DiscoverCard: View {
             }
             .offset(dragOffset)
             .rotationEffect(dragRotation)
+            .opacity(swipeOutOpacity)
+            .blur(radius: swipeOutBlur)
             .allowsHitTesting(interactionsEnabled)
             .gesture(
                 DragGesture(minimumDistance: 15)
@@ -2567,9 +2586,7 @@ private struct DiscoverCard: View {
                         let constrained: CGSize
                         switch dragLockedAxis {
                         case .horizontal:
-                            let t = min(1.0, abs(dx) / screenWidth)
-                            let arcY = -arcMaxHeight * 4 * t * (1 - t)
-                            constrained = CGSize(width: dx, height: arcY)
+                            constrained = CGSize(width: dx, height: 0)
                             dragRotation = .degrees(Double(dx / screenWidth * 12))
                         case .vertical:
                             constrained = CGSize(width: 0, height: dy)
@@ -2610,13 +2627,13 @@ private struct DiscoverCard: View {
                         if dx < -swipeThreshold {
                             let swipedWordId = displayedWord.id
                             onFlyAwayStart?()
-                            completeSwipe(to: CGSize(width: -screenWidth, height: 0)) {
+                            completeSwipe(to: CGSize(width: -screenWidth * 1.3, height: 0)) {
                                 onSwipeForgot(swipedWordId)
                             }
                         } else if dx > swipeThreshold {
                             let swipedWordId = displayedWord.id
                             onFlyAwayStart?()
-                            completeSwipe(to: CGSize(width: screenWidth, height: 0)) {
+                            completeSwipe(to: CGSize(width: screenWidth * 1.3, height: 0)) {
                                 onSwipeMastered(swipedWordId)
                             }
                         } else if dy > swipeThreshold && allowsBlurrySwipe {
