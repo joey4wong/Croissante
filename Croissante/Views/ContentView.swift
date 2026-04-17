@@ -6339,6 +6339,8 @@ private struct NotificationReminderSettingsCard: View {
     private var curveColor: Color {
         isDarkMode ? Color.white.opacity(0.78) : Color.black.opacity(0.52)
     }
+    private var knobHitSize: CGFloat { 34 }
+    private var curveCoordinateSpaceName: String { "NotificationReminderSettingsCard.curve" }
     private var maxStepIndex: Int { 95 }
     private var noonStepIndex: Int { 48 }
 
@@ -6426,22 +6428,24 @@ private struct NotificationReminderSettingsCard: View {
                             dragBiasX: knobDragBiasX
                         )
                             .frame(width: 25, height: 25)
+                            .frame(width: knobHitSize, height: knobHitSize)
+                            .contentShape(Circle())
                             .position(x: markerPoint.x, y: markerPoint.y)
+                            .gesture(
+                                DragGesture(minimumDistance: 0, coordinateSpace: .named(curveCoordinateSpaceName))
+                                    .onChanged { value in
+                                        isKnobDragging = true
+                                        knobDragBiasX = min(max(value.translation.width / 34, -1), 1)
+                                        applyDragStep(at: value.location.x, width: geo.size.width, playSound: true)
+                                    }
+                                    .onEnded { value in
+                                        isKnobDragging = false
+                                        knobDragBiasX = 0
+                                        applyDragStep(at: value.location.x, width: geo.size.width, playSound: true)
+                                    }
+                            )
                     }
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                isKnobDragging = true
-                                knobDragBiasX = min(max(value.translation.width / 34, -1), 1)
-                                applyDragStep(at: value.location.x, width: geo.size.width, playSound: true)
-                            }
-                            .onEnded { value in
-                                isKnobDragging = false
-                                knobDragBiasX = 0
-                                applyDragStep(at: value.location.x, width: geo.size.width, playSound: true)
-                            }
-                    )
+                    .coordinateSpace(name: curveCoordinateSpaceName)
                 }
                 .frame(height: 42)
             .padding(.horizontal, 2)
