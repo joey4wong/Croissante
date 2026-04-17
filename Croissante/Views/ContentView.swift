@@ -1456,10 +1456,9 @@ private enum GalaxyOrbit {
 
 private func galaxyAccentBorder(isDarkMode: Bool) -> LinearGradient {
     LinearGradient(
-        colors: [
-            Color(red: 0.28, green: 0.95, blue: 0.56).opacity(isDarkMode ? 0.82 : 0.62),
-            Color(red: 0.16, green: 0.78, blue: 0.46).opacity(isDarkMode ? 0.72 : 0.52)
-        ],
+        colors: isDarkMode
+            ? [Color.white.opacity(0.28), Color.white.opacity(0.14)]
+            : [Color.black.opacity(0.18), Color.black.opacity(0.10)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
@@ -2704,36 +2703,13 @@ private struct CardGlowModifier: ViewModifier {
     let strength: Double
     let isDarkMode: Bool
 
-    private var glowColor: Color {
-        isDarkMode
-            ? Color(red: 0.31, green: 1.00, blue: 0.66)
-            : Color(red: 0.51, green: 0.86, blue: 0.75)
-    }
-
     func body(content: Content) -> some View {
         if strength > 0.001 {
             let s = strength
-            let c = glowColor
-            let innerA = 0.28 * s
-            let outerA = 0.14 * s
-            let haloA = 0.09 * s
-            content
-                .background {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(c.opacity(innerA))
-                            .blur(radius: 12)
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(c.opacity(outerA))
-                            .blur(radius: 26)
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(c.opacity(haloA))
-                            .blur(radius: 42)
-                    }
-                    .scaleEffect(1.02)
-                }
-                .compositingGroup()
-                .shadow(color: c.opacity(0.14 * s), radius: 20, x: 0, y: 0)
+            let c: Color = isDarkMode
+                ? Color.white.opacity(0.10 * s)
+                : Color.black.opacity(0.12 * s)
+            content.shadow(color: c, radius: 18, x: 0, y: 0)
         } else {
             content
         }
