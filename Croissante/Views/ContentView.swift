@@ -2438,6 +2438,7 @@ private struct DiscoverCard: View {
 
     private var shouldShowPeekCard: Bool {
         peekNextWord != nil && !isInlineEditFlightActive
+            && !(allowsInlineEditing && dragOffset.height < 0)
     }
 
     @ViewBuilder
@@ -2582,7 +2583,7 @@ private struct DiscoverCard: View {
         let flyOutDuration: TimeInterval = 0.18
         let editHandoffDelay: TimeInterval = 0.18
         let keyboardSettleDelay: TimeInterval = 0.02
-        let landingDuration: TimeInterval = 0.78
+        let landingDuration: TimeInterval = 1.05
         let landingAnimation = Animation.timingCurve(0.08, 0.92, 0.14, 1.0, duration: landingDuration)
         let landingSpinDegrees = 360.0 * 18
         editLandingSpinDegrees = 0
