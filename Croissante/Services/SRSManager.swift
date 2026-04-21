@@ -618,10 +618,6 @@ public final class SRSManager: ObservableObject {
         var bypassesSameDayMasteryCap: Bool {
             self == .progress
         }
-
-        var usesManualMasteryFloor: Bool {
-            self == .progress
-        }
     }
 
     public func markWordMastered(_ wordId: String, source: ReviewSource) {
@@ -702,36 +698,29 @@ public final class SRSManager: ObservableObject {
         let currentInterval = oldRecord?.intervalDays ?? 0
         switch outcome {
         case .mastered:
-            if source.usesManualMasteryFloor {
-                // Progress 页是用户手动整理档案：补到掌握下限，但不借机无限升级。
-                let nextInterval = max(currentInterval, SRSRules.masteredIntervalThreshold)
-                return LearningRecord(
-                    wordId: wordId,
-                    intervalDays: nextInterval,
-                    nextReviewDate: scheduler.scheduledReviewDate(forInterval: nextInterval, from: now),
-                    lastReviewedAt: now
-                )
-            }
-            // 右滑：间隔沿梯度上升。
+            // 右滑：UI 桶立即归为"掌握"；间隔沿梯度上升，SRS 调度自然演进。
             let nextInterval = scheduler.nextMasteryInterval(from: currentInterval)
             return LearningRecord(
                 wordId: wordId,
+                memoryState: .mastered,
                 intervalDays: nextInterval,
                 nextReviewDate: scheduler.scheduledReviewDate(forInterval: nextInterval, from: now),
                 lastReviewedAt: now
             )
         case .blurry:
-            // 下滑：间隔保持不变，但明天再看一次（临时降级）。
+            // 下滑：UI 桶归为"模糊"；间隔保持不变，但明天再看一次。
             return LearningRecord(
                 wordId: wordId,
+                memoryState: .blurry,
                 intervalDays: currentInterval,
                 nextReviewDate: scheduler.retryReviewDate(from: now),
                 lastReviewedAt: now
             )
         case .forgot:
-            // 左滑：间隔归零，明天重头再来。
+            // 左滑：UI 桶归为"遗忘"；间隔归零，明天重头再来。
             return LearningRecord(
                 wordId: wordId,
+                memoryState: .forgot,
                 intervalDays: 0,
                 nextReviewDate: scheduler.retryReviewDate(from: now),
                 lastReviewedAt: now
@@ -884,6 +873,7 @@ public final class SRSManager: ObservableObject {
             let normalizedDate = normalizedReviewDate(record.nextReviewDate)
             partialResult[pair.key] = LearningRecord(
                 wordId: record.wordId,
+                memoryState: record.memoryState,
                 intervalDays: record.intervalDays,
                 nextReviewDate: normalizedDate,
                 lastReviewedAt: record.lastReviewedAt

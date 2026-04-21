@@ -340,8 +340,8 @@ struct ImagePickerView: UIViewControllerRepresentable {
         if sourceType == .camera, UIImagePickerController.isSourceTypeAvailable(.camera) {
             picker.sourceType = .camera
             picker.cameraCaptureMode = .photo
-            if UIImagePickerController.isCameraDeviceAvailable(.front) {
-                picker.cameraDevice = .front
+            if UIImagePickerController.isCameraDeviceAvailable(.rear) {
+                picker.cameraDevice = .rear
             }
         } else {
             picker.sourceType = .photoLibrary

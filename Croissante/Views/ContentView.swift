@@ -3383,8 +3383,6 @@ private struct NounCornerAccentShape: Shape {
     .environmentObject(AppState())
 }
 
-private let progressRevealCoordinateSpace = "progress-screen-reveal"
-
 private struct ProgressScreen: View {
     private enum ProgressBucket: CaseIterable, Hashable {
         case forgot
@@ -3406,8 +3404,6 @@ private struct ProgressScreen: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedBucket: ProgressBucket = .forgot
     @State private var selectedWordForCard: SimpleWord?
-    @State private var isWordCardVisible = false
-    @State private var wordCardRevealOrigin: CGPoint = .zero
     private var displayedWords: [SimpleWord] { Array(filteredWords.prefix(20)) }
     private var isDarkMode: Bool { colorScheme == .dark }
     private var bucketLabels: [String] {
@@ -3425,50 +3421,9 @@ private struct ProgressScreen: View {
         }
     }
 
-    private func presentWordCard(_ word: SimpleWord, at origin: CGPoint) {
-        wordCardRevealOrigin = origin
-        selectedWordForCard = word
-        isWordCardVisible = false
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.34)) {
-                isWordCardVisible = true
-            }
-        }
-    }
-
-    private func dismissWordCard() {
-        guard selectedWordForCard != nil else { return }
-        withAnimation(.easeInOut(duration: 0.22)) {
-            isWordCardVisible = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            if !isWordCardVisible {
-                selectedWordForCard = nil
-            }
-        }
-    }
-
-    private func clampedRevealOrigin(in size: CGSize) -> CGPoint {
-        CGPoint(
-            x: min(max(wordCardRevealOrigin.x, 0), size.width),
-            y: min(max(wordCardRevealOrigin.y, 0), size.height)
-        )
-    }
-
-    private func revealRadius(in size: CGSize, from origin: CGPoint) -> CGFloat {
-        let corners = [
-            CGPoint(x: 0, y: 0),
-            CGPoint(x: size.width, y: 0),
-            CGPoint(x: 0, y: size.height),
-            CGPoint(x: size.width, y: size.height)
-        ]
-        return (corners.map { hypot($0.x - origin.x, $0.y - origin.y) }.max() ?? 0) + 48
-    }
-
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                VStack(spacing: 18) {
+        ZStack {
+            VStack(spacing: 18) {
                     Spacer().frame(height: 10)
 
                     CheckInHeatmapView()
@@ -3498,8 +3453,8 @@ private struct ProgressScreen: View {
                                             srsManager.resetWordToNew(word.id)
                                         }
                                     },
-                                    onTap: { tapLocation in
-                                        presentWordCard(word, at: tapLocation)
+                                    onTap: { _ in
+                                        selectedWordForCard = word
                                     }
                                 )
                                 .listRowSeparator(.hidden)
@@ -3513,36 +3468,34 @@ private struct ProgressScreen: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                if let word = selectedWordForCard {
-                    let origin = clampedRevealOrigin(in: geo.size)
-                    let radius = revealRadius(in: geo.size, from: origin)
-                    SearchSelectedWordCardView(
-                        word: word,
-                        themeMode: appState.themeMode,
-                        allowsBlurrySwipe: true,
-                        dismissOnTap: true,
-                        embeddedInTabView: true,
-                        onDismiss: { dismissWordCard() },
-                        onSwipeForgot: { srsManager.markWordForgot($0, source: .progress) },
-                        onSwipeMastered: { srsManager.markWordMastered($0, source: .progress) },
-                        onSwipeBlurry: { srsManager.markWordBlurry($0, source: .progress) }
-                    )
-                    .id(word.id)
-                    .mask(
-                        Circle()
-                            .frame(
-                                width: isWordCardVisible ? radius * 2 : 2,
-                                height: isWordCardVisible ? radius * 2 : 2
-                            )
-                            .position(origin)
-                    )
-                    .opacity(isWordCardVisible ? 1 : 0.001)
-                    .allowsHitTesting(isWordCardVisible)
-                    .zIndex(1)
-                }
-            }
         }
-        .coordinateSpace(name: progressRevealCoordinateSpace)
+        #if os(iOS)
+        .fullScreenCover(item: $selectedWordForCard) { word in
+            SearchSelectedWordCardView(
+                word: word,
+                themeMode: appState.themeMode,
+                allowsBlurrySwipe: true,
+                dismissOnTap: true,
+                onDismiss: { selectedWordForCard = nil },
+                onSwipeForgot: { srsManager.markWordForgot($0, source: .progress) },
+                onSwipeMastered: { srsManager.markWordMastered($0, source: .progress) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0, source: .progress) }
+            )
+        }
+        #else
+        .sheet(item: $selectedWordForCard) { word in
+            SearchSelectedWordCardView(
+                word: word,
+                themeMode: appState.themeMode,
+                allowsBlurrySwipe: true,
+                dismissOnTap: true,
+                onDismiss: { selectedWordForCard = nil },
+                onSwipeForgot: { srsManager.markWordForgot($0, source: .progress) },
+                onSwipeMastered: { srsManager.markWordMastered($0, source: .progress) },
+                onSwipeBlurry: { srsManager.markWordBlurry($0, source: .progress) }
+            )
+        }
+        #endif
     }
 }
 
@@ -3664,12 +3617,9 @@ private struct ProgressWordRow: View {
         .padding(.horizontal, 2)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .simultaneousGesture(
-            SpatialTapGesture(coordinateSpace: .named(progressRevealCoordinateSpace))
-                .onEnded { value in
-                    onTap(value.location)
-                }
-        )
+        .onTapGesture {
+            onTap(.zero)
+        }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 onDelete()
@@ -4081,9 +4031,9 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal and complete that card for the day. In study flows, Mastered promotes the interval along 0 → 1 → 2 → 4 → 8 → 15 → 30 days and keeps doubling after that; Blurry keeps the interval but retries tomorrow; Forgot resets the interval to 0 and retries tomorrow. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered without changing today's deck.",
-                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑会打开卡牌编辑。在日课阶段，掌握、模糊、忘记都会计入今日目标并完成当天的这张卡。在学习流里，“掌握”会让复习间隔沿着 0 → 1 → 2 → 4 → 8 → 15 → 30 天的阶梯往上走；超过 30 天之后每次正确再 ×2（60、120、240…）。“模糊”保留当前间隔，但安排明天再复习一次。“忘记”把间隔清零，也安排明天再看。在进度页里，右滑“掌握”是手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会改变今天的牌堆。",
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. In the daily deck, Mastered, Blurry, and Forgot count toward today's goal. In study flows, Mastered climbs the interval ladder one step at a time; Blurry retries tomorrow without changing the interval; Forgot resets the interval to 0. In Progress, right-swiping Mastered manually raises the interval to at least 8 days without changing today's deck."
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. Whichever way you swipe, the Progress page bucket updates immediately to match — one Mastered swipe places the word in Mastered, one Blurry swipe places it in Blurry, one Forgot swipe places it in Forgot. Under the hood, the review schedule is independent: Mastered promotes the interval along 0 → 1 → 2 → 4 → 8 → 15 → 30 days and keeps doubling after that; Blurry keeps the interval but retries tomorrow; Forgot resets the interval to 0 and retries tomorrow. In the daily deck, all three outcomes count toward today's goal and complete that card for the day.",
+                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑会打开卡牌编辑。无论从哪里滑、怎么滑，进度页的桶会立刻跟随你的判定：右滑一次即进入“掌握”桶，下滑一次即进入“模糊”桶，左滑一次即进入“忘记”桶。复习节奏是独立的另一条线：“掌握”会让复习间隔沿着 0 → 1 → 2 → 4 → 8 → 15 → 30 天的阶梯往上走，超过 30 天之后每次正确再 ×2；“模糊”保留当前间隔，但安排明天再看一次；“忘记”把间隔清零，也安排明天再看。在日课阶段，三种滑动都会计入今日目标并完成当天的这张卡。",
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. The Progress bucket follows your last swipe directly — one swipe is enough to move a word between buckets. The review interval is separate: Mastered climbs the ladder one step at a time; Blurry retries tomorrow without changing the interval; Forgot resets the interval to 0. In the daily deck, all three count toward today's goal."
                 )
             ),
             FAQItem(
@@ -4094,9 +4044,9 @@ private struct SettingsScreen: View {
                     "Blurry और Forgot से रिव्यू कैसे बदलता है?"
                 ),
                 answer: appState.localized(
-                    "Both complete the card for the day on the first swipe — no duplicate cards get injected. Forgot resets the review interval to 0 and schedules a retry tomorrow (the word drops into the Forgot bucket on the Progress page). Blurry keeps the current interval unchanged but still schedules a retry tomorrow (so a word that was already deep in Mastered stays Mastered in the progress bucket, it just gets a closer check-in). In Explore and extra practice, returning a Forgot word to Mastered means climbing the interval ladder again. In Progress, you can manually right-swipe Mastered to place it back into the Mastered bucket.",
-                    "“模糊”和“忘记”都在一次滑动后就完成当天该张卡，不会额外加卡。“忘记”把复习间隔归零，并安排明天重新复习（进度页会掉到“忘记”桶）。“模糊”保留当前间隔不变，但同样安排明天再看一次——所以原本在深度“掌握”的词被标“模糊”后仍然留在“掌握”桶里，只是近期会再 check 一次。在首页和额外练习里，要把一个被标“忘记”的词重新推回“掌握”，需要沿间隔阶梯重新爬上去；在进度页里，你可以手动右滑“掌握”，把它直接放回掌握桶。",
-                    "Both complete the card for the day on the first swipe. Forgot resets the interval to 0 and retries tomorrow. Blurry keeps the current interval but also retries tomorrow. In Explore and extra practice, a word climbs back through the interval ladder; in Progress, right-swiping Mastered manually places it in the Mastered bucket."
+                    "Both complete the card for the day on the first swipe — no duplicate cards get injected. Blurry immediately moves the word to the Blurry bucket and Forgot immediately moves it to the Forgot bucket on the Progress page. The review schedule follows its own rules: Forgot resets the review interval to 0 and schedules a retry tomorrow; Blurry keeps the current interval unchanged but still schedules a retry tomorrow. To bring a word back to the Mastered bucket, a single Mastered swipe anywhere — Explore, extra practice, search, or Progress — is enough; the interval ladder continues climbing independently in the background.",
+                    "“模糊”和“忘记”都在一次滑动后就完成当天该张卡，不会额外加卡。下滑“模糊”会立即把它放进进度页的“模糊”桶，左滑“忘记”会立即放进“忘记”桶。复习节奏是另一条独立线：“忘记”把间隔归零，并安排明天重新复习；“模糊”保留当前间隔不变，但同样安排明天再看一次。想把一个词重新归入“掌握”桶，只需要在任何地方（首页、额外练习、搜索、进度页）右滑一次“掌握”就够了；间隔阶梯会在后台独立继续攀升，互不干扰。",
+                    "Both complete the card for the day on the first swipe. Blurry moves the word to the Blurry bucket and Forgot moves it to the Forgot bucket immediately. The schedule is separate: Forgot resets the interval to 0 and retries tomorrow; Blurry keeps the interval but also retries tomorrow. A single Mastered swipe anywhere returns the word to the Mastered bucket."
                 )
             ),
             FAQItem(
@@ -4107,9 +4057,9 @@ private struct SettingsScreen: View {
                     "How do the three Progress buckets (Forgot / Blurry / Mastered) get decided?"
                 ),
                 answer: appState.localized(
-                    "The bucket is derived directly from a word's current review interval — nothing is stored separately. Interval = 0 days → Forgot. Interval = 1-7 days → Blurry. Interval ≥ 8 days → Mastered. In Explore and extra practice, Mastered swipes climb the ladder one step at a time and same-day upgrades are capped. In Progress, right-swiping Mastered is a manual archive correction: it raises the interval to at least 8 days so the word moves into Mastered, without affecting today's deck.",
-                    "进度页的桶直接由该词当前的复习间隔派生，没有额外存储。间隔 = 0 天 → 忘记。间隔 1-7 天 → 模糊。间隔 ≥ 8 天 → 掌握。在首页和额外练习里，右滑“掌握”会沿阶梯一档一档上升，并受每日升级上限限制。在进度页里，右滑“掌握”是一次手动档案校正：它会把间隔至少提升到 8 天，让这个词进入掌握桶，但不会影响今天的牌堆。",
-                    "The bucket is derived from the current review interval: 0 days → Forgot, 1-7 days → Blurry, 8+ days → Mastered. Explore and extra practice climb one step at a time; Progress right-swipe Mastered manually raises the interval to at least 8 days without changing today's deck."
+                    "The bucket reflects your most recent swipe on that word, nothing else. Mastered swipe → Mastered bucket. Blurry swipe → Blurry bucket. Forgot swipe → Forgot bucket. This is true anywhere you swipe — Explore, extra practice, search, or Progress — and the bucket updates the moment you swipe. The review interval is a separate, independent signal: Mastered climbs the ladder 1 → 2 → 4 → 8 → 15 → 30 days (doubling after that); Blurry holds the interval; Forgot resets it to 0. Same-day upgrade rules still apply in study flows (one Mastered per card per day), but the bucket itself always follows your latest declared swipe.",
+                    "进度页的桶只反映你对这个词最近一次的滑动判定，别的都不影响。右滑“掌握” → 掌握桶；下滑“模糊” → 模糊桶；左滑“忘记” → 忘记桶。无论在哪里滑（首页、额外练习、搜索、进度页），滑的那一刻桶就会更新。复习间隔是另一条独立的线：“掌握”沿 1 → 2 → 4 → 8 → 15 → 30 天的阶梯上升（之后继续 ×2）；“模糊”保持当前间隔；“忘记”归零。学习流里仍然有每日升级上限（同一张卡一天只能被“升级”一次），但桶本身始终跟随你最新一次的明确判定。",
+                    "The bucket reflects your most recent swipe on that word. Mastered swipe → Mastered bucket; Blurry → Blurry; Forgot → Forgot — anywhere you swipe, updated instantly. The review interval is separate and independent: Mastered climbs 1 → 2 → 4 → 8 → 15 → 30 days; Blurry holds; Forgot resets to 0. Same-day upgrade caps still apply to study flows, but the bucket always follows your latest swipe."
                 )
             ),
             FAQItem(
