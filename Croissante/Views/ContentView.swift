@@ -435,17 +435,65 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
         }
 
         private func animateSettingsGear() {
-            guard let tabBar,
-                  let tabItemView = tabItemView(in: tabBar, index: settingsIndex) else {
+            guard let tabBar else { return }
+
+            let imageViews = tabIconImageViews(at: settingsIndex, in: tabBar)
+            if !imageViews.isEmpty {
+                for (i, iv) in imageViews.enumerated() {
+                    animateRotation(on: iv.layer, key: "settingsGearSpin_\(i)")
+                }
                 return
             }
 
-            if let imageView = findImageView(in: tabItemView) {
-                animateRotation(on: imageView.layer, key: "settingsGearSpin")
-                return
+            if let tabItemView = tabItemView(in: tabBar, index: settingsIndex) {
+                if let imageView = findImageView(in: tabItemView) {
+                    animateRotation(on: imageView.layer, key: "settingsGearSpin")
+                } else {
+                    animateRotation(on: tabItemView.layer, key: "settingsGearSpinFallback")
+                }
             }
+        }
 
-            animateRotation(on: tabItemView.layer, key: "settingsGearSpinFallback")
+        private func tabIconImageViews(at index: Int, in tabBar: UITabBar) -> [UIImageView] {
+            guard let platter = findMainContentPlatter(in: tabBar) else { return [] }
+            var result: [UIImageView] = []
+            for container in platter.subviews {
+                guard !container.isHidden, container.alpha > 0.01 else { continue }
+                let name = String(describing: type(of: container))
+                guard name == "ContentView" || name == "SelectedContentView" else { continue }
+                let buttons = container.subviews.filter {
+                    !$0.isHidden && String(describing: type(of: $0)).contains("TabButton")
+                }
+                guard index >= 0, index < buttons.count else { continue }
+                if let iv = firstVisibleSymbolImageView(in: buttons[index]) {
+                    result.append(iv)
+                }
+            }
+            return result
+        }
+
+        private func findMainContentPlatter(in tabBar: UITabBar) -> UIView? {
+            for sub in tabBar.subviews {
+                guard !sub.isHidden, sub.alpha > 0.01 else { continue }
+                let name = String(describing: type(of: sub))
+                guard name.contains("PlatterView") else { continue }
+                let childNames = sub.subviews.map { String(describing: type(of: $0)) }
+                if childNames.contains("SelectedContentView") && childNames.contains("ContentView") {
+                    return sub
+                }
+            }
+            return nil
+        }
+
+        private func firstVisibleSymbolImageView(in view: UIView) -> UIImageView? {
+            if view.isHidden || view.alpha <= 0.01 { return nil }
+            if let iv = view as? UIImageView, iv.image?.isSymbolImage == true {
+                return iv
+            }
+            for sub in view.subviews {
+                if let found = firstVisibleSymbolImageView(in: sub) { return found }
+            }
+            return nil
         }
 
         private func animateRotation(on layer: CALayer, key: String) {
@@ -592,6 +640,7 @@ private struct SettingsTabGearAnimationBridge: UIViewRepresentable {
                 collectImageViews(in: subview, into: &imageViews)
             }
         }
+
     }
 }
 
@@ -4108,14 +4157,11 @@ private struct SettingsScreen: View {
                             .foregroundStyle(isDarkMode ? Color.white.opacity(0.55) : Color.black.opacity(0.36))
                         #endif
                         Circle()
-                            .stroke(isDarkMode ? Color.white.opacity(0.22) : Color.white.opacity(0.6), lineWidth: 2)
-                            .frame(width: 100, height: 100)
-                        Circle()
                             .strokeBorder(
                                 AngularGradient(colors: avatarMetalRingGradient, center: .center),
                                 lineWidth: 4
                             )
-                            .frame(width: 94, height: 94)
+                            .frame(width: 100, height: 100)
                             .shadow(color: avatarMetalShadow, radius: 1.5, x: 0, y: 1)
                             .overlay(
                                 Circle()
@@ -4125,8 +4171,11 @@ private struct SettingsScreen: View {
                                         style: StrokeStyle(lineWidth: 1.2, lineCap: .round)
                                     )
                                     .rotationEffect(.degrees(-20))
-                                    .frame(width: 90, height: 90)
+                                    .frame(width: 96, height: 96)
                             )
+                        Circle()
+                            .stroke(isDarkMode ? Color.white.opacity(0.22) : Color.white.opacity(0.6), lineWidth: 2)
+                            .frame(width: 100, height: 100)
                     }
                 }
                 .buttonStyle(.plain)
