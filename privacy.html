@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Croissante</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #050c08;
+      color: rgba(255,255,255,0.82);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    #starfield {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* NAV */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 20px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: transparent;
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.85);
+      text-decoration: none;
+    }
+    .nav-logo span { font-style: italic; color: rgba(71,244,143,0.9); }
+
+    .nav-back {
+      font-size: 13px;
+      color: rgba(255,255,255,0.38);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.2s;
+    }
+    .nav-back:hover { color: rgba(255,255,255,0.7); }
+
+    /* CONTENT */
+    .content {
+      position: relative;
+      z-index: 1;
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 120px 32px 80px;
+    }
+
+    .page-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(71,244,143,0.7);
+      margin-bottom: 16px;
+    }
+
+    .page-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(36px, 5vw, 52px);
+      font-weight: 400;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: rgba(255,255,255,0.92);
+      margin-bottom: 8px;
+    }
+
+    .effective-date {
+      font-size: 13px;
+      color: rgba(255,255,255,0.28);
+      margin-bottom: 48px;
+      font-weight: 300;
+    }
+
+    .intro {
+      font-size: 16px;
+      line-height: 1.75;
+      color: rgba(255,255,255,0.6);
+      font-weight: 300;
+      margin-bottom: 56px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    /* Sections */
+    .section {
+      margin-bottom: 48px;
+    }
+
+    h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.88);
+      margin-bottom: 20px;
+      letter-spacing: -0.01em;
+    }
+
+    h3 {
+      font-size: 14px;
+      font-weight: 500;
+      color: rgba(71,244,143,0.8);
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+      margin-top: 24px;
+    }
+
+    p {
+      font-size: 15px;
+      line-height: 1.75;
+      color: rgba(255,255,255,0.52);
+      font-weight: 300;
+      margin-bottom: 12px;
+    }
+
+    ol, ul {
+      padding-left: 0;
+      list-style: none;
+      margin-bottom: 12px;
+    }
+
+    ol li, ul li {
+      font-size: 15px;
+      line-height: 1.75;
+      color: rgba(255,255,255,0.52);
+      font-weight: 300;
+      padding: 6px 0 6px 20px;
+      position: relative;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    ol { counter-reset: item; }
+    ol li::before {
+      content: counter(item);
+      counter-increment: item;
+      position: absolute;
+      left: 0;
+      color: rgba(71,244,143,0.5);
+      font-size: 12px;
+      font-weight: 500;
+      top: 9px;
+    }
+
+    ul li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(71,244,143,0.4);
+      font-size: 12px;
+      top: 8px;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 40px 0;
+    }
+
+    strong {
+      color: rgba(255,255,255,0.75);
+      font-weight: 500;
+    }
+
+    a {
+      color: rgba(71,244,143,0.8);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(71,244,143,0.25);
+      transition: color 0.2s, border-color 0.2s;
+    }
+    a:hover { color: rgba(71,244,143,1); border-color: rgba(71,244,143,0.6); }
+
+    .contact-box {
+      margin-top: 48px;
+      padding: 28px 32px;
+      border: 1px solid rgba(71,244,143,0.18);
+      border-radius: 16px;
+      background: rgba(71,244,143,0.04);
+    }
+    .contact-box p { margin: 0; }
+    .contact-box a { font-size: 15px; }
+
+    footer {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 24px 48px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.18);
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    @media (max-width: 600px) {
+      nav { padding: 16px 24px; }
+      .content { padding: 100px 24px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="starfield"></canvas>
+
+<nav>
+  <a href="index.html" class="nav-logo">Crois<span>sante</span></a>
+  <a href="index.html" class="nav-back">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    Back
+  </a>
+</nav>
+
+<div class="content">
+  <p class="page-label">Legal</p>
+  <h1 class="page-title">Privacy Policy</h1>
+  <p class="effective-date">Effective Date: March 23, 2026</p>
+
+  <p class="intro">Croissante is a French vocabulary learning app for personal use. By using Croissante, you agree to this Privacy Policy.</p>
+
+  <!-- Information We Collect -->
+  <div class="section">
+    <h2>Information We Collect</h2>
+
+    <h3>a. Learning and Settings Data</h3>
+    <p>We store information such as your learning progress, review records, daily goal, selected level, app language, autoplay preference, theme, selected app icon, membership unlock status, and selected voice. This data is mainly stored locally on your device so the app can function properly.</p>
+
+    <h3>b. Profile Photo</h3>
+    <p>If you choose to set a profile photo, Croissante may access your photo library or camera after you grant permission. The selected image is stored locally on your device for in-app display only.</p>
+
+    <h3>c. Widget Data</h3>
+    <p>If you use the widget, Croissante may write limited word data to shared app storage so the widget can display your current learning content.</p>
+
+    <h3>d. iCloud Sync Data</h3>
+    <p>If you turn on iCloud Sync, Croissante uses Apple's iCloud services to sync your learning data across your own Apple devices. This may include learning records, deck state, progress, selected level, and related study status.</p>
+
+    <h3>e. Spotlight Index Data</h3>
+    <p>If you turn on Spotlight Search, Croissante may write word entries, meanings, levels, and related searchable information to your device's system Spotlight index so you can search words from iOS Spotlight.</p>
+
+    <h3>f. Natural Voice Requests</h3>
+    <p>If you use the natural voice feature available in Croissante Plus, the text you ask the app to speak and the selected voice settings may be sent to ElevenLabs to generate audio. Generated audio may also be cached locally on your device to improve playback speed.</p>
+
+    <h3>g. Contact Information</h3>
+    <p>If you contact us by email, we receive your email address and any information you include in your message so we can respond.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- How We Use -->
+  <div class="section">
+    <h2>How We Use Information</h2>
+    <p>We use information only as needed to provide and operate the app's core features, including:</p>
+    <ol>
+      <li>Delivering vocabulary learning, search, review scheduling, progress display, and widget functionality.</li>
+      <li>Saving your preferences and learning state on your device.</li>
+      <li>Providing optional iCloud Sync and Spotlight Search when you enable them.</li>
+      <li>Providing natural voice playback when you use that feature.</li>
+      <li>Responding to support requests and feedback.</li>
+    </ol>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- What We Do Not Do -->
+  <div class="section">
+    <h2>What We Do Not Do</h2>
+    <ol>
+      <li>We do not sell your personal information.</li>
+      <li>We do not use your data for advertising.</li>
+      <li>We do not track you across apps or websites.</li>
+      <li>We do not upload your profile photo to our own servers without your action.</li>
+    </ol>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Sharing -->
+  <div class="section">
+    <h2>Sharing of Information</h2>
+    <p>We only share information when necessary to provide the service:</p>
+    <ol>
+      <li><strong>Apple</strong>: for App Store distribution, iCloud Sync, Spotlight, and related system features.</li>
+      <li><strong>ElevenLabs</strong>: only when you actively use the natural voice feature to generate speech audio.</li>
+    </ol>
+    <p>We do not otherwise share your learning data with third parties except when required by law.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Data Storage -->
+  <div class="section">
+    <h2>Data Storage and Control</h2>
+    <ol>
+      <li>Most app data is stored locally on your device.</li>
+      <li>You can turn off iCloud Sync or Spotlight Search at any time inside the app.</li>
+      <li>You can revoke photo library or camera permissions in iOS Settings.</li>
+      <li>You can stop using the natural voice feature at any time.</li>
+      <li>If you delete the app, locally stored app data is generally removed from your device. iCloud data is subject to Apple's iCloud systems and policies.</li>
+    </ol>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Children -->
+  <div class="section">
+    <h2>Children's Privacy</h2>
+    <p>Croissante is not knowingly designed to collect personal information from children through account registration or direct submission forms inside the app. If you believe personal information has been provided inappropriately, please contact us.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Changes -->
+  <div class="section">
+    <h2>Changes to This Policy</h2>
+    <p>We may update this Privacy Policy if the app's features, legal requirements, or data practices change. The latest version will be made available through the app or the public policy link.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Contact -->
+  <div class="section">
+    <h2>Contact</h2>
+    <p>If you have any questions about this Privacy Policy, contact:</p>
+    <div class="contact-box">
+      <p><a href="mailto:joey4wong@gmail.com">joey4wong@gmail.com</a></p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  © 2026 Croissante · <a href="https://x.com/croissante4u?s=21" target="_blank" rel="noopener">@croissante4u</a>
+</footer>
+
+<script>
+  // Starfield — same as main page
+  (function() {
+    const sf = document.getElementById('starfield');
+    const sc = sf.getContext('2d');
+    let stars = [], nebulae = [];
+
+    function initStars() {
+      const dpr = window.devicePixelRatio || 1;
+      sf.width  = window.innerWidth  * dpr;
+      sf.height = window.innerHeight * dpr;
+      sc.scale(dpr, dpr);
+      const W = window.innerWidth, H = window.innerHeight;
+      stars = Array.from({ length: 180 }, () => ({
+        x: Math.random() * W, y: Math.random() * H,
+        r: Math.random() * 1.1 + 0.2,
+        a: Math.random() * 0.5 + 0.15,
+        twinkleSpeed: 0.4 + Math.random() * 1.2,
+        twinklePhase: Math.random() * Math.PI * 2,
+        hue: Math.random() < 0.15 ? 'rgba(150,255,200,' : 'rgba(255,255,255,'
+      }));
+      nebulae = [
+        { x: W*0.1,  y: H*0.2,  rx: W*0.3,  ry: H*0.2,  r:0,  g:120,b:80,  a:0.028 },
+        { x: W*0.85, y: H*0.5,  rx: W*0.25, ry: H*0.2,  r:30, g:160,b:100, a:0.022 },
+        { x: W*0.5,  y: H*0.85, rx: W*0.35, ry: H*0.15, r:20, g:180,b:120, a:0.018 },
+      ];
+    }
+    initStars();
+    window.addEventListener('resize', initStars);
+
+    let lastSF = null;
+    function draw(now) {
+      if (!lastSF) lastSF = now;
+      lastSF = now;
+      const W = window.innerWidth, H = window.innerHeight;
+      sc.clearRect(0, 0, W, H);
+      nebulae.forEach(n => {
+        const g = sc.createRadialGradient(n.x,n.y,0,n.x,n.y,Math.max(n.rx,n.ry));
+        g.addColorStop(0, `rgba(${n.r},${n.g},${n.b},${n.a})`);
+        g.addColorStop(1, `rgba(${n.r},${n.g},${n.b},0)`);
+        sc.save(); sc.scale(1, n.ry/n.rx);
+        sc.beginPath(); sc.arc(n.x, n.y*(n.rx/n.ry), n.rx, 0, Math.PI*2);
+        sc.fillStyle = g; sc.fill(); sc.restore();
+      });
+      const t = now / 1000;
+      stars.forEach(s => {
+        const twinkle = 0.5 + 0.5 * Math.sin(t * s.twinkleSpeed + s.twinklePhase);
+        const alpha = s.a * (0.55 + 0.45 * twinkle);
+        sc.beginPath(); sc.arc(s.x, s.y, s.r, 0, Math.PI*2);
+        sc.fillStyle = s.hue + alpha.toFixed(3) + ')'; sc.fill();
+        if (s.r > 0.9 && twinkle > 0.7) {
+          const grd = sc.createRadialGradient(s.x,s.y,0,s.x,s.y,s.r*4);
+          grd.addColorStop(0, s.hue + (alpha*0.4).toFixed(3) + ')');
+          grd.addColorStop(1,'rgba(255,255,255,0)');
+          sc.beginPath(); sc.arc(s.x,s.y,s.r*4,0,Math.PI*2);
+          sc.fillStyle=grd; sc.fill();
+        }
+      });
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  })();
+</script>
+</body>
+</html>
