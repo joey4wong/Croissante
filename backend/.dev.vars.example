@@ -1,0 +1,8 @@
+JWT_SECRET_MAIN=replace-with-main-jwt-secret
+JWT_SECRET_USERS=replace-with-users-jwt-secret
+ADMIN_SERVICE_TOKEN=replace-with-admin-service-token
+ADMIN_JWT_SECRET=replace-with-admin-jwt-secret
+POCKET_UI_VIEWER_PASSWORD=replace-with-viewer-password
+POCKET_UI_EDITOR_PASSWORD=replace-with-editor-password
+MAILGUN_API_KEY=replace-with-mailgun-api-key
+API_ROUTE=/*

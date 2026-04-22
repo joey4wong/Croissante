@@ -21,6 +21,7 @@ Croissante/Configs/Secrets.xcconfig
 .wrangler
 .dev.vars*
 !.dev.vars.example
+!**/.dev.vars.example
 .env*
 !.env.example
 node_modules/
