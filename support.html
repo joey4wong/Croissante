@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support - Croissante</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #050c08;
+      color: rgba(255,255,255,0.82);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    #starfield {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 20px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: transparent;
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.85);
+      text-decoration: none;
+    }
+    .nav-logo span { font-style: italic; color: rgba(71,244,143,0.9); }
+
+    .nav-back {
+      font-size: 13px;
+      color: rgba(255,255,255,0.38);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.2s;
+    }
+    .nav-back:hover { color: rgba(255,255,255,0.7); }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 120px 32px 80px;
+    }
+
+    .page-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(71,244,143,0.7);
+      margin-bottom: 16px;
+    }
+
+    .page-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(36px, 5vw, 52px);
+      font-weight: 400;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: rgba(255,255,255,0.92);
+      margin-bottom: 8px;
+    }
+
+    .intro {
+      font-size: 16px;
+      line-height: 1.75;
+      color: rgba(255,255,255,0.6);
+      font-weight: 300;
+      margin-bottom: 56px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .section { margin-bottom: 48px; }
+
+    h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.88);
+      margin-bottom: 20px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      font-size: 15px;
+      line-height: 1.75;
+      color: rgba(255,255,255,0.52);
+      font-weight: 300;
+      margin-bottom: 12px;
+    }
+
+    ul {
+      list-style: none;
+      padding-left: 0;
+      margin-bottom: 12px;
+    }
+
+    ul li {
+      font-size: 15px;
+      line-height: 1.75;
+      color: rgba(255,255,255,0.52);
+      font-weight: 300;
+      padding: 6px 0 6px 20px;
+      position: relative;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    ul li::before {
+      content: '-';
+      position: absolute;
+      left: 0;
+      color: rgba(71,244,143,0.5);
+      font-size: 12px;
+      top: 8px;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 40px 0;
+    }
+
+    strong {
+      color: rgba(255,255,255,0.75);
+      font-weight: 500;
+    }
+
+    a {
+      color: rgba(71,244,143,0.8);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(71,244,143,0.25);
+      transition: color 0.2s, border-color 0.2s;
+    }
+    a:hover { color: rgba(71,244,143,1); border-color: rgba(71,244,143,0.6); }
+
+    .contact-box {
+      margin-top: 20px;
+      padding: 28px 32px;
+      border: 1px solid rgba(71,244,143,0.18);
+      border-radius: 16px;
+      background: rgba(71,244,143,0.04);
+    }
+    .contact-box p { margin: 0; }
+    .contact-box a { font-size: 15px; }
+
+    footer {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 24px 48px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.18);
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    @media (max-width: 600px) {
+      nav { padding: 16px 24px; }
+      .content { padding: 100px 24px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="starfield"></canvas>
+
+<nav>
+  <a href="index.html" class="nav-logo">Crois<span>sante</span></a>
+  <a href="index.html" class="nav-back">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    Back
+  </a>
+</nav>
+
+<div class="content">
+  <p class="page-label">Support</p>
+  <h1 class="page-title">Croissante Support</h1>
+
+  <p class="intro">Need help with Croissante, Croissante Plus, purchases, learning progress, or app behavior? Contact support by email and we will help you as soon as possible.</p>
+
+  <div class="section">
+    <h2>Contact Support</h2>
+    <p>Email is the best way to ask a question, report a problem, or request help with the app.</p>
+    <div class="contact-box">
+      <p><a href="mailto:joey4wong@gmail.com?subject=Croissante%20Support">joey4wong@gmail.com</a></p>
+    </div>
+    <p>Please include your device model, iOS version, Croissante version, and a short description of what happened.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <h2>Common Support Topics</h2>
+    <ul>
+      <li><strong>Purchases and subscriptions:</strong> Restore purchases from the app, or manage and cancel subscriptions in your Apple account settings.</li>
+      <li><strong>Billing and refunds:</strong> App Store billing is handled by Apple. For refund requests, use Apple's purchase support flow.</li>
+      <li><strong>Learning progress:</strong> If progress looks unexpected, include the word, screen, and action you took before the issue appeared.</li>
+      <li><strong>iCloud Sync:</strong> Make sure iCloud is enabled for the same Apple ID on each device.</li>
+      <li><strong>Natural Voice:</strong> Voice playback may require a network connection for uncached audio.</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <h2>Policies</h2>
+    <p>Review Croissante's <a href="privacy.html">Privacy Policy</a> and <a href="terms.html">Terms of Use (EULA)</a> for details about data practices, subscriptions, and app use.</p>
+  </div>
+</div>
+
+<footer>
+  &copy; 2026 Croissante &middot; <a href="https://x.com/croissante4u?s=21" target="_blank" rel="noopener">@croissante4u</a> &middot; <a href="privacy.html">Privacy Policy</a> &middot; <a href="terms.html">Terms of Use</a>
+</footer>
+
+<script>
+  (function() {
+    const sf = document.getElementById('starfield');
+    const ctx = sf.getContext('2d');
+    let stars = [];
+    let w, h;
+
+    function resize() {
+      w = sf.width = window.innerWidth;
+      h = sf.height = window.innerHeight;
+      stars = Array.from({ length: Math.floor((w * h) / 14000) }, () => ({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: Math.random() * 1.4 + 0.4,
+        a: Math.random() * 0.45 + 0.12
+      }));
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+      for (const s of stars) {
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(71,244,143,${s.a})`;
+        ctx.fill();
+      }
+      requestAnimationFrame(draw);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    draw();
+  })();
+</script>
+
+</body>
+</html>
