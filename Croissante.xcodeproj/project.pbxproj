@@ -498,7 +498,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_DEBUG_DYLIB = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
@@ -543,7 +543,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Croissante;

@@ -3724,8 +3724,8 @@ private struct SettingsScreen: View {
     private let appIconTileSize: CGFloat = 68
     private let developerContactEmail = "joey4wong@gmail.com"
     private let xProfileURL = "https://x.com/croissante4u?s=21"
-    private let termsOfUseURL = "https://hungry-land-732.notion.site/Terms-of-Use-32c52d9458a9802e9308c296fc8fd9d8?source=copy_link"
-    private let privacyPolicyURL = "https://hungry-land-732.notion.site/Privacy-Policy-32c52d9458a980b6975cd6786df84199?source=copy_link"
+    private let termsOfUseURL = "https://joey4wong.github.io/Croissante/terms.html"
+    private let privacyPolicyURL = "https://joey4wong.github.io/Croissante/privacy.html"
     private let cardFontOptions: [(style: CardFontStyle, label: String)] = [
         (.sfPro, "SF Pro"),
         (.sfRounded, "SF R"),
@@ -3977,7 +3977,7 @@ private struct SettingsScreen: View {
                 ),
                 answer: appState.localized(
                     "It is a swipe count, not a mastery requirement. Swiping any card with Mastered, Blurry, or Forgot counts toward the goal — no card ever comes back to force a second pass on the same day. Once you have swiped all cards in today's set, the goal is complete.",
-                    "这代表“今天要刷的卡片数量”，不要求强制掌握。对每张卡片标资“掌握”“模糊”或“忘记”都会计入进度，标过的卡片当天不会再次出现。刷完今天全部卡片，即为完成目标。",
+                    "这代表“今天要刷的卡片数量”，不要求强制掌握。对每张卡片标记“掌握”“模糊”或“忘记”都会计入进度，标过的卡片当天不会再次出现在主牌组里。刷完今天全部卡片，即为完成目标。",
                     "It is a swipe count, not a mastery requirement. Swiping any card with Mastered, Blurry, or Forgot counts toward the goal — no card ever comes back to force a second pass on the same day. Once you have swiped all cards in today's set, the goal is complete."
                 )
             ),
@@ -4002,9 +4002,9 @@ private struct SettingsScreen: View {
                     "Once I swipe a card, does it come back today?"
                 ),
                 answer: appState.localized(
-                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. After today's goal is complete, extra practice may show the same card again. In study flows, once a card has been reviewed today, you can no longer upgrade it that same day (a Mastered swipe is ignored), but you can always downgrade it (Blurry or Forgot always writes). The Progress page is different: it is a manual archive view, so right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck.",
-                    "今天的主牌组里，每张卡片只会出现一次——掌握、模糊、忘记任意一种都算你今天对它的回答，卡片会立即移出主队列，SRS 引擎安排下次复习。完成今日目标后，系统会自动进入额外练习；在额外练习里，同一张卡可能会再次出现。在学习流里，同一张卡一天内已经复习过之后，就不能再“升级”了——再次右滑“掌握”会被忽略；但你任何时候都可以“降级”——模糊或忘记一定会写入。进度页不同：它是手动整理档案的地方，在那里右滑“掌握”可以把词放进掌握桶，但不会改变今天的牌堆。",
-                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. After today's goal is complete, extra practice may show the same card again. Study flows cap same-day upgrades, but Progress is a manual archive view: right-swiping Mastered there can place a word into the Mastered bucket without changing today's deck."
+                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. After today's goal is complete, extra practice may show the same card again. Any swipe anywhere updates the word's SRS memory state; to avoid over-weighting one day, repeated Mastered swipes on a word already reviewed today confirm Mastered without stacking the interval again. Progress edits are direct SRS edits, but they do not change today's deck.",
+                    "今天的主牌组里，每张卡片只会出现一次——掌握、模糊、忘记任意一种都算你今天对它的回答，卡片会立即移出主队列，SRS 引擎安排下次复习。完成今日目标后，系统会自动进入额外练习；在额外练习里，同一张卡可能会再次出现。无论在哪里滑，手势都会更新这个词的 SRS 记忆状态；为了避免同一天把间隔刷得过高，已经在今天复习过的词再次右滑“掌握”会确认它处于掌握状态，但不会继续叠加间隔。进度页是直接校准 SRS 的地方，但不会改变今天的牌组。",
+                    "In today's main set, each card appears exactly once — any of Mastered, Blurry, or Forgot counts as your answer for today, the card is removed from the main queue, and the SRS engine schedules the next review. After today's goal is complete, extra practice may show the same card again. Any swipe anywhere updates the word's SRS memory state; repeated Mastered swipes on a word already reviewed today confirm Mastered without stacking the interval again. Progress edits are direct SRS edits, but they do not change today's deck."
                 )
             ),
             FAQItem(
@@ -4028,9 +4028,9 @@ private struct SettingsScreen: View {
                     "What happens after today's goal is complete?"
                 ),
                 answer: appState.localized(
-                    "After you complete today's goal, the app automatically enters extra practice. Every swipe here updates the memory archive and the next review schedule — it is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day (first Mastered wins; a later Mastered after you already reviewed it today is ignored), but any downgrade (Blurry or Forgot) always writes. Extra-practice swipes never change today's base completion percentage or the heatmap.",
-                    "完成今日目标后，系统会自动进入额外练习。额外练习里的每一次滑动都会更新记忆档案和下次复习安排，不是一次性练习。同日规则仍然适用：一张卡一天只能被“升级”一次（第一次右滑掌握才算；之后再次右滑会被忽略），但任何“降级”（模糊或忘记）任何时候都会写入。额外练习里的滑动不会改动今日基础目标的完成比例或热力图。",
-                    "After you complete today's goal, the app automatically enters extra practice. Every swipe here updates the memory archive and the next review schedule — it is not throwaway practice. The same-day rule still applies: you can only upgrade a card once per day, but any downgrade always writes. Extra-practice swipes never change today's base completion percentage or the heatmap."
+                    "After you complete today's goal, the app automatically enters extra practice. Every swipe here updates the SRS record — it is not throwaway practice. Mastered confirms the word as Mastered, while the interval only advances when it has not already been advanced by a review today. Blurry and Forgot always write and schedule a retry tomorrow. Extra-practice swipes never change today's base completion percentage or the heatmap.",
+                    "完成今日目标后，系统会自动进入额外练习。额外练习里的每一次滑动都会更新 SRS 记录，不是一次性练习。右滑“掌握”会确认这个词处于掌握状态；如果它今天已经因为一次复习推进过间隔，就不会在同一天继续叠加间隔。模糊和忘记任何时候都会写入，并安排明天再看。额外练习里的滑动不会改动今日基础目标的完成比例或热力图。",
+                    "After you complete today's goal, the app automatically enters extra practice. Every swipe here updates the SRS record — it is not throwaway practice. Mastered confirms the word as Mastered, while the interval only advances when it has not already been advanced by a review today. Blurry and Forgot always write and schedule a retry tomorrow. Extra-practice swipes never change today's base completion percentage or the heatmap."
                 )
             ),
             FAQItem(
@@ -4080,9 +4080,9 @@ private struct SettingsScreen: View {
                     "What do Mastered, Blurry, and Forgot each mean?"
                 ),
                 answer: appState.localized(
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. Whichever way you swipe, the Progress page bucket updates immediately to match — one Mastered swipe places the word in Mastered, one Blurry swipe places it in Blurry, one Forgot swipe places it in Forgot. Under the hood, the review schedule is independent: Mastered promotes the interval along 0 → 1 → 2 → 4 → 8 → 15 → 30 days and keeps doubling after that; Blurry keeps the interval but retries tomorrow; Forgot resets the interval to 0 and retries tomorrow. In the daily deck, all three outcomes count toward today's goal and complete that card for the day.",
-                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑会打开卡牌编辑。无论从哪里滑、怎么滑，进度页的桶会立刻跟随你的判定：右滑一次即进入“掌握”桶，下滑一次即进入“模糊”桶，左滑一次即进入“忘记”桶。复习节奏是独立的另一条线：“掌握”会让复习间隔沿着 0 → 1 → 2 → 4 → 8 → 15 → 30 天的阶梯往上走，超过 30 天之后每次正确再 ×2；“模糊”保留当前间隔，但安排明天再看一次；“忘记”把间隔清零，也安排明天再看。在日课阶段，三种滑动都会计入今日目标并完成当天的这张卡。",
-                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. The Progress bucket follows your last swipe directly — one swipe is enough to move a word between buckets. The review interval is separate: Mastered climbs the ladder one step at a time; Blurry retries tomorrow without changing the interval; Forgot resets the interval to 0. In the daily deck, all three count toward today's goal."
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. Every swipe updates the word's SRS memory state and the Progress bucket immediately. Mastered advances the interval one step when eligible: a new or reset word comes back tomorrow, then 2, 4, 8, 15, 30 days, then keeps doubling. If the word was already reviewed today, Mastered confirms the state without stacking another interval jump. Blurry keeps the current interval but retries tomorrow; Forgot resets the interval to 0 and retries tomorrow. In the daily deck, all three outcomes count toward today's goal and complete that card for the day.",
+                    "右滑是“掌握”，下滑是“模糊”，左滑是“忘记”，上滑会打开卡牌编辑。每一次滑动都会更新这个词的 SRS 记忆状态，进度页的桶也会立刻跟随判定。“掌握”会在合适时把复习间隔推进一档：新词或重置后的词会明天再出现，然后是 2、4、8、15、30 天，之后继续 ×2。如果这个词今天已经复习过，再次右滑会确认它处于掌握状态，但不会在同一天继续叠加间隔。“模糊”保留当前间隔，但安排明天再看；“忘记”把间隔清零，也安排明天再看。在日课阶段，三种滑动都会计入今日目标并完成当天的这张卡。",
+                    "Swipe right is Mastered, swipe down is Blurry, swipe left is Forgot, and swipe up opens card editing. Every swipe updates the word's SRS memory state and the Progress bucket immediately. Mastered advances the interval one step when eligible: a new or reset word comes back tomorrow, then 2, 4, 8, 15, 30 days, then keeps doubling. If the word was already reviewed today, Mastered confirms the state without stacking another interval jump. Blurry retries tomorrow without changing the interval; Forgot resets the interval to 0 and retries tomorrow. In the daily deck, all three count toward today's goal."
                 )
             ),
             FAQItem(
@@ -4093,9 +4093,9 @@ private struct SettingsScreen: View {
                     "Blurry और Forgot से रिव्यू कैसे बदलता है?"
                 ),
                 answer: appState.localized(
-                    "Both complete the card for the day on the first swipe — no duplicate cards get injected. Blurry immediately moves the word to the Blurry bucket and Forgot immediately moves it to the Forgot bucket on the Progress page. The review schedule follows its own rules: Forgot resets the review interval to 0 and schedules a retry tomorrow; Blurry keeps the current interval unchanged but still schedules a retry tomorrow. To bring a word back to the Mastered bucket, a single Mastered swipe anywhere — Explore, extra practice, search, or Progress — is enough; the interval ladder continues climbing independently in the background.",
-                    "“模糊”和“忘记”都在一次滑动后就完成当天该张卡，不会额外加卡。下滑“模糊”会立即把它放进进度页的“模糊”桶，左滑“忘记”会立即放进“忘记”桶。复习节奏是另一条独立线：“忘记”把间隔归零，并安排明天重新复习；“模糊”保留当前间隔不变，但同样安排明天再看一次。想把一个词重新归入“掌握”桶，只需要在任何地方（首页、额外练习、搜索、进度页）右滑一次“掌握”就够了；间隔阶梯会在后台独立继续攀升，互不干扰。",
-                    "Both complete the card for the day on the first swipe. Blurry moves the word to the Blurry bucket and Forgot moves it to the Forgot bucket immediately. The schedule is separate: Forgot resets the interval to 0 and retries tomorrow; Blurry keeps the interval but also retries tomorrow. A single Mastered swipe anywhere returns the word to the Mastered bucket."
+                    "Both complete the card for the day on the first swipe — no duplicate cards get injected. Blurry immediately moves the word to the Blurry bucket and Forgot immediately moves it to the Forgot bucket on the Progress page. The review schedule follows its own rules: Forgot resets the review interval to 0 and schedules a retry tomorrow; Blurry keeps the current interval unchanged but still schedules a retry tomorrow. To bring a word back to the Mastered bucket, a Mastered swipe anywhere — Explore, extra practice, search, or Progress — is enough; if the word was already reviewed today, the bucket changes immediately while the interval is protected from another same-day jump.",
+                    "“模糊”和“忘记”都在一次滑动后就完成当天该张卡，不会额外加卡。下滑“模糊”会立即把它放进进度页的“模糊”桶，左滑“忘记”会立即放进“忘记”桶。复习节奏是另一条独立线：“忘记”把间隔归零，并安排明天重新复习；“模糊”保留当前间隔不变，但同样安排明天再看一次。想把一个词重新归入“掌握”桶，在任何地方（首页、额外练习、搜索、进度页）右滑“掌握”就够了；如果这个词今天已经复习过，桶会立刻变为掌握，但间隔不会在同一天再次跳档。",
+                    "Both complete the card for the day on the first swipe. Blurry moves the word to the Blurry bucket and Forgot moves it to the Forgot bucket immediately. The schedule is separate: Forgot resets the interval to 0 and retries tomorrow; Blurry keeps the interval but also retries tomorrow. A Mastered swipe anywhere returns the word to the Mastered bucket; if it was already reviewed today, the interval is protected from another same-day jump."
                 )
             ),
             FAQItem(
@@ -4106,9 +4106,9 @@ private struct SettingsScreen: View {
                     "How do the three Progress buckets (Forgot / Blurry / Mastered) get decided?"
                 ),
                 answer: appState.localized(
-                    "The bucket reflects your most recent swipe on that word, nothing else. Mastered swipe → Mastered bucket. Blurry swipe → Blurry bucket. Forgot swipe → Forgot bucket. This is true anywhere you swipe — Explore, extra practice, search, or Progress — and the bucket updates the moment you swipe. The review interval is a separate, independent signal: Mastered climbs the ladder 1 → 2 → 4 → 8 → 15 → 30 days (doubling after that); Blurry holds the interval; Forgot resets it to 0. Same-day upgrade rules still apply in study flows (one Mastered per card per day), but the bucket itself always follows your latest declared swipe.",
-                    "进度页的桶只反映你对这个词最近一次的滑动判定，别的都不影响。右滑“掌握” → 掌握桶；下滑“模糊” → 模糊桶；左滑“忘记” → 忘记桶。无论在哪里滑（首页、额外练习、搜索、进度页），滑的那一刻桶就会更新。复习间隔是另一条独立的线：“掌握”沿 1 → 2 → 4 → 8 → 15 → 30 天的阶梯上升（之后继续 ×2）；“模糊”保持当前间隔；“忘记”归零。学习流里仍然有每日升级上限（同一张卡一天只能被“升级”一次），但桶本身始终跟随你最新一次的明确判定。",
-                    "The bucket reflects your most recent swipe on that word. Mastered swipe → Mastered bucket; Blurry → Blurry; Forgot → Forgot — anywhere you swipe, updated instantly. The review interval is separate and independent: Mastered climbs 1 → 2 → 4 → 8 → 15 → 30 days; Blurry holds; Forgot resets to 0. Same-day upgrade caps still apply to study flows, but the bucket always follows your latest swipe."
+                    "The bucket reflects your most recent explicit memory judgment on that word. Mastered swipe → Mastered bucket. Blurry swipe → Blurry bucket. Forgot swipe → Forgot bucket. This is true anywhere you swipe — Explore, extra practice, search, Widget, or Progress — and the bucket updates the moment you swipe. The review interval is a separate scheduling signal: Mastered climbs 1 → 2 → 4 → 8 → 15 → 30 days when eligible; Blurry holds the interval and retries tomorrow; Forgot resets it to 0. Same-day protection only stops repeated Mastered swipes from stacking interval jumps; it does not stop the memory state from changing.",
+                    "进度页的桶反映的是你对这个词最近一次明确的记忆判定。右滑“掌握” → 掌握桶；下滑“模糊” → 模糊桶；左滑“忘记” → 忘记桶。无论在哪里滑（首页、额外练习、搜索、Widget、进度页），滑的那一刻桶就会更新。复习间隔是另一条调度信号：“掌握”在合适时沿 1 → 2 → 4 → 8 → 15 → 30 天上升；“模糊”保持当前间隔并明天再看；“忘记”归零。同日保护只阻止反复右滑把间隔连续刷高，不会阻止记忆状态改变。",
+                    "The bucket reflects your most recent explicit memory judgment on that word. Mastered swipe → Mastered bucket; Blurry → Blurry; Forgot → Forgot — anywhere you swipe, updated instantly. The review interval is separate: Mastered climbs 1 → 2 → 4 → 8 → 15 → 30 days when eligible; Blurry holds and retries tomorrow; Forgot resets to 0. Same-day protection only stops repeated Mastered swipes from stacking interval jumps; it does not stop the memory state from changing."
                 )
             ),
             FAQItem(
@@ -4571,7 +4571,7 @@ private struct SettingsScreen: View {
                                 showsDivider: true,
                                 matchPickerFont: true
                             ) {
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "arrow.up.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
                                     .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
@@ -4594,7 +4594,7 @@ private struct SettingsScreen: View {
                                 showsDivider: false,
                                 matchPickerFont: true
                             ) {
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "arrow.up.right")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundStyle(isDarkMode ? Color.white.opacity(0.42) : Color.black.opacity(0.30))
                                     .frame(width: 44, height: settingsMenuControlHeight, alignment: .center)
@@ -6979,8 +6979,8 @@ private struct MemberUnlockPaywallView: View {
     private let planOptionRowHeight: CGFloat = 48
     private let planOptionSpacing: CGFloat = 8
     private let planOptionsAnimation = Animation.spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.12)
-    private let termsOfUseURL = "https://hungry-land-732.notion.site/Terms-of-Use-32c52d9458a9802e9308c296fc8fd9d8?source=copy_link"
-    private let privacyPolicyURL = "https://hungry-land-732.notion.site/Privacy-Policy-32c52d9458a980b6975cd6786df84199?source=copy_link"
+    private let termsOfUseURL = "https://joey4wong.github.io/Croissante/terms.html"
+    private let privacyPolicyURL = "https://joey4wong.github.io/Croissante/privacy.html"
     private var planOptionsExpandedHeight: CGFloat {
         let count = CGFloat(MemberPlan.allCases.count)
         let spacingCount = max(0, CGFloat(MemberPlan.allCases.count - 1))

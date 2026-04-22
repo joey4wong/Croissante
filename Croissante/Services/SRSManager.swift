@@ -600,11 +600,11 @@ public final class SRSManager: ObservableObject {
     public enum ReviewSource {
         /// Discover 主牌堆在日课阶段的滑动：计入今日目标。
         case dailyDeck
-        /// 日课完成后的额外练习、银河模式的滑动：不计入今日目标。
+        /// 日课完成后的额外练习：更新记忆并推进练习队列，但不计入今日目标。
         case extraPractice
-        /// Search 搜词、Widget 深链等非队列入口：不计入今日目标。
+        /// Search 搜词、Widget 深链等非队列入口：更新记忆，不计入今日目标。
         case lookup
-        /// Progress 页展开卡：用户手动整理记忆档案，不计今日目标，不推进当前牌堆。
+        /// Progress 页展开卡：用户直接校准 SRS 档案，不计今日目标，不推进当前牌堆。
         case progress
 
         var countsTowardDailyGoal: Bool {
@@ -613,10 +613,6 @@ public final class SRSManager: ObservableObject {
 
         var advancesQueue: Bool {
             self == .dailyDeck || self == .extraPractice
-        }
-
-        var bypassesSameDayMasteryCap: Bool {
-            self == .progress
         }
     }
 
@@ -635,9 +631,9 @@ public final class SRSManager: ObservableObject {
     /// 记录一次复习。
     ///
     /// **统一规则：**
-    /// - 日课、额外练习、Search/Widget 中，同一张卡若今天已经被滑过一次，任何“升级”方向的滑动（mastered）都会被跳过，档案不变。
-    /// - Progress 页右滑是手动整理档案：只把间隔补到掌握下限，不无限加权。
-    /// - “降级”方向（blurry/forgot）任何时候都允许写入——错了就该诚实记下。
+    /// - 任何入口的任何手势都会写入当前记忆状态，Progress 页只是权限最高的手动校准入口。
+    /// - 同一天内重复右滑 Mastered 不会反复推高复习间隔；它只确认状态为 Mastered。
+    /// - Blurry/Forgot 任何时候都允许写入——错了就该诚实记下。
     /// - 不再有毕业。
     private func recordReview(
         _ wordId: String,
@@ -647,29 +643,19 @@ public final class SRSManager: ObservableObject {
         let now = Date()
         let oldRecord = learningRecords[wordId]
 
-        // 每日升级闸：同一张卡一天内最多升级一次。
-        // 降级不受限——用户任何时候都可以说“我其实不会”。
-        let reviewedToday = oldRecord?.lastReviewedAt
-            .map { calendar.isDate($0, inSameDayAs: now) } ?? false
-        let blockedAsDailyUpgrade = reviewedToday && outcome == .mastered && !source.bypassesSameDayMasteryCap
-        var didMutateLearningState = false
+        learningRecords[wordId] = buildLearningRecord(
+            wordId: wordId,
+            outcome: outcome,
+            oldRecord: oldRecord,
+            now: now
+        )
+        let didMutateLearningState = true
 
-        if !blockedAsDailyUpgrade {
-            learningRecords[wordId] = buildLearningRecord(
-                wordId: wordId,
-                outcome: outcome,
-                source: source,
-                oldRecord: oldRecord,
-                now: now
-            )
-            didMutateLearningState = true
-        }
-
-        didMutateLearningState = updateQueueAfterReview(
+        let didMutateQueueState = updateQueueAfterReview(
             wordId,
             source: source,
             now: now
-        ) || didMutateLearningState
+        )
 
         if outcome == .forgot {
             NotificationCenter.default.post(
@@ -679,7 +665,7 @@ public final class SRSManager: ObservableObject {
             )
         }
 
-        if didMutateLearningState {
+        if didMutateLearningState || didMutateQueueState {
             // Defer the JSON encode + UserDefaults write off the swipe-completion
             // frame. The heavy save used to land right as the peek card was rising,
             // blocking the main thread and causing a dropped frame in the transition.
@@ -691,20 +677,26 @@ public final class SRSManager: ObservableObject {
     private func buildLearningRecord(
         wordId: String,
         outcome: ReviewOutcome,
-        source: ReviewSource,
         oldRecord: LearningRecord?,
         now: Date
     ) -> LearningRecord {
         let currentInterval = oldRecord?.intervalDays ?? 0
+        let reviewedToday = oldRecord?.lastReviewedAt
+            .map { calendar.isDate($0, inSameDayAs: now) } ?? false
         switch outcome {
         case .mastered:
             // 右滑：UI 桶立即归为"掌握"；间隔沿梯度上升，SRS 调度自然演进。
-            let nextInterval = scheduler.nextMasteryInterval(from: currentInterval)
+            let nextInterval = reviewedToday
+                ? max(currentInterval, 1)
+                : scheduler.nextMasteryInterval(from: currentInterval)
+            let nextReviewDate = reviewedToday
+                ? sameDayMasteryReviewDate(oldRecord: oldRecord, interval: nextInterval, now: now)
+                : scheduler.scheduledReviewDate(forInterval: nextInterval, from: now)
             return LearningRecord(
                 wordId: wordId,
                 memoryState: .mastered,
                 intervalDays: nextInterval,
-                nextReviewDate: scheduler.scheduledReviewDate(forInterval: nextInterval, from: now),
+                nextReviewDate: nextReviewDate,
                 lastReviewedAt: now
             )
         case .blurry:
@@ -726,6 +718,22 @@ public final class SRSManager: ObservableObject {
                 lastReviewedAt: now
             )
         }
+    }
+
+    private func sameDayMasteryReviewDate(
+        oldRecord: LearningRecord?,
+        interval: Int,
+        now: Date
+    ) -> Date {
+        if let existingReviewDate = oldRecord?.nextReviewDate,
+           existingReviewDate > now {
+            return existingReviewDate
+        }
+
+        return scheduler.scheduledReviewDate(
+            forInterval: max(interval, 1),
+            from: now
+        )
     }
 
     @discardableResult
