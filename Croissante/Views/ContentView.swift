@@ -1460,7 +1460,6 @@ private struct FavoriteCardStaticPreview: View {
     let contentOpacity: Double
     let glowStrength: Double
     let isDarkMode: Bool
-    var suppressDecorativeShadow: Bool = false
     var isInteractive: Bool = false
 
     @EnvironmentObject private var appState: AppState
@@ -1487,11 +1486,7 @@ private struct FavoriteCardStaticPreview: View {
             onTitleTap: titleTapAction,
             onDetailTap: detailTapAction
         )
-        if suppressDecorativeShadow {
-            body
-        } else {
-            body.modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
-        }
+        body.modifier(CardGlowModifier(strength: glowStrength, isDarkMode: isDarkMode))
     }
 
     private func speakWord() {
@@ -1560,7 +1555,6 @@ private struct FavoritesCarouselView: View {
                         cardContentScale: cardContentScale,
                         isDarkMode: isDarkMode,
                         position: position,
-                        suppressMotionShadows: isInMotion,
                         isInMotion: isInMotion,
                         isExitingForSearch: isExitingForSearch
                     )
@@ -1620,7 +1614,6 @@ private struct FavoriteCarouselCard: View {
     /// Fractional values are used during drag so the stack flows as one
     /// river instead of snapping between slots.
     let position: CGFloat
-    let suppressMotionShadows: Bool
     let isInMotion: Bool
     let isExitingForSearch: Bool
 
@@ -1685,6 +1678,14 @@ private struct FavoriteCarouselCard: View {
         max(0.16, 1.0 - Double(abs(position)) * 0.38)
     }
 
+    private var centerShadowStrength: CGFloat {
+        let distance = abs(position)
+        let visibleDistance: CGFloat = 0.72
+        guard distance < visibleDistance else { return 0 }
+        let progress = 1 - distance / visibleDistance
+        return progress * progress * (3 - 2 * progress)
+    }
+
     private var isInteractiveCard: Bool {
         !isInMotion && abs(position) < 0.5
     }
@@ -1721,7 +1722,6 @@ private struct FavoriteCarouselCard: View {
                 contentOpacity: contentOpacity,
                 glowStrength: glowStrength * (abs(position) < 0.95 ? 1.0 : 0.62),
                 isDarkMode: isDarkMode,
-                suppressDecorativeShadow: suppressMotionShadows,
                 isInteractive: isInteractiveCard
             )
             .frame(width: layoutCardWidth, height: layoutCardVisualHeight)
@@ -1738,18 +1738,12 @@ private struct FavoriteCarouselCard: View {
         )
         .scaleEffect(isExitingForSearch ? 0.82 : 1, anchor: .bottom)
 
-        Group {
-            if !suppressMotionShadows && abs(position) < 0.55 {
-                core.shadow(
-                    color: Color.black.opacity(isDarkMode ? 0.30 : 0.14),
-                    radius: 8,
-                    x: 2,
-                    y: 5
-                )
-            } else {
-                core
-            }
-        }
+        core.shadow(
+            color: Color.black.opacity((isDarkMode ? 0.30 : 0.14) * Double(centerShadowStrength)),
+            radius: 8 * centerShadowStrength,
+            x: 2 * centerShadowStrength,
+            y: 5 * centerShadowStrength
+        )
         .opacity(isExitingForSearch ? 0 : shellOpacity)
         .allowsHitTesting(isInteractiveCard && !isExitingForSearch)
     }
