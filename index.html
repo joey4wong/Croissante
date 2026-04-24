@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>Croissante — Learn French Vocabulary</title>
+  <script>
+    // Set theme before first paint to avoid a flash.
+    // Follow the user's OS appearance setting (iOS/macOS dark mode included).
+    (function() {
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var t = prefersDark ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+      document.querySelector('meta[name="theme-color"]')
+        .setAttribute('content', t === 'dark' ? '#070a09' : '#ffffff');
+    })();
+  </script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 1024 1024' xmlns='http://www.w3.org/2000/svg' style='fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;'%3E%3Cstyle%3Epath{fill:%23c9a84c}%3C/style%3E%3Cg transform='matrix(0,-1.115033,1.115254,0,-74.244594,975.534739)'%3E%3Cg transform='matrix(1,0,0,1,-29.612137,-0)'%3E%3Cpath d='M460.508,525.66C459.632,534.93 457.047,544.209 452.92,553.498C450.554,556.865 453.074,558.76 454.585,560.784C461.771,570.408 468.564,580.246 473.537,591.268C477.269,599.538 479.818,608.147 480.965,617.074C481.435,620.738 483.096,622.275 486.171,623.347C495.604,626.637 505.041,629.921 514.401,633.409C526.473,637.907 536.896,644.719 545.228,654.804C549.477,659.948 556.366,659.513 562.298,660.617C586.449,665.111 609.592,661.344 632.13,652.012C645.563,646.45 659.383,641.911 674.243,642.825C687.267,643.627 699.244,647.269 707.935,657.78C717.448,669.285 717.988,682.291 713.69,695.975C708.734,711.75 699.481,724.959 688.587,737.018C667.737,760.097 643.691,779.155 615.848,793.24C599.654,801.432 582.395,806.255 564.58,809.23C562.537,809.571 560.723,809.942 559.186,811.416C548.22,821.936 534.669,826.751 519.942,828.117C469.41,832.8 422.651,821.117 380.042,793.845C369.557,787.135 360.141,781.343 346.66,781.708C332.607,782.088 320.301,773.95 308.812,766.201C283.76,749.305 261.608,729.292 244.421,704.146C234.043,688.963 226.837,672.446 222.858,654.521C222.352,652.243 221.549,650.488 219.364,649.441C201.716,640.987 192.968,625.628 187.643,607.859C179.921,582.093 175.527,555.8 174.492,528.835C174.451,527.776 174.416,526.718 174.385,525.66L189.011,525.66C189.914,552.667 194.768,579.78 203.092,607.125C203.803,610.439 205.449,608.931 206.99,607.872C213.323,603.523 219.951,599.718 226.988,596.601C251.999,585.525 278.449,579.543 305.173,574.638C332.664,569.593 360.659,567.988 388.129,562.748C403.059,559.901 417.696,556.194 431.205,548.879C438.811,544.76 444.149,539.281 445.16,530.141C445.325,528.644 445.413,527.151 445.47,525.66L460.508,525.66ZM384.555,598.263C383.116,598.676 381.677,599.092 380.236,599.502C350.63,607.93 320.449,614.2 291.001,623.212C273.272,628.638 256.031,635.173 240.721,646.007C237.871,648.023 236.974,649.992 237.913,653.538C240.183,662.104 242.928,670.469 246.921,678.371C263.565,711.313 289.146,735.825 319.987,755.264C325.373,758.659 330.762,762.268 337.57,764.152C337.403,754.267 338.161,745.035 340.324,735.931C346.096,711.627 360.926,693.424 379.278,677.515C395.3,663.626 413.213,652.26 429.948,639.329C438.822,632.473 447.006,624.874 452.352,614.782C460.802,598.831 455.69,578.314 440.811,568.692C437.952,571.12 435.142,573.713 432.123,576.034C418.14,586.786 401.594,592.133 384.555,598.263ZM538.689,743.494C538.799,739.173 538.891,734.863 539.198,730.537C540.195,716.453 542.713,702.455 541.745,688.25C541.156,679.605 538.912,671.497 533.779,664.431C529.7,658.814 524.363,654.701 517.827,652.019C524.267,666.046 522.424,679.882 518.68,693.806C514.88,707.938 509.146,721.453 505.896,735.78C499.74,762.917 505.592,787.158 522.26,809.138C524.307,811.836 526.441,812.506 529.536,811.496C535.757,809.466 541.626,806.85 546.738,802.643C552.622,797.8 552.702,797.847 549.444,791.23C542.185,776.488 538.646,760.899 538.689,743.494ZM390.244,738.743C384.169,747.126 378.847,755.898 375.085,765.625C373.547,769.602 374.336,771.959 377.675,774.426C389.794,783.379 402.892,790.601 416.582,796.756C441.166,807.809 467.117,813.177 493.925,814.537C501.631,814.928 509.443,815.281 517.093,813.102C516.624,810.506 514.929,809.033 513.743,807.269C500.992,788.302 495.453,767.632 498.427,744.755C500.419,729.432 505.842,715.116 510.583,700.583C513.954,690.252 516.838,679.773 515.756,668.789C514.82,659.28 512.208,650.012 503.061,645.242C496.333,641.733 488.748,639.883 481.59,637.174C478.743,636.096 477.831,637.231 477.113,639.872C476.026,643.87 474.516,647.739 472.652,651.493C464.458,667.995 451.414,680.43 437.967,692.375C421.535,706.973 404.636,721.042 390.244,738.743ZM243.459,629.87C250.251,625.949 257.307,622.595 264.626,619.764C292.029,609.163 320.648,602.83 349.011,595.577C370.777,590.011 392.716,584.85 412.683,573.994C422.379,568.722 431.161,562.308 437.507,552.046C432.521,555.13 427.878,557.227 423.117,559.118C404.219,566.622 384.281,569.453 364.35,572.293C343.291,575.293 322.056,576.991 301.165,581.251C275.53,586.478 250.042,592.12 226.171,603.31C220.278,606.073 214.563,609.123 209.5,613.283C207.579,614.861 206.799,616.437 208.277,618.842C212.251,625.309 216.922,631.034 223.523,635.054C228.125,637.857 232.344,638.522 236.661,634.477C238.46,632.791 240.765,631.645 243.459,629.87ZM465.74,615.686C465.128,611.666 464.286,607.71 462.475,603.281C460.109,615.571 453.995,624.865 445.824,633.078C438.262,640.678 429.75,647.063 421.066,653.253C404.114,665.335 386.966,677.147 372.232,692.042C354.78,709.684 344.66,730.665 343.366,755.544C342.732,767.724 344.724,769.183 356.939,767.591C360.226,767.163 362.21,765.779 363.292,762.356C366.487,752.246 372.015,743.349 378.327,734.884C391.182,717.642 407.34,703.713 423.401,689.684C434.575,679.925 445.781,670.201 454.567,658.103C463.578,645.695 469.124,632.31 465.74,615.686ZM675.985,728.483C686.22,716.566 696.15,704.444 700.109,688.739C703.703,674.486 697.889,664.063 683.936,659.591C675.47,656.878 666.913,657.094 658.31,658.948C647.185,661.345 636.839,666.047 626.165,669.773C608.471,675.95 590.392,678.683 571.682,676.438C565.649,675.715 559.611,675.047 553.578,674.354C553.044,676.762 553.541,678.686 553.822,680.658C554.619,686.257 555.456,691.871 555.019,697.555C554.048,710.154 553.271,722.774 551.97,735.339C549.969,754.657 554.082,772.647 562.568,789.907C564.223,793.272 566.102,793.996 569.635,793.265C583.744,790.344 597.238,785.706 610.124,779.321C635.239,766.878 656.279,749.107 675.985,728.483Z'/%3E%3C/g%3E%3Cg transform='matrix(1,-0,-0,-1,-29.612137,1051.32027)'%3E%3Cpath d='M460.508,525.66C459.632,534.93 457.047,544.209 452.92,553.498C450.554,556.865 453.074,558.76 454.585,560.784C461.771,570.408 468.564,580.246 473.537,591.268C477.269,599.538 479.818,608.147 480.965,617.074C481.435,620.738 483.096,622.275 486.171,623.347C495.604,626.637 505.041,629.921 514.401,633.409C526.473,637.907 536.896,644.719 545.228,654.804C549.477,659.948 556.366,659.513 562.298,660.617C586.449,665.111 609.592,661.344 632.13,652.012C645.563,646.45 659.383,641.911 674.243,642.825C687.267,643.627 699.244,647.269 707.935,657.78C717.448,669.285 717.988,682.291 713.69,695.975C708.734,711.75 699.481,724.959 688.587,737.018C667.737,760.097 643.691,779.155 615.848,793.24C599.654,801.432 582.395,806.255 564.58,809.23C562.537,809.571 560.723,809.942 559.186,811.416C548.22,821.936 534.669,826.751 519.942,828.117C469.41,832.8 422.651,821.117 380.042,793.845C369.557,787.135 360.141,781.343 346.66,781.708C332.607,782.088 320.301,773.95 308.812,766.201C283.76,749.305 261.608,729.292 244.421,704.146C234.043,688.963 226.837,672.446 222.858,654.521C222.352,652.243 221.549,650.488 219.364,649.441C201.716,640.987 192.968,625.628 187.643,607.859C179.921,582.093 175.527,555.8 174.492,528.835C174.451,527.776 174.416,526.718 174.385,525.66L189.011,525.66C189.914,552.667 194.768,579.78 203.092,607.125C203.803,610.439 205.449,608.931 206.99,607.872C213.323,603.523 219.951,599.718 226.988,596.601C251.999,585.525 278.449,579.543 305.173,574.638C332.664,569.593 360.659,567.988 388.129,562.748C403.059,559.901 417.696,556.194 431.205,548.879C438.811,544.76 444.149,539.281 445.16,530.141C445.325,528.644 445.413,527.151 445.47,525.66L460.508,525.66ZM384.555,598.263C383.116,598.676 381.677,599.092 380.236,599.502C350.63,607.93 320.449,614.2 291.001,623.212C273.272,628.638 256.031,635.173 240.721,646.007C237.871,648.023 236.974,649.992 237.913,653.538C240.183,662.104 242.928,670.469 246.921,678.371C263.565,711.313 289.146,735.825 319.987,755.264C325.373,758.659 330.762,762.268 337.57,764.152C337.403,754.267 338.161,745.035 340.324,735.931C346.096,711.627 360.926,693.424 379.278,677.515C395.3,663.626 413.213,652.26 429.948,639.329C438.822,632.473 447.006,624.874 452.352,614.782C460.802,598.831 455.69,578.314 440.811,568.692C437.952,571.12 435.142,573.713 432.123,576.034C418.14,586.786 401.594,592.133 384.555,598.263ZM538.689,743.494C538.799,739.173 538.891,734.863 539.198,730.537C540.195,716.453 542.713,702.455 541.745,688.25C541.156,679.605 538.912,671.497 533.779,664.431C529.7,658.814 524.363,654.701 517.827,652.019C524.267,666.046 522.424,679.882 518.68,693.806C514.88,707.938 509.146,721.453 505.896,735.78C499.74,762.917 505.592,787.158 522.26,809.138C524.307,811.836 526.441,812.506 529.536,811.496C535.757,809.466 541.626,806.85 546.738,802.643C552.622,797.8 552.702,797.847 549.444,791.23C542.185,776.488 538.646,760.899 538.689,743.494ZM390.244,738.743C384.169,747.126 378.847,755.898 375.085,765.625C373.547,769.602 374.336,771.959 377.675,774.426C389.794,783.379 402.892,790.601 416.582,796.756C441.166,807.809 467.117,813.177 493.925,814.537C501.631,814.928 509.443,815.281 517.093,813.102C516.624,810.506 514.929,809.033 513.743,807.269C500.992,788.302 495.453,767.632 498.427,744.755C500.419,729.432 505.842,715.116 510.583,700.583C513.954,690.252 516.838,679.773 515.756,668.789C514.82,659.28 512.208,650.012 503.061,645.242C496.333,641.733 488.748,639.883 481.59,637.174C478.743,636.096 477.831,637.231 477.113,639.872C476.026,643.87 474.516,647.739 472.652,651.493C464.458,667.995 451.414,680.43 437.967,692.375C421.535,706.973 404.636,721.042 390.244,738.743ZM243.459,629.87C250.251,625.949 257.307,622.595 264.626,619.764C292.029,609.163 320.648,602.83 349.011,595.577C370.777,590.011 392.716,584.85 412.683,573.994C422.379,568.722 431.161,562.308 437.507,552.046C432.521,555.13 427.878,557.227 423.117,559.118C404.219,566.622 384.281,569.453 364.35,572.293C343.291,575.293 322.056,576.991 301.165,581.251C275.53,586.478 250.042,592.12 226.171,603.31C220.278,606.073 214.563,609.123 209.5,613.283C207.579,614.861 206.799,616.437 208.277,618.842C212.251,625.309 216.922,631.034 223.523,635.054C228.125,637.857 232.344,638.522 236.661,634.477C238.46,632.791 240.765,631.645 243.459,629.87ZM465.74,615.686C465.128,611.666 464.286,607.71 462.475,603.281C460.109,615.571 453.995,624.865 445.824,633.078C438.262,640.678 429.75,647.063 421.066,653.253C404.114,665.335 386.966,677.147 372.232,692.042C354.78,709.684 344.66,730.665 343.366,755.544C342.732,767.724 344.724,769.183 356.939,767.591C360.226,767.163 362.21,765.779 363.292,762.356C366.487,752.246 372.015,743.349 378.327,734.884C391.182,717.642 407.34,703.713 423.401,689.684C434.575,679.925 445.781,670.201 454.567,658.103C463.578,645.695 469.124,632.31 465.74,615.686ZM675.985,728.483C686.22,716.566 696.15,704.444 700.109,688.739C703.703,674.486 697.889,664.063 683.936,659.591C675.47,656.878 666.913,657.094 658.31,658.948C647.185,661.345 636.839,666.047 626.165,669.773C608.471,675.95 590.392,678.683 571.682,676.438C565.649,675.715 559.611,675.047 553.578,674.354C553.044,676.762 553.541,678.686 553.822,680.658C554.619,686.257 555.456,691.871 555.019,697.555C554.048,710.154 553.271,722.774 551.97,735.339C549.969,754.657 554.082,772.647 562.568,789.907C564.223,793.272 566.102,793.996 569.635,793.265C583.744,790.344 597.238,785.706 610.124,779.321C635.239,766.878 656.279,749.107 675.985,728.483Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ═══ THEME TOKENS ═══════════════════════════════════════════════
+       Default = dark. [data-theme="light"] overrides every token.
+       ──────────────────────────────────────────────────────────────── */
+    :root {
+      /* Text */
+      --cream: #faf8f4;
+      --dark: #1a1a18;
+      --muted: rgba(255, 255, 255, 0.45);
+      --text-faint: rgba(255, 255, 255, 0.22);
+      --text-dim: rgba(255, 255, 255, 0.38);
+      --text-hover: rgba(255, 255, 255, 0.85);
+      --border: rgba(255, 255, 255, 0.1);
+      --border-subtle: rgba(255, 255, 255, 0.07);
+
+      /* Brand */
+      --brand: 71, 244, 143;
+      --gold: #c9a84c;
+      --gold-rgb: 201, 168, 76;
+      --gold-light: #e8d5a0;
+
+      /* Page background */
+      --bg-base: #070a09;
+      --bg-grad-1: radial-gradient(ellipse 75% 55% at 50% 0%,   rgba(71, 244, 143, 0.055) 0%, transparent 58%);
+      --bg-grad-2: radial-gradient(ellipse 45% 35% at 100% 22%, rgba(201, 168, 76, 0.045) 0%, transparent 58%);
+      --bg-grad-3: radial-gradient(ellipse 65% 50% at 0% 95%,   rgba(48, 110, 82, 0.055) 0%, transparent 58%);
+      --vignette:  radial-gradient(ellipse 95% 85% at 50% 50%,  transparent 45%, rgba(0, 0, 0, 0.5) 100%);
+      --noise-opacity: 0.35;
+      --noise-blend: overlay;
+
+      /* Hero */
+      --hero-bg:
+        radial-gradient(ellipse 60% 50% at 50% 20%, rgba(48, 186, 117, 0.10) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 40% at 80% 70%, rgba(201, 168, 76, 0.06) 0%, transparent 60%);
+      --french-word: rgba(71, 244, 143, 0.09);
+
+      /* Galaxy card */
+      --card-bg:
+        linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.01) 60%),
+        rgba(8, 20, 14, 0.90);
+      --card-border: rgba(71, 244, 143, 0.78);
+      --card-shadow:
+        0 0 10px rgba(48, 186, 117, 0.18),
+        0 4px 20px rgba(0, 0, 0, 0.6),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      --card-text: rgba(255, 255, 255, 0.91);
+
+      --theme-transition: 0.55s ease;
+
+      /* Mobile browser chrome / safe-area color.
+         Keep the iOS/Dia status bar and the first slice of the page the same
+         solid color; the decorative gradient starts lower down. */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --top-solid-rgb: 7, 10, 9;
+      --top-solid: rgb(var(--top-solid-rgb));
+      --top-solid-stop: 132px;
+      --top-fade-end: 220px;
+    }
+
+    :root[data-theme="light"] {
+      --cream: #1a241b;          /* "primary heading" — deep forest, reads on cream */
+      --dark: #faf8f4;
+      --muted: rgba(26, 36, 23, 0.58);
+      --text-faint: rgba(26, 36, 23, 0.35);
+      --text-dim: rgba(26, 36, 23, 0.5);
+      --text-hover: rgba(26, 36, 23, 0.9);
+      --border: rgba(26, 36, 23, 0.14);
+      --border-subtle: rgba(26, 36, 23, 0.09);
+
+      --brand: 30, 130, 80;       /* deeper green; readable on cream */
+      --gold: #a2841f;            /* deeper metallic gold */
+      --gold-rgb: 162, 132, 31;
+      --gold-light: #c9a84c;
+
+      --bg-base: #f5efe0;
+      --bg-grad-1: radial-gradient(ellipse 75% 55% at 50% 0%,   rgba(50, 160, 100, 0.10) 0%, transparent 60%);
+      --bg-grad-2: radial-gradient(ellipse 45% 35% at 100% 22%, rgba(201, 168, 76, 0.14) 0%, transparent 60%);
+      --bg-grad-3: radial-gradient(ellipse 65% 50% at 0% 95%,   rgba(140, 100, 50, 0.10) 0%, transparent 60%);
+      --vignette:  radial-gradient(ellipse 100% 90% at 50% 50%, transparent 50%, rgba(130, 90, 40, 0.18) 100%);
+      --noise-opacity: 0.14;
+      --noise-blend: multiply;
+
+      --hero-bg:
+        radial-gradient(ellipse 60% 50% at 50% 24%, rgba(50, 160, 100, 0.12) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 40% at 80% 70%, rgba(201, 168, 76, 0.15) 0%, transparent 60%);
+      --french-word: rgba(30, 130, 80, 0.11);
+
+      --card-bg:
+        linear-gradient(160deg, rgba(255, 252, 240, 0.95) 0%, rgba(245, 235, 210, 0.85) 60%),
+        rgba(252, 247, 233, 1);
+      --card-border: rgba(162, 132, 31, 0.55);
+      --card-shadow:
+        0 0 12px rgba(162, 132, 31, 0.12),
+        0 4px 16px rgba(80, 60, 20, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+      --card-text: #1a241b;
+
+      --top-solid-rgb: 255, 255, 255;
+      --top-solid: #ffffff;
+      --top-solid-stop: 76px;
+      --top-fade-end: 260px;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--top-solid);
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background:
+        linear-gradient(
+          to bottom,
+          var(--top-solid) 0,
+          var(--top-solid) calc(var(--top-solid-stop) + var(--safe-top)),
+          rgba(var(--top-solid-rgb), 0) calc(var(--top-fade-end) + var(--safe-top))
+        ),
+        var(--bg-grad-1),
+        var(--bg-grad-2),
+        var(--bg-grad-3),
+        var(--bg-base);
+      background-color: var(--top-solid);
+      background-attachment: fixed;
+      color: var(--cream);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      position: relative;
+      min-height: 100vh;
+      min-height: 100svh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    @supports (-webkit-touch-callout: none) {
+      body { background-attachment: scroll; }
+    }
+
+    /* Theme crossfade — applied only during an actual switch */
+    body.theme-changing,
+    body.theme-changing *,
+    body.theme-changing *::before,
+    body.theme-changing *::after {
+      transition:
+        background-color var(--theme-transition),
+        background-image var(--theme-transition),
+        color var(--theme-transition),
+        border-color var(--theme-transition),
+        box-shadow var(--theme-transition),
+        opacity var(--theme-transition) !important;
+    }
+
+    /* Film grain */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: var(--noise-opacity);
+      mix-blend-mode: var(--noise-blend);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    /* Vignette */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: var(--vignette);
+    }
+
+    nav, section, footer, .galaxy-section {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* NAV */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: calc(20px + var(--safe-top)) 48px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: transparent;
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 400;
+      letter-spacing: -0.3px;
+      color: var(--text-hover);
+      text-decoration: none;
+    }
+
+    .nav-logo span {
+      font-style: italic;
+      color: var(--gold);
+    }
+
+    /* HERO */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: calc(90px + var(--safe-top)) 24px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background: var(--hero-bg);
+      pointer-events: none;
+    }
+
+    /* Floating French words */
+    .french-bg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .french-word {
+      position: absolute;
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      color: var(--french-word);
+      user-select: none;
+      animation: floatWord linear infinite;
+    }
+    @keyframes floatWord {
+      0%   { transform: translateY(0px);    opacity: 0.6; }
+      50%  { opacity: 1; }
+      100% { transform: translateY(-20px);  opacity: 0.6; }
+    }
+
+    .hero-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(52px, 8vw, 96px);
+      font-weight: 400;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      max-width: 820px;
+      margin-bottom: 12px;
+      animation: fadeUp 0.8s 0.1s ease both;
+      color: var(--cream);
+    }
+
+    .hero-title em {
+      font-style: italic;
+      color: rgba(var(--brand), 0.95);
+    }
+
+    .hero-sub {
+      font-size: clamp(17px, 2vw, 20px);
+      font-weight: 300;
+      color: var(--muted);
+      max-width: 480px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+      animation: fadeUp 0.8s 0.2s ease both;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: fadeUp 0.8s 0.3s ease both;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(var(--brand), 0.15);
+      border: 1px solid rgba(var(--brand), 0.4);
+      color: rgba(var(--brand), 0.95);
+      text-decoration: none;
+      padding: 16px 32px;
+      border-radius: 100px;
+      font-size: 16px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+    .btn-primary:hover { transform: translateY(-2px); opacity: 0.88; }
+
+    /* GALAXY */
+    .galaxy-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0;
+      animation: fadeUp 0.9s 0.4s ease both;
+    }
+    .galaxy-viewport {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      width: 100vw;
+      height: 50vh;
+      perspective: 1100px;
+      perspective-origin: 50% 50%;
+      display: flex; align-items: center; justify-content: center;
+      overflow: visible;
+      background: transparent;
+      cursor: grab;
+      position: relative;
+    }
+    .galaxy-viewport:active { cursor: grabbing; }
+
+    .galaxy-ring {
+      position: relative; width: 0; height: 0;
+      transform-style: preserve-3d;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .g-card {
+      position: absolute;
+      width: 72px; height: 100px;
+      left: -36px; top: -50px;
+      opacity: 0;
+      border-radius: 9px;
+      transform-style: preserve-3d;
+      backface-visibility: visible;
+      background: var(--card-bg);
+      border: 1.1px solid var(--card-border);
+      box-shadow: var(--card-shadow);
+      display: flex; align-items: center; justify-content: center;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    .g-card-word {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 9.5px; font-weight: 700;
+      color: var(--card-text);
+      text-align: center;
+      padding: 0 4px;
+      line-height: 1.2;
+      letter-spacing: 0.05em;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      pointer-events: none;
+    }
+
+    /* FOOTER */
+    footer {
+      text-align: center;
+      padding: 16px 48px calc(16px + var(--safe-bottom));
+      font-size: 13px;
+      color: var(--text-faint);
+      border-top: 1px solid var(--border-subtle);
+      margin-top: auto;
+    }
+    footer a { color: inherit; text-decoration: none; }
+    footer a:hover { color: var(--text-hover); }
+
+    /* ANIMATIONS */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .reveal {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      body {
+        background:
+          linear-gradient(
+            to bottom,
+            var(--top-solid) 0,
+            var(--top-solid) calc(70px + var(--safe-top)),
+            rgba(var(--top-solid-rgb), 0) calc(240px + var(--safe-top))
+          ),
+          var(--bg-grad-1),
+          var(--bg-grad-2),
+          var(--bg-grad-3),
+          var(--bg-base);
+        background-color: var(--top-solid);
+      }
+
+      nav {
+        padding: calc(16px + var(--safe-top)) 22px 14px;
+      }
+
+      .nav-logo {
+        font-size: 21px;
+      }
+
+      .theme-toggle {
+        width: 38px;
+        height: 38px;
+      }
+
+      /* Mobile composition: tighter, clearer, CTA visible before 60vh. */
+      .hero {
+        justify-content: flex-start;
+        min-height: auto;
+        padding: calc(86px + var(--safe-top)) 22px 8px;
+        overflow: visible;
+      }
+
+      .hero-title {
+        font-size: clamp(42px, 12.2vw, 58px);
+        line-height: 1.04;
+        letter-spacing: -0.025em;
+        max-width: 360px;
+        margin-bottom: 12px;
+      }
+
+      .hero-sub {
+        font-size: 16px;
+        line-height: 1.45;
+        max-width: 310px;
+        margin-bottom: 20px;
+      }
+
+      .btn-primary {
+        width: auto;
+        max-width: 280px;
+        padding: 13px 21px;
+        font-size: 15px;
+        gap: 8px;
+      }
+
+      .btn-primary svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .french-bg {
+        opacity: 0.48;
+      }
+
+      .french-word {
+        animation-duration: 14s !important;
+      }
+
+      .french-word:nth-child(2),
+      .french-word:nth-child(5),
+      .french-word:nth-child(6) {
+        display: none;
+      }
+
+      .french-word:nth-child(1) {
+        left: 2% !important;
+        top: 24% !important;
+        font-size: 28px !important;
+      }
+
+      .french-word:nth-child(3) {
+        left: 10% !important;
+        top: 70% !important;
+        font-size: 18px !important;
+      }
+
+      .french-word:nth-child(4) {
+        left: 72% !important;
+        top: 58% !important;
+        font-size: 24px !important;
+      }
+
+      .galaxy-section {
+        margin-top: 0;
+      }
+
+      .galaxy-viewport {
+        width: 100%;
+        height: 220px;
+        min-height: 220px;
+        max-height: 220px;
+        margin-top: 4px;
+        perspective: 950px;
+        overflow: visible;
+      }
+
+      footer {
+        margin-top: 96px;
+        padding: 18px 24px calc(22px + var(--safe-bottom));
+        line-height: 1.6;
+      }
+
+      /* Mobile: keep the top browser/status area visually seamless.
+         Grain and vignette start below the solid chrome-matching band. */
+      body::before,
+      body::after {
+        top: calc(122px + var(--safe-top));
+      }
+    }
+
+    @media (max-width: 390px) {
+      .hero {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+
+      .hero-title {
+        font-size: clamp(40px, 12vw, 50px);
+        max-width: 330px;
+      }
+
+      .hero-sub {
+        max-width: 290px;
+      }
+
+      .galaxy-viewport {
+        height: 210px;
+        min-height: 210px;
+        max-height: 210px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a href="#" class="nav-logo">Crois<span>sante</span></a>
+
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-bg"></div>
+
+    <!-- Floating French words decoration -->
+    <div class="french-bg" aria-hidden="true">
+      <span class="french-word" style="left:5%;top:20%;font-size:36px;animation-duration:8s;animation-delay:0s">bonjour</span>
+      <span class="french-word" style="left:85%;top:30%;font-size:28px;animation-duration:10s;animation-delay:2s">merci</span>
+      <span class="french-word" style="left:15%;top:65%;font-size:22px;animation-duration:12s;animation-delay:1s">croissant</span>
+      <span class="french-word" style="left:75%;top:70%;font-size:32px;animation-duration:9s;animation-delay:3s">lumière</span>
+      <span class="french-word" style="left:45%;top:85%;font-size:20px;animation-duration:11s;animation-delay:0.5s">magnifique</span>
+      <span class="french-word" style="left:60%;top:10%;font-size:24px;animation-duration:13s;animation-delay:4s">liberté</span>
+    </div>
+
+    <h1 class="hero-title">
+      Learn French<br>the <em>beautiful</em> way
+    </h1>
+
+    <p class="hero-sub">
+      One Croissante a day, one French word away.
+    </p>
+
+    <div class="hero-actions">
+      <a href="https://apps.apple.com/ca/app/croissante/id6761028547" class="btn-primary" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        Download on App Store
+      </a>
+    </div>
+  </section>
+
+  <!-- GALAXY SECTION -->
+  <div class="galaxy-section">
+    <div class="galaxy-viewport" id="galaxyViewport">
+      <div class="galaxy-ring" id="galaxyRing"></div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>© 2026 Croissante · <a href="https://x.com/croissante4u?s=21" target="_blank" rel="noopener">@croissante4u</a> · <a href="support.html">Support</a> · <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a></p>
+  </footer>
+
+  <script>
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("visible"); observer.unobserve(e.target); } });
+    }, { threshold: 0.12 });
+    document.querySelectorAll(".reveal").forEach(el => observer.observe(el));
+
+    // ─── CSS 3D Galaxy Ring ───────────────────────────────────────
+    const WORDS = [
+      'flâner','lumière','douceur','liberté','sérénité','crépuscule',
+      'bonheur','sagesse','beauté','espoir','tendresse','mélodie',
+      'mystère','élégance','rêverie','partager','sourire','papillon',
+      'silence','voyage','nostalgie','étoile'
+    ];
+
+    const COUNT        = WORDS.length;
+    const RADIUS       = 180;
+    const SPEED        = 60;             // deg/sec auto-rotate
+
+    // Deal / entrance animation — mirroring Swift constants
+    const PILE_ANGLE          = Math.PI * 0.65;
+    const DEAL_DURATION       = 1.4;     // seconds
+    const DEAL_STAGGER        = 0.028;   // per card, as fraction of DEAL_DURATION
+    const COMPRESSED_STEPS    = 3.0;
+    const COMPRESSED_POWER    = 0.82;
+    const DEPTH_Z_SWITCH      = 0.42;
+
+    // View angles
+    let tiltX = -19.5;
+    let tiltZ  = 26.2;
+
+    const DUST_COUNT = 9, DUST_CYCLE = 6000;
+
+    const ring     = document.getElementById('galaxyRing');
+    const viewport = document.getElementById('galaxyViewport');
+
+    // Prevent accidental text selection while dragging / interacting with the galaxy cards.
+    viewport.addEventListener('selectstart', e => e.preventDefault());
+    viewport.addEventListener('dragstart', e => e.preventDefault());
+
+    // Build cards
+    const cardEls = WORDS.map((word, i) => {
+      const el   = document.createElement('div');
+      el.className = 'g-card';
+      el.style.zIndex = COUNT - i;   // initial deal z-order
+      const span = document.createElement('span');
+      span.className = 'g-card-word';
+      span.textContent = word;
+      el.appendChild(span);
+      ring.appendChild(el);
+      return el;
+    });
+
+    // Build dust
+    const dustEls = Array.from({ length: DUST_COUNT }, () => {
+      const el = document.createElement('div');
+      el.className = 'g-dust';
+      ring.appendChild(el);
+      return el;
+    });
+
+    // Easing
+    function smoothStep(t) {
+      t = Math.min(1, Math.max(0, t));
+      return t * t * (3 - 2 * t);
+    }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    let orbitOffset  = 0;
+    let startTime    = null;
+    let animReady    = false;
+    setTimeout(() => { animReady = true; }, 120); // wait for page paint
+    let isDragging   = false, lastX = null, lastY = null;
+    frame._last      = null;
+
+    function frame(now) {
+      if (!animReady) { requestAnimationFrame(frame); return; }
+      if (!startTime) startTime = now;
+      const elapsed = (now - startTime) / 1000;   // seconds since page load
+      const dt = frame._last ? Math.min((now - frame._last) / 1000, 0.05) : 0;
+      frame._last = now;
+
+      if (!isDragging) orbitOffset -= SPEED * dt;
+
+      ring.style.transform = `scale(${galaxyScale}) rotateX(${tiltX}deg) rotateZ(${tiltZ}deg)`;
+
+      // Exact Swift logic
+      const orbitStep      = 2 * Math.PI / COUNT;
+      const orbitRad       = orbitOffset * Math.PI / 180;
+      const dealProgress   = Math.min(1, Math.max(0, elapsed / DEAL_DURATION));
+      const compressedSpan = COMPRESSED_STEPS * orbitStep;
+      const maxSlot        = Math.max(COUNT - 1, 1);
+
+      for (let i = 0; i < COUNT; i++) {
+        const releaseRank  = i;
+        const orbitRank    = i;                    // card 0 → nearest, last card → farthest CCW
+        const slotFraction = i / maxSlot;
+
+        // Staggered local progress — mirrors Swift dealStaggerPerCard logic
+        const localDelay   = (releaseRank * DEAL_STAGGER) / DEAL_DURATION;
+        const rawLocal     = Math.min(1, Math.max(0,
+          (dealProgress - localDelay) / Math.max(1 - localDelay, 0.001)
+        ));
+        const openProgress = smoothStep(rawLocal);
+
+        // Start: compressed fan around pileAngle
+        // End:   evenly spaced orbit (card 0 goes farthest CCW)
+        // Negate both so deal fans clockwise, matching orbit rotation direction
+        const compressedOffset = -(compressedSpan / 2
+          - Math.pow(slotFraction, COMPRESSED_POWER) * compressedSpan);
+        const finalOffset = -orbitRank * orbitStep;
+        const angle = PILE_ANGLE + orbitRad
+          + lerp(compressedOffset, finalOffset, openProgress);
+
+        const x  = Math.cos(angle) * RADIUS;
+        const z  = Math.sin(angle) * RADIUS;
+        const tx = -Math.sin(angle) * RADIUS;
+        const tz =  Math.cos(angle) * RADIUS;
+        const facing = Math.atan2(tx, tz) * (180 / Math.PI);
+
+        const depthT  = (z + RADIUS) / (2 * RADIUS);
+        const opacity = openProgress < 0.01 ? 0 : (0.22 + 0.78 * depthT);
+
+        cardEls[i].style.zIndex = openProgress < DEPTH_Z_SWITCH
+          ? COUNT - releaseRank
+          : Math.round(100 + z);
+        cardEls[i].style.transform = `translate3d(${x}px, 0px, ${z}px) rotateY(${facing}deg)`;
+        cardEls[i].style.opacity   = opacity.toFixed(3);
+      }
+
+      // Dust
+      const sec = now / 1000;
+      for (let i = 0; i < DUST_COUNT; i++) {
+        const phase = ((now / DUST_CYCLE + i / DUST_COUNT) % 1 + 1) % 1;
+        const opac  = Math.sin(Math.PI * phase) * (0.74 + 0.26 * Math.sin(sec * 0.8 + i));
+        if (opac < 0.01) { dustEls[i].style.opacity = '0'; continue; }
+        const ang = (orbitOffset * 0.62 * Math.PI / 180) + i * (2 * Math.PI / DUST_COUNT);
+        const dx  = Math.cos(ang) * RADIUS * 0.50;
+        const dz  = Math.sin(ang) * RADIUS * 0.55;
+        const dy  = -72 * phase;
+        const sz  = 4 + 3 * Math.sin(Math.PI * phase);
+        dustEls[i].style.opacity   = opac.toFixed(3);
+        dustEls[i].style.width     = sz + 'px';
+        dustEls[i].style.height    = sz + 'px';
+        dustEls[i].style.transform = `translate3d(${dx - sz/2}px, ${dy - sz/2}px, ${dz}px)`;
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    function baseGalaxyScale() {
+      if (window.innerWidth <= 390) return 0.48;
+      if (window.innerWidth < 768) return 0.52;
+      return 1.0;
+    }
+
+    let galaxyScale = baseGalaxyScale();
+
+    window.addEventListener('resize', () => {
+      galaxyScale = baseGalaxyScale();
+    }, { passive: true });
+
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => { galaxyScale = baseGalaxyScale(); }, 250);
+    }, { passive: true });
+
+    requestAnimationFrame(frame);
+
+    // Drag: horizontal → tiltZ, vertical → tiltX
+    viewport.addEventListener('mousedown', e => { isDragging = true; lastX = e.clientX; lastY = e.clientY; });
+    window.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      tiltZ = Math.max(-40, Math.min(40, tiltZ + dx * 0.3));
+      tiltX = Math.max(-70, Math.min(0,  tiltX - dy * 0.3));
+    });
+    window.addEventListener('mouseup', () => { isDragging = false; });
+
+    viewport.addEventListener('touchstart', e => {
+      isDragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+    }, { passive: true });
+    viewport.addEventListener('touchmove', e => {
+      if (!isDragging) return;
+      const dx = e.touches[0].clientX - lastX, dy = e.touches[0].clientY - lastY;
+      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+      tiltZ = Math.max(-40, Math.min(40, tiltZ + dx * 0.3));
+      tiltX = Math.max(-70, Math.min(0,  tiltX - dy * 0.3));
+      e.preventDefault();
+    }, { passive: false });
+    viewport.addEventListener('touchend', () => { isDragging = false; });
+
+    viewport.addEventListener('wheel', e => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.80 : 1.20;
+      galaxyScale = Math.max(0.3, Math.min(3.0, galaxyScale * delta));
+    }, { passive: false });
+
+    // ─── Theme: follow system appearance ─────────────────────────
+    (function() {
+      var TRANSITION_MS = 600;
+      var root = document.documentElement;
+      var body = document.body;
+      var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+      function systemTheme() {
+        return media && media.matches ? 'dark' : 'light';
+      }
+
+      function apply(animate) {
+        var next = systemTheme();
+        var current = root.getAttribute('data-theme');
+        if (next === current) return;
+
+        if (animate) {
+          body.classList.add('theme-changing');
+          setTimeout(function() {
+            body.classList.remove('theme-changing');
+          }, TRANSITION_MS + 50);
+        }
+
+        root.setAttribute('data-theme', next);
+        document.querySelector('meta[name="theme-color"]')
+          .setAttribute('content', next === 'dark' ? '#070a09' : '#ffffff');
+      }
+
+      apply(false);
+
+      if (media) {
+        if (media.addEventListener) {
+          media.addEventListener('change', function() { apply(true); });
+        } else if (media.addListener) {
+          media.addListener(function() { apply(true); });
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
