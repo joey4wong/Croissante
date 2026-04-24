@@ -498,7 +498,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_DEBUG_DYLIB = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
@@ -518,7 +518,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante;
 				PRODUCT_MODULE_NAME = Croissante;
 				PRODUCT_NAME = Croissante;
@@ -543,7 +543,7 @@
 				CODE_SIGN_ENTITLEMENTS = Croissante/CroissanteDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Croissante/AppAlternateIconsInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Croissante;
@@ -562,7 +562,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante;
 				PRODUCT_MODULE_NAME = Croissante;
 				PRODUCT_NAME = Croissante;
@@ -582,7 +582,7 @@
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CroissanteWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";
@@ -593,7 +593,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -613,7 +613,7 @@
 				CODE_SIGN_ENTITLEMENTS = CroissanteWidgetExtensionDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CroissanteWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Croissante Widget";
@@ -624,7 +624,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jw.Croissante.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

@@ -16,7 +16,10 @@ enum FeedbackService {
     private static let notificationGenerator = UINotificationFeedbackGenerator()
     private static var queuedGearTicks = 0
     private static var gearTickTask: Task<Void, Never>?
+    private static var queuedGearHapticTicks = 0
+    private static var gearHapticTickTask: Task<Void, Never>?
     private static let gearTickIntervalNanoseconds: UInt64 = 18_000_000
+    private static let gearHapticTickIntervalNanoseconds: UInt64 = 22_000_000
     private static let maxQueuedGearTicks = 20
     private static var didConfigureAudioSession = false
     private static var lastWheelSpinSampleTime: CFAbsoluteTime?
@@ -81,6 +84,29 @@ enum FeedbackService {
                 }
             }
             gearTickTask = nil
+        }
+        #endif
+    }
+
+    static func gearHapticTick(steps: Int = 1) {
+        #if os(iOS)
+        let incomingSteps = max(1, steps)
+        queuedGearHapticTicks = min(maxQueuedGearTicks, queuedGearHapticTicks + incomingSteps)
+
+        guard gearHapticTickTask == nil else { return }
+        gearHapticTickTask = Task { @MainActor in
+            while queuedGearHapticTicks > 0 {
+                guard !Task.isCancelled else { break }
+                queuedGearHapticTicks -= 1
+
+                rigidImpactGenerator.impactOccurred(intensity: 0.42)
+                rigidImpactGenerator.prepare()
+
+                if queuedGearHapticTicks > 0 {
+                    try? await Task.sleep(nanoseconds: gearHapticTickIntervalNanoseconds)
+                }
+            }
+            gearHapticTickTask = nil
         }
         #endif
     }
@@ -166,6 +192,13 @@ enum FeedbackService {
         #if os(iOS)
         selectionGenerator.selectionChanged()
         selectionGenerator.prepare()
+        #endif
+    }
+
+    static func cardMetaButtonTap() {
+        #if os(iOS)
+        mediumImpactGenerator.impactOccurred(intensity: 0.55)
+        mediumImpactGenerator.prepare()
         #endif
     }
 }

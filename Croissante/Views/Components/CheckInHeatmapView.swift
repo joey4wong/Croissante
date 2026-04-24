@@ -2,13 +2,18 @@ import SwiftUI
 
 struct CheckInHeatmapView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var srsManager: SRSManager
     @State private var autoReturnTask: Task<Void, Never>?
     @State private var initialCenterTask: Task<Void, Never>?
+    @State private var heatmapPressTask: Task<Void, Never>?
+    @State private var heatmapPressProgress: CGFloat?
     @State private var lastViewportWidth: CGFloat = 0
     @State private var lastTickTranslationX: CGFloat = 0
     @State private var todayDotBlink = false
 
+    private let isActive: Bool
     private let calendar: Calendar
 
     private let cellSize: CGFloat = 15
@@ -16,12 +21,19 @@ struct CheckInHeatmapView: View {
     private let horizontalPanelPadding: CGFloat = 10
     private let gearTickStep: CGFloat = 14
     private let monthHeaderHeight: CGFloat = 20
+    private let heatmapPressDuration: TimeInterval = 4.00
+    private let heatmapPressPause: TimeInterval = 3.00
+    private let heatmapPressFrameRate: Double = 36
+    private let heatmapPressBandHalfWidth: CGFloat = 0.65
+    private let heatmapPressArchLift: CGFloat = 3.80
+    private let heatmapPressScaleReduction: CGFloat = 0.42
 
-    init(calendar: Calendar = .current) {
+    init(isActive: Bool = true, calendar: Calendar = .current) {
         var configuredCalendar = calendar
         configuredCalendar.locale = Locale(identifier: "en_US_POSIX")
         configuredCalendar.firstWeekday = 1 // GitHub style: Sunday-first columns
 
+        self.isActive = isActive
         self.calendar = configuredCalendar
     }
 
@@ -61,6 +73,10 @@ struct CheckInHeatmapView: View {
         srsManager.todayStudyState == .inProgress && srsManager.todayDeckCompletionRatio < 0.20
     }
 
+    private var shouldRunHeatmapAnimations: Bool {
+        isActive && scenePhase == .active && !reduceMotion
+    }
+
     private var panelBackground: Color {
         colorScheme == .dark ? Color.white.opacity(0.03) : Color.white.opacity(0.70)
     }
@@ -71,19 +87,21 @@ struct CheckInHeatmapView: View {
 
     var body: some View {
         let layout = makeYearLayout()
+        let gridW = gridWidth(for: layout.weeks)
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        Color.clear.frame(width: sideInset(for: geometry.size.width))
+                        Color.clear.frame(width: sideInset(for: geometry.size.width, gridWidth: gridW))
                         VStack(alignment: .leading, spacing: 8) {
                             monthHeader(layout: layout)
                             contributionGrid(layout: layout)
                         }
                         .padding(.vertical, 2)
-                        Color.clear.frame(width: sideInset(for: geometry.size.width))
+                        Color.clear.frame(width: sideInset(for: geometry.size.width, gridWidth: gridW))
                     }
                 }
+                .scrollBounceBehavior(.basedOnSize)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 4)
                         .onChanged { value in
@@ -108,10 +126,19 @@ struct CheckInHeatmapView: View {
                     FeedbackService.prepareInteractive()
                     lastViewportWidth = geometry.size.width
                     scheduleInitialCenter(using: proxy)
-                    updateTodayDotBlinking()
+                    updateHeatmapAnimations()
                 }
                 .onChange(of: shouldBlinkTodayDot) { _, _ in
-                    updateTodayDotBlinking()
+                    updateHeatmapAnimations()
+                }
+                .onChange(of: reduceMotion) { _, _ in
+                    updateHeatmapAnimations()
+                }
+                .onChange(of: scenePhase) { _, _ in
+                    updateHeatmapAnimations()
+                }
+                .onChange(of: isActive) { _, _ in
+                    updateHeatmapAnimations()
                 }
                 .onChange(of: geometry.size.width) { _, newWidth in
                     guard abs(newWidth - lastViewportWidth) > 0.5 else { return }
@@ -123,14 +150,78 @@ struct CheckInHeatmapView: View {
                     cancelInitialCenter()
                     lastViewportWidth = 0
                     stopTodayDotBlinking()
+                    stopHeatmapPress()
                 }
             }
         }
     }
 
-    private func sideInset(for containerWidth: CGFloat) -> CGFloat {
+    private func updateHeatmapAnimations() {
+        if shouldRunHeatmapAnimations {
+            updateTodayDotBlinking()
+            startHeatmapPressIfNeeded()
+        } else {
+            stopTodayDotBlinking()
+            stopHeatmapPress()
+        }
+    }
+
+    private func startHeatmapPressIfNeeded() {
+        guard shouldRunHeatmapAnimations else { return }
+        guard heatmapPressTask == nil else { return }
+
+        heatmapPressTask = Task { @MainActor in
+            while !Task.isCancelled {
+                await runHeatmapPress()
+                guard !Task.isCancelled else { break }
+
+                setHeatmapPressProgress(nil)
+
+                try? await Task.sleep(nanoseconds: nanoseconds(for: heatmapPressPause))
+            }
+        }
+    }
+
+    private func runHeatmapPress() async {
+        setHeatmapPressProgress(0)
+
+        let frameCount = max(1, Int((heatmapPressDuration * heatmapPressFrameRate).rounded(.up)))
+        let frameDuration = heatmapPressDuration / Double(frameCount)
+        let frameNanoseconds = nanoseconds(for: frameDuration)
+
+        for frame in 0...frameCount {
+            guard !Task.isCancelled else { break }
+            heatmapPressProgress = CGFloat(frame) / CGFloat(frameCount)
+            try? await Task.sleep(nanoseconds: frameNanoseconds)
+        }
+    }
+
+    private func stopHeatmapPress() {
+        heatmapPressTask?.cancel()
+        heatmapPressTask = nil
+
+        setHeatmapPressProgress(nil)
+    }
+
+    private func setHeatmapPressProgress(_ progress: CGFloat?) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            heatmapPressProgress = progress
+        }
+    }
+
+    private func nanoseconds(for duration: TimeInterval) -> UInt64 {
+        UInt64((duration * 1_000_000_000).rounded())
+    }
+
+    private func sideInset(for containerWidth: CGFloat, gridWidth: CGFloat) -> CGFloat {
         let visibleWidth = max(0, containerWidth - (horizontalPanelPadding * 2))
-        return max(0, (visibleWidth - cellSize) / 2)
+        let slack = visibleWidth - gridWidth
+        if slack > 0 {
+            return slack / 2
+        }
+        return horizontalPanelPadding
     }
 
     private func triggerGearTickIfNeeded(for translation: CGSize) {
@@ -260,11 +351,21 @@ struct CheckInHeatmapView: View {
     }
 
     private func contributionGrid(layout: YearLayout) -> some View {
-        HStack(alignment: .top, spacing: cellSpacing) {
+        let activeTodayWeekIndex = todayWeekIndex(in: layout) ?? max(0, layout.weeks.count - 1)
+        let visibleWeekCount = estimatedVisibleWeekCount(totalWeeks: layout.weeks.count)
+
+        return HStack(alignment: .top, spacing: cellSpacing) {
             ForEach(layout.weeks) { week in
                 VStack(spacing: cellSpacing) {
-                    ForEach(week.days, id: \.self) { day in
-                        dayCell(for: day, displayYear: layout.displayYear)
+                    ForEach(Array(week.days.enumerated()), id: \.element) { dayIndex, day in
+                        dayCell(
+                            for: day,
+                            displayYear: layout.displayYear,
+                            weekIndex: week.index,
+                            dayIndex: dayIndex,
+                            todayWeekIndex: activeTodayWeekIndex,
+                            visibleWeekCount: visibleWeekCount
+                        )
                             .id(dayID(day))
                     }
                 }
@@ -273,84 +374,57 @@ struct CheckInHeatmapView: View {
         }
     }
 
-    private func dayCell(for date: Date, displayYear: Int) -> AnyView {
+    @ViewBuilder
+    private func dayCell(
+        for date: Date,
+        displayYear: Int,
+        weekIndex: Int,
+        dayIndex: Int,
+        todayWeekIndex: Int,
+        visibleWeekCount: CGFloat
+    ) -> some View {
         let isInDisplayYear = calendar.component(.year, from: date) == displayYear
         if !isInDisplayYear {
-            return AnyView(
-                Color.clear
-                    .frame(width: cellSize, height: cellSize)
-            )
-        }
-
-        let isToday = calendar.isDate(date, inSameDayAs: today)
-        let ratio = srsManager.deckCompletionRatio(for: date)
-        let state = srsManager.studyState(for: date)
-
-        let fillColor: Color
-        let showTodayDot: Bool
-        let showTodayBorder: Bool
-
-        switch state {
-        case .completed:
-            fillColor = deepGreenCellColor
-            showTodayDot = false
-            showTodayBorder = false
-        case .inProgress:
-            if ratio >= 0.70 {
-                fillColor = mediumGreenCellColor
-                showTodayDot = false
-                showTodayBorder = false
-            } else if ratio >= 0.20 {
-                fillColor = lightGreenCellColor
-                showTodayDot = false
-                showTodayBorder = false
-            } else if isToday {
-                fillColor = cellBackgroundColor
-                showTodayDot = true
-                showTodayBorder = true
-            } else {
-                fillColor = cellBackgroundColor
-                showTodayDot = false
-                showTodayBorder = false
-            }
-        case .noEligibleCards:
-            fillColor = cellBackgroundColor
-            showTodayDot = false
-            showTodayBorder = false
-        }
-
-        let glowColor: Color?
-        if colorScheme == .dark {
-            switch state {
-            case .completed:
-                glowColor = deepGreenCellColor
-            case .inProgress where ratio >= 0.70:
-                glowColor = mediumGreenCellColor
-            case .inProgress where ratio >= 0.20:
-                glowColor = lightGreenCellColor
-            default:
-                glowColor = nil
-            }
+            Color.clear
+                .frame(width: cellSize, height: cellSize)
         } else {
-            glowColor = nil
-        }
+            let isToday = calendar.isDate(date, inSameDayAs: today)
+            let ratio = srsManager.deckCompletionRatio(for: date)
+            let appearance = heatmapCellAppearance(
+                for: srsManager.studyState(for: date),
+                ratio: ratio,
+                isToday: isToday
+            )
+            let glowLayerColor = appearance.glowColor ?? .clear
+            let showGlow = appearance.glowColor != nil
+            let pressAmount = heatmapPressAmount(
+                weekIndex: weekIndex,
+                dayIndex: dayIndex,
+                todayWeekIndex: todayWeekIndex,
+                visibleWeekCount: visibleWeekCount
+            )
+            let pressScale = 1 - heatmapPressScaleReduction * pressAmount
+            let pressLightenOpacity = appearance.isColored ? (colorScheme == .dark ? 0.58 : 0.68) * pressAmount : 0
+            let pressedShadowMultiplier = max(0.18, 1 - pressAmount * 0.76)
 
-        let glowLayerColor = glowColor ?? .clear
-        let showGlow = glowColor != nil
-
-        return AnyView(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(fillColor)
+                .fill(appearance.fillColor)
                 .frame(width: cellSize, height: cellSize)
                 .overlay {
-                    if let glowColor {
+                    if let glowColor = appearance.glowColor {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .stroke(glowColor.opacity(0.88), lineWidth: 0.9)
                             .blur(radius: 0.8)
                     }
                 }
+                .overlay {
+                    if pressLightenOpacity > 0.001 {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.white.opacity(pressLightenOpacity))
+                    }
+                }
                 .overlay(alignment: .center) {
-                    if showTodayDot {
+                    if appearance.showTodayDot {
                         ZStack {
                             Circle()
                                 .fill(todayDotColor.opacity(colorScheme == .dark ? 0.34 : 0.28))
@@ -373,11 +447,101 @@ struct CheckInHeatmapView: View {
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(todayBorderColor, lineWidth: showTodayBorder ? 1 : 0)
+                        .stroke(todayBorderColor, lineWidth: appearance.showTodayBorder ? 1 : 0)
                 )
-                .shadow(color: showGlow ? glowLayerColor.opacity(0.58) : .clear, radius: showGlow ? 2.6 : 0, x: 0, y: 0)
-                .shadow(color: showGlow ? glowLayerColor.opacity(0.30) : .clear, radius: showGlow ? 6.2 : 0, x: 0, y: 0)
+                .scaleEffect(pressScale)
+                .animation(.spring(response: 0.18, dampingFraction: 0.70, blendDuration: 0.03), value: pressAmount > 0.001)
+                .shadow(color: showGlow ? glowLayerColor.opacity(0.58 * pressedShadowMultiplier) : .clear, radius: showGlow ? 2.6 * pressedShadowMultiplier : 0, x: 0, y: 0)
+                .shadow(color: showGlow ? glowLayerColor.opacity(0.30 * pressedShadowMultiplier) : .clear, radius: showGlow ? 6.2 * pressedShadowMultiplier : 0, x: 0, y: 0)
+        }
+    }
+
+    private func heatmapCellAppearance(
+        for state: SRSManager.DailyStudyState,
+        ratio: Double,
+        isToday: Bool
+    ) -> HeatmapCellAppearance {
+        let fillColor: Color
+        let showTodayDot: Bool
+        let showTodayBorder: Bool
+        let isColored: Bool
+
+        switch state {
+        case .completed:
+            fillColor = deepGreenCellColor
+            showTodayDot = false
+            showTodayBorder = false
+            isColored = true
+        case .inProgress:
+            if ratio >= 0.70 {
+                fillColor = mediumGreenCellColor
+                showTodayDot = false
+                showTodayBorder = false
+                isColored = true
+            } else if ratio >= 0.20 {
+                fillColor = lightGreenCellColor
+                showTodayDot = false
+                showTodayBorder = false
+                isColored = true
+            } else if isToday {
+                fillColor = cellBackgroundColor
+                showTodayDot = true
+                showTodayBorder = true
+                isColored = false
+            } else {
+                fillColor = cellBackgroundColor
+                showTodayDot = false
+                showTodayBorder = false
+                isColored = false
+            }
+        case .noEligibleCards:
+            fillColor = cellBackgroundColor
+            showTodayDot = false
+            showTodayBorder = false
+            isColored = false
+        }
+
+        return HeatmapCellAppearance(
+            fillColor: fillColor,
+            showTodayDot: showTodayDot,
+            showTodayBorder: showTodayBorder,
+            isColored: isColored,
+            glowColor: colorScheme == .dark && isColored ? fillColor : nil
         )
+    }
+
+    private func estimatedVisibleWeekCount(totalWeeks: Int) -> CGFloat {
+        let visibleWidth = max(0, lastViewportWidth - (horizontalPanelPadding * 2))
+        let weekSpan = cellSize + cellSpacing
+        guard visibleWidth > 0, weekSpan > 0 else {
+            return min(CGFloat(totalWeeks), 18)
+        }
+
+        return min(CGFloat(totalWeeks), max(8, (visibleWidth + cellSpacing) / weekSpan))
+    }
+
+    private func heatmapPressAmount(
+        weekIndex: Int,
+        dayIndex: Int,
+        todayWeekIndex: Int,
+        visibleWeekCount: CGFloat
+    ) -> CGFloat {
+        guard !reduceMotion, let progress = heatmapPressProgress else { return 0 }
+
+        let normalizedProgress = min(max(progress, 0), 1)
+        let visibleMinX = CGFloat(todayWeekIndex) - visibleWeekCount / 2
+        let visibleMaxX = CGFloat(todayWeekIndex) + visibleWeekCount / 2
+        let visibleRange = max(visibleMaxX - visibleMinX, 1)
+        let bottomY: CGFloat = 6
+        let topY: CGFloat = 0
+        let startProjection = visibleMinX - bottomY
+        let endProjection = visibleMaxX - topY
+        let bandCenterProjection = startProjection + (endProjection - startProjection) * normalizedProgress
+        let xProgress = min(max((CGFloat(weekIndex) - visibleMinX) / visibleRange, 0), 1)
+        let archLift = CGFloat(sin(Double(xProgress) * .pi)) * heatmapPressArchLift
+        let cellProjection = CGFloat(weekIndex) - CGFloat(dayIndex) - archLift
+
+        return abs(cellProjection - bandCenterProjection) <= heatmapPressBandHalfWidth ? 1 : 0
     }
 
     private func makeYearLayout() -> YearLayout {
@@ -463,6 +627,14 @@ private struct YearLayout {
     let displayYear: Int
     let weeks: [WeekColumn]
     let monthMarkers: [MonthMarker]
+}
+
+private struct HeatmapCellAppearance {
+    let fillColor: Color
+    let showTodayDot: Bool
+    let showTodayBorder: Bool
+    let isColored: Bool
+    let glowColor: Color?
 }
 
 private struct WeekColumn: Identifiable {

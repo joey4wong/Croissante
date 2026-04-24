@@ -8,6 +8,7 @@ struct CroissanteApp: App {
     @StateObject private var appState: AppState
     @StateObject private var storeKitManager: StoreKitManager
     @StateObject private var srsManager = SRSManager.shared
+    @StateObject private var favoritesStore = FavoritesStore()
 
     init() {
         let appState = AppState()
@@ -22,6 +23,7 @@ struct CroissanteApp: App {
                 .environmentObject(appState)
                 .environmentObject(storeKitManager)
                 .environmentObject(srsManager)
+                .environmentObject(favoritesStore)
                 .preferredColorScheme(preferredColorScheme)
                 .onAppear {
                     srsManager.configure(with: appState)
