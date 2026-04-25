@@ -53,13 +53,6 @@ private enum MainTab: CaseIterable, Hashable {
     case search
 }
 
-private struct SettingsAvatarBottomPreferenceKey: PreferenceKey {
-    nonisolated static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 private struct AppIconPickerLayout {
     let tileSize: CGFloat
     let contentInset: CGFloat
@@ -3508,6 +3501,7 @@ struct SearchSelectedWordCardView: View {
                     resetTransformAfterSwipe: false,
                     allowsBlurrySwipe: allowsBlurrySwipe,
                     allowsInlineEditing: true,
+                    audioReactiveDividerEnabled: true,
                     onSwipeForgot: { swipedWordId in
                         onDismiss()
                         DispatchQueue.main.async {
@@ -5299,7 +5293,6 @@ private struct SettingsScreen: View {
     @State private var appIconErrorMessage: String?
     @State private var showingAppIconError = false
     @State private var showingResetLearningDataAlert = false
-    @State private var avatarBottomGlobalY: CGFloat = 0
     @State private var themeSelectionOverride: Int?
     @State private var themeApplyTask: Task<Void, Never>?
     @AppStorage("dailyReminderEnabled") private var dailyReminderEnabled = false
@@ -5350,6 +5343,12 @@ private struct SettingsScreen: View {
     private let appIconPickerDetentFraction: CGFloat = 0.5
     private let appIconPickerContentInset: CGFloat = 16
     private let appIconPickerBottomInset: CGFloat = 4
+    private static let reminderTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     private var appIconPickerLayout: AppIconPickerLayout {
         AppIconPickerLayout(
@@ -5428,10 +5427,7 @@ private struct SettingsScreen: View {
         components.minute = min(max(dailyReminderMinute, 0), 59)
         components.second = 0
         let date = Calendar.current.date(from: components) ?? Date()
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
+        return Self.reminderTimeFormatter.string(from: date)
     }
 
     private func setReminderStepIndex(_ index: Int) {
@@ -5776,14 +5772,6 @@ private struct SettingsScreen: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: SettingsAvatarBottomPreferenceKey.self,
-                            value: geo.frame(in: .global).maxY
-                        )
-                    }
-                )
                 .sheet(isPresented: $showingAvatarPicker) {
                     AvatarEditorView()
                         .environmentObject(appState)
@@ -6253,9 +6241,6 @@ private struct SettingsScreen: View {
 
                 Spacer(minLength: 24)
             }
-        }
-        .onPreferenceChange(SettingsAvatarBottomPreferenceKey.self) { y in
-            avatarBottomGlobalY = y
         }
         .sheet(isPresented: $showingMemberUnlock, onDismiss: {
             memberPaywallShowingAllPlans = false
@@ -7728,13 +7713,6 @@ private struct SettingsGroupCard<Content: View>: View {
         return colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.95)
     }
 
-    private var cardShadowColor: Color {
-        if AppColors.usesLightAppearance(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark) {
-            return Color.black.opacity(0.06)
-        }
-        return colorScheme == .dark ? Color.clear : Color.black.opacity(0.04)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             content
@@ -7743,7 +7721,6 @@ private struct SettingsGroupCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .themedGlassSurface(themeMode: appState.themeMode, isDarkMode: colorScheme == .dark, elevated: true)
         )
-        .shadow(color: cardShadowColor, radius: 3, x: 0, y: 1)
     }
 }
 
