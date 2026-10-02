@@ -103,10 +103,6 @@ public class ElevenLabsTTSService: NSObject, ObservableObject {
         stopSystemSpeech()
     }
 
-    func isCurrentlySpeaking() -> Bool {
-        isPlaying || systemSynthesizer.isSpeaking
-    }
-
     private func setupAudioSession() {
         #if os(iOS)
         do {
@@ -261,38 +257,8 @@ public class ElevenLabsTTSService: NSObject, ObservableObject {
         }
     }
 
-    func preloadAudio(
-        for texts: [String],
-        language: String = "fr-FR",
-        contentType: ContentType = .sentence
-    ) async {
-        guard ttsEndpointURL != nil else { return }
-        for text in texts {
-            let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedText.isEmpty else { continue }
-            let cacheText = cacheTextKey(for: trimmedText, language: language, contentType: contentType)
-            guard !audioCache.hasCachedAudio(forText: cacheText) else { continue }
-            guard networkMonitor.isReachable else { break }
-
-            do {
-                let audioData = try await fetchAudioFromBackend(
-                    trimmedText,
-                    language: language,
-                    contentType: contentType,
-                    cachePolicy: .official
-                )
-                _ = audioCache.cacheAudioData(audioData, forText: cacheText)
-                try await Task.sleep(nanoseconds: 100_000_000)
-            } catch {}
-        }
-    }
-
     func clearCache() {
         audioCache.clearCache()
-    }
-
-    func getCacheStats() -> (size: Int64, count: Int) {
-        (audioCache.getCacheSize(), audioCache.getCacheFileCount())
     }
 
     private func makeAudioPlayer(from source: Any) throws -> AVAudioPlayer {

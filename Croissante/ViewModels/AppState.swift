@@ -226,29 +226,6 @@ struct WordSearchIndex: Sendable {
     }
 }
 
-public struct UserWordContentOverride: Codable, Equatable, Sendable, Identifiable {
-    public let wordId: String
-    public var translationEn: String?
-    public var translationZh: String?
-    public var exampleFr: String?
-    public var exampleEn: String?
-    public var exampleZh: String?
-
-    public var id: String { wordId }
-
-    public var isEmpty: Bool {
-        translationEn == nil && translationZh == nil && exampleFr == nil && exampleEn == nil && exampleZh == nil
-    }
-}
-
-enum UserWordContentField {
-    case translationEn
-    case translationZh
-    case exampleFr
-    case exampleEn
-    case exampleZh
-}
-
 struct UserWordLocalizedContent: Equatable, Sendable {
     var translation: String
     var frenchExample: String
@@ -259,7 +236,6 @@ struct LibrarySyncPayload: Codable {
     var words: [SimpleWord]
     var favoriteWordIds: [String]
     var dailyLookupCounts: [String: Int]
-    var userWordContentOverrides: [String: UserWordContentOverride]
     var updatedAt: Date
 }
 
@@ -276,7 +252,6 @@ public final class AppState: ObservableObject {
         static let appIconName = "appIconName"
         static let avatarPath = "avatarPath"
         static let selectedVoiceId = "selectedVoiceId"
-        static let userWordContentOverrides = "user_word_content_overrides_v1"
         static let dailyLookupCounts = "daily_lookup_counts_v1"
         static let libraryUpdatedAt = "library_updated_at_v1"
     }
@@ -286,7 +261,6 @@ public final class AppState: ObservableObject {
     @Published public var conjugationFormsByLemma: [String: [String]] = [:]
     @Published var wordSearchIndex: WordSearchIndex = .empty
     @Published public private(set) var hasCompletedInitialResourceLoad: Bool = false
-    @Published private var userWordContentOverrides: [String: UserWordContentOverride] = [:]
 
     @Published public var themeMode: ThemeMode = .system {
         didSet { userDefaults.set(themeMode.rawValue, forKey: Keys.themeMode) }
@@ -308,8 +282,11 @@ public final class AppState: ObservableObject {
     }
     @Published public var iCloudSyncEnabled: Bool = false {
         didSet {
+            let applied = ICloudSyncService.shared.setEnabled(iCloudSyncEnabled)
+            if applied != iCloudSyncEnabled {
+                iCloudSyncEnabled = applied
+            }
             userDefaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSyncEnabled)
-            ICloudSyncService.shared.setEnabled(iCloudSyncEnabled)
             if iCloudSyncEnabled { requestICloudPush() }
         }
     }
@@ -339,7 +316,6 @@ public final class AppState: ObservableObject {
     }
 
     private var wordByIdMap: [String: SimpleWord] = [:]
-    private var wordSiblingMap: [String: [String]] = [:]
     private var conjugationData: ConjugationData = .empty
     private var libraryUpdatedAt: Date = .distantPast
     private var favoriteWordIdsForSync: (() -> [String])?
@@ -384,119 +360,48 @@ public final class AppState: ObservableObject {
     }
 
     public func translationText(for word: SimpleWord) -> String {
-        let override = userWordContentOverrides[word.id]
+        let zh = word.translationZh.trimmingCharacters(in: .whitespacesAndNewlines)
+        let en = word.translationEn.trimmingCharacters(in: .whitespacesAndNewlines)
         switch currentLanguage {
-        case .en:
-            if let value = override?.translationEn { return normalizedOverrideText(value) }
-            return firstNonEmpty(
-                resolvedText(override?.translationEn, fallback: word.translationEn),
-                resolvedText(override?.translationZh, fallback: word.translationZh)
-            )
-        case .zh:
-            if let value = override?.translationZh { return normalizedOverrideText(value) }
-            return firstNonEmpty(
-                resolvedText(override?.translationZh, fallback: word.translationZh),
-                resolvedText(override?.translationEn, fallback: word.translationEn)
-            )
+        case .en: return en.isEmpty ? zh : en
+        case .zh: return zh.isEmpty ? en : zh
         }
     }
 
     public func translatedExampleText(for word: SimpleWord) -> String {
-        let override = userWordContentOverrides[word.id]
         switch currentLanguage {
-        case .en: return resolvedText(override?.exampleEn, fallback: word.exampleEn)
-        case .zh: return resolvedText(override?.exampleZh, fallback: word.exampleZh)
+        case .en: return word.exampleEn.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .zh: return word.exampleZh.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
     public func frenchExampleText(for word: SimpleWord) -> String {
-        resolvedText(userWordContentOverrides[word.id]?.exampleFr, fallback: word.exampleFr)
+        word.exampleFr.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func editableLocalizedContent(for word: SimpleWord) -> UserWordLocalizedContent {
-        let override = userWordContentOverrides[word.id]
-        switch currentLanguage {
-        case .en:
-            return UserWordLocalizedContent(
-                translation: override?.translationEn ?? normalizedOverrideText(word.translationEn),
-                frenchExample: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
-                example: override?.exampleEn ?? normalizedOverrideText(word.exampleEn)
-            )
-        case .zh:
-            return UserWordLocalizedContent(
-                translation: override?.translationZh ?? normalizedOverrideText(word.translationZh),
-                frenchExample: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
-                example: override?.exampleZh ?? normalizedOverrideText(word.exampleZh)
-            )
-        }
-    }
-
-    func editableContent(for word: SimpleWord) -> UserWordContentOverride {
-        let override = userWordContentOverrides[word.id]
-        return UserWordContentOverride(
-            wordId: word.id,
-            translationEn: override?.translationEn ?? normalizedOverrideText(word.translationEn),
-            translationZh: override?.translationZh ?? normalizedOverrideText(word.translationZh),
-            exampleFr: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
-            exampleEn: override?.exampleEn ?? normalizedOverrideText(word.exampleEn),
-            exampleZh: override?.exampleZh ?? normalizedOverrideText(word.exampleZh)
+        UserWordLocalizedContent(
+            translation: currentLanguage == .zh ? word.translationZh : word.translationEn,
+            frenchExample: word.exampleFr,
+            example: translatedExampleText(for: word)
         )
-    }
-
-    func hasUserWordContentOverride(for word: SimpleWord, field: UserWordContentField) -> Bool {
-        guard let override = userWordContentOverrides[word.id] else { return false }
-        switch field {
-        case .translationEn: return override.translationEn != nil
-        case .translationZh: return override.translationZh != nil
-        case .exampleFr: return override.exampleFr != nil
-        case .exampleEn: return override.exampleEn != nil
-        case .exampleZh: return override.exampleZh != nil
-        }
-    }
-
-    func saveUserWordContentOverride(_ content: UserWordContentOverride, for word: SimpleWord) {
-        let override = UserWordContentOverride(
-            wordId: word.id,
-            translationEn: overrideValue(content.translationEn, official: word.translationEn),
-            translationZh: overrideValue(content.translationZh, official: word.translationZh),
-            exampleFr: overrideValue(content.exampleFr, official: word.exampleFr),
-            exampleEn: overrideValue(content.exampleEn, official: word.exampleEn),
-            exampleZh: overrideValue(content.exampleZh, official: word.exampleZh)
-        )
-
-        if override.isEmpty {
-            resetUserWordContentOverride(for: word)
-            return
-        }
-
-        userWordContentOverrides[word.id] = override
-        saveUserWordContentOverrides()
     }
 
     func saveLocalizedContent(_ content: UserWordLocalizedContent, for word: SimpleWord) {
-        var override = editableContent(for: word)
-        override.exampleFr = content.frenchExample
+        var updated = word
+        updated.exampleFr = content.frenchExample.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translation = content.translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let example = content.example.trimmingCharacters(in: .whitespacesAndNewlines)
         switch currentLanguage {
         case .en:
-            override.translationEn = content.translation
-            override.exampleEn = content.example
+            updated.translationEn = translation
+            updated.exampleEn = example
         case .zh:
-            override.translationZh = content.translation
-            override.exampleZh = content.example
+            updated.translationZh = translation
+            updated.exampleZh = example
         }
-        saveUserWordContentOverride(override, for: word)
-    }
-
-    func resetUserWordContentOverride(for word: SimpleWord) {
-        guard userWordContentOverrides[word.id] != nil else { return }
-        userWordContentOverrides.removeValue(forKey: word.id)
-        saveUserWordContentOverrides()
-    }
-
-    func clearUserWordContentOverrides() {
-        guard !userWordContentOverrides.isEmpty else { return }
-        userWordContentOverrides = [:]
-        saveUserWordContentOverrides()
+        guard updated != word else { return }
+        updateWord(updated)
     }
 
     // MARK: - Library
@@ -536,16 +441,12 @@ public final class AppState: ObservableObject {
     public func removeWord(id: String) {
         guard words.contains(where: { $0.id == id }) else { return }
         words.removeAll { $0.id == id }
-        userWordContentOverrides.removeValue(forKey: id)
-        saveUserWordContentOverrides(skipICloudPush: true)
         commitLibraryChange()
     }
 
     public func resetLibrary() {
         words = []
         dailyLookupCounts = [:]
-        userWordContentOverrides = [:]
-        saveUserWordContentOverrides(skipICloudPush: true)
         commitLibraryChange()
     }
 
@@ -555,17 +456,6 @@ public final class AppState: ObservableObject {
 
     public func getWordById(_ id: String) -> SimpleWord? {
         wordByIdMap[id]
-    }
-
-    public func getAllSenses(_ word: SimpleWord) -> [SimpleWord] {
-        let key = Self.senseGroupingKey(for: word)
-        let ids = wordSiblingMap[key] ?? []
-        return ids
-            .compactMap { wordByIdMap[$0] }
-            .sorted { lhs, rhs in
-                if lhs.senseIndex != rhs.senseIndex { return lhs.senseIndex < rhs.senseIndex }
-                return lhs.id < rhs.id
-            }
     }
 
     private func incrementTodayLookupCount() {
@@ -588,9 +478,7 @@ public final class AppState: ObservableObject {
     }
 
     private func rebuildDerivedState() {
-        let links = Self.buildWordLinks(words)
-        wordSiblingMap = links.siblingMap
-        wordByIdMap = links.byIdMap
+        wordByIdMap = Dictionary(words.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         rebuildSearchIndex()
     }
 
@@ -623,17 +511,18 @@ public final class AppState: ObservableObject {
             language = saved
         }
         autoPlay = userDefaults.bool(forKey: Keys.autoPlay)
-        iCloudSyncEnabled = userDefaults.bool(forKey: Keys.iCloudSyncEnabled)
+        var savedICloudSync = userDefaults.bool(forKey: Keys.iCloudSyncEnabled)
+        if savedICloudSync && !ICloudSyncService.isAccountAvailable {
+            savedICloudSync = false
+            userDefaults.set(false, forKey: Keys.iCloudSyncEnabled)
+        }
+        iCloudSyncEnabled = savedICloudSync
         appIconName = userDefaults.string(forKey: Keys.appIconName)
         if let saved = userDefaults.string(forKey: Keys.avatarPath) {
             avatarPath = saved
         }
         if let saved = userDefaults.string(forKey: Keys.selectedVoiceId) {
             selectedVoiceId = saved
-        }
-        if let data = userDefaults.data(forKey: Keys.userWordContentOverrides),
-           let overrides = try? JSONDecoder().decode([String: UserWordContentOverride].self, from: data) {
-            userWordContentOverrides = overrides.filter { !$0.key.isEmpty && !$0.value.isEmpty }
         }
         if let counts = userDefaults.dictionary(forKey: Keys.dailyLookupCounts) as? [String: Int] {
             dailyLookupCounts = counts
@@ -658,19 +547,6 @@ public final class AppState: ObservableObject {
         Task.detached(priority: .utility) {
             guard let data = try? Self.makeEncoder().encode(snapshot) else { return }
             try? data.write(to: url, options: .atomic)
-        }
-    }
-
-    private func saveUserWordContentOverrides(skipICloudPush: Bool = false) {
-        if userWordContentOverrides.isEmpty {
-            userDefaults.removeObject(forKey: Keys.userWordContentOverrides)
-        } else if let data = try? JSONEncoder().encode(userWordContentOverrides) {
-            userDefaults.set(data, forKey: Keys.userWordContentOverrides)
-        }
-        if !skipICloudPush {
-            libraryUpdatedAt = Date()
-            userDefaults.set(libraryUpdatedAt, forKey: Keys.libraryUpdatedAt)
-            requestICloudPush()
         }
     }
 
@@ -700,12 +576,11 @@ public final class AppState: ObservableObject {
     }
 
     func requestICloudPush() {
-        guard iCloudSyncEnabled, hasCompletedInitialResourceLoad else { return }
+        guard iCloudSyncEnabled, ICloudSyncService.isAccountAvailable, hasCompletedInitialResourceLoad else { return }
         let payload = LibrarySyncPayload(
             words: words,
             favoriteWordIds: favoriteWordIdsForSync?() ?? [],
             dailyLookupCounts: dailyLookupCounts,
-            userWordContentOverrides: userWordContentOverrides,
             updatedAt: libraryUpdatedAt
         )
         guard let data = try? Self.makeEncoder().encode(payload) else { return }
@@ -721,35 +596,13 @@ public final class AppState: ObservableObject {
         merged.append(contentsOf: words.filter { !remoteIds.contains($0.id) })
         words = merged
         dailyLookupCounts = dailyLookupCounts.merging(payload.dailyLookupCounts) { max($0, $1) }
-        userWordContentOverrides = payload.userWordContentOverrides.filter { !$0.key.isEmpty && !$0.value.isEmpty }
         libraryUpdatedAt = payload.updatedAt
-        saveUserWordContentOverrides(skipICloudPush: true)
         rebuildDerivedState()
         saveLibrary()
         applyFavoriteWordIdsFromSync?(payload.favoriteWordIds)
     }
 
     // MARK: - Helpers
-
-    private func resolvedText(_ override: String?, fallback: String) -> String {
-        normalizedOverrideText(override ?? fallback)
-    }
-
-    private func normalizedOverrideText(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func firstNonEmpty(_ values: String...) -> String {
-        for value in values where !value.isEmpty {
-            return value
-        }
-        return ""
-    }
-
-    private func overrideValue(_ value: String?, official: String) -> String? {
-        let normalized = normalizedOverrideText(value ?? "")
-        return normalized == normalizedOverrideText(official) ? nil : normalized
-    }
 
     nonisolated private static func loadConjugation(bundlePath: String) async -> ConjugationData {
         await Task.detached(priority: .utility) {
@@ -769,22 +622,5 @@ public final class AppState: ObservableObject {
         #else
         return Bundle.main.bundlePath
         #endif
-    }
-
-    nonisolated private static func buildWordLinks(_ words: [SimpleWord]) -> (siblingMap: [String: [String]], byIdMap: [String: SimpleWord]) {
-        var siblingMap: [String: [String]] = [:]
-        var byIdMap: [String: SimpleWord] = [:]
-        for word in words {
-            let key = senseGroupingKey(for: word)
-            if !key.isEmpty {
-                siblingMap[key, default: []].append(word.id)
-            }
-            byIdMap[word.id] = word
-        }
-        return (siblingMap, byIdMap)
-    }
-
-    nonisolated private static func senseGroupingKey(for word: SimpleWord) -> String {
-        (word.word.isEmpty ? word.displayWord : word.word).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

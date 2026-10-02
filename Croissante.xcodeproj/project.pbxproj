@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -16,7 +16,6 @@
 		B10000000000000000000017 /* ICloudSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000117 /* ICloudSyncService.swift */; };
 		B10000000000000000000018 /* ImagePickerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000118 /* ImagePickerService.swift */; };
 		B1000000000000000000001B /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011B /* AppState.swift */; };
-		B1000000000000000000001C /* AmbientLightBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011C /* AmbientLightBackground.swift */; };
 		B1000000000000000000001D /* CheckInHeatmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011D /* CheckInHeatmapView.swift */; };
 		B1000000000000000000001F /* SearchSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000011F /* SearchSheetView.swift */; };
 		B10000000000000000000022 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000122 /* ContentView.swift */; };
@@ -27,7 +26,6 @@
 		B10000000000000000000036 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000128 /* NetworkMonitor.swift */; };
 		B1000000000000000000003B /* TTSVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000133 /* TTSVoice.swift */; };
 		N10000000000000000000001 /* FavoritesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10000000000000000000101 /* FavoritesStore.swift */; };
-		N10000000000000000000002 /* PillSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10000000000000000000102 /* PillSelector.swift */; };
 		N10000000000000000000003 /* SettingsTabGearAnimationBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10000000000000000000103 /* SettingsTabGearAnimationBridge.swift */; };
 		N10000000000000000000004 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10000000000000000000104 /* HomeScreen.swift */; };
 		N10000000000000000000005 /* WordGalaxyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10000000000000000000105 /* WordGalaxyView.swift */; };
@@ -37,6 +35,8 @@
 		N10000000000000000000009 /* ProgressScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10000000000000000000109 /* ProgressScreen.swift */; };
 		N1000000000000000000000A /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = N1000000000000000000010A /* SettingsScreen.swift */; };
 		N1000000000000000000000B /* FAQViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = N1000000000000000000010B /* FAQViews.swift */; };
+		N1000000000000000000000C /* AppIconPhysicsPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = N1000000000000000000010C /* AppIconPhysicsPicker.swift */; };
+		N1000000000000000000000D /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = N1000000000000000000010D /* SettingsComponents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,7 +50,6 @@
 		B10000000000000000000117 /* ICloudSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSyncService.swift; sourceTree = "<group>"; };
 		B10000000000000000000118 /* ImagePickerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePickerService.swift; sourceTree = "<group>"; };
 		B1000000000000000000011B /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
-		B1000000000000000000011C /* AmbientLightBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientLightBackground.swift; sourceTree = "<group>"; };
 		B1000000000000000000011D /* CheckInHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInHeatmapView.swift; sourceTree = "<group>"; };
 		B1000000000000000000011F /* SearchSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSheetView.swift; sourceTree = "<group>"; };
 		B10000000000000000000122 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -63,7 +62,6 @@
 		B10000000000000000000133 /* TTSVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSVoice.swift; sourceTree = "<group>"; };
 		CB1004D52F6E071B009C269E /* CroissanteDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CroissanteDebug.entitlements; sourceTree = "<group>"; };
 		N10000000000000000000101 /* FavoritesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesStore.swift; sourceTree = "<group>"; };
-		N10000000000000000000102 /* PillSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillSelector.swift; sourceTree = "<group>"; };
 		N10000000000000000000103 /* SettingsTabGearAnimationBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabGearAnimationBridge.swift; sourceTree = "<group>"; };
 		N10000000000000000000104 /* HomeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreen.swift; sourceTree = "<group>"; };
 		N10000000000000000000105 /* WordGalaxyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordGalaxyView.swift; sourceTree = "<group>"; };
@@ -73,6 +71,8 @@
 		N10000000000000000000109 /* ProgressScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressScreen.swift; sourceTree = "<group>"; };
 		N1000000000000000000010A /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		N1000000000000000000010B /* FAQViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FAQViews.swift; sourceTree = "<group>"; };
+		N1000000000000000000010C /* AppIconPhysicsPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconPhysicsPicker.swift; sourceTree = "<group>"; };
+		N1000000000000000000010D /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsComponents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -185,10 +185,8 @@
 		B10000000000000000000207 /* Components */ = {
 			isa = PBXGroup;
 			children = (
-				B1000000000000000000011C /* AmbientLightBackground.swift */,
 				B1000000000000000000011D /* CheckInHeatmapView.swift */,
 				B1000000000000000000011F /* SearchSheetView.swift */,
-				N10000000000000000000102 /* PillSelector.swift */,
 				N10000000000000000000103 /* SettingsTabGearAnimationBridge.swift */,
 			);
 			path = Components;
@@ -241,6 +239,8 @@
 			children = (
 				N1000000000000000000010A /* SettingsScreen.swift */,
 				N1000000000000000000010B /* FAQViews.swift */,
+				N1000000000000000000010C /* AppIconPhysicsPicker.swift */,
+				N1000000000000000000010D /* SettingsComponents.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -276,7 +276,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2630;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					A10000000000000000000006 = {
 						CreatedOnToolsVersion = 26.0;
@@ -286,15 +286,14 @@
 				};
 			};
 			buildConfigurationList = A1000000000000000000000A /* Build configuration list for PBXProject "Croissante" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
-			hasScannedForEncodings = 0;
+			hasScannedForEncodings = 1;
 			knownRegions = (
 				en,
 				Base,
 			);
 			mainGroup = A10000000000000000000002;
-			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000004 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -331,12 +330,10 @@
 				B10000000000000000000017 /* ICloudSyncService.swift in Sources */,
 				B10000000000000000000018 /* ImagePickerService.swift in Sources */,
 				B1000000000000000000001B /* AppState.swift in Sources */,
-				B1000000000000000000001C /* AmbientLightBackground.swift in Sources */,
 				B1000000000000000000001D /* CheckInHeatmapView.swift in Sources */,
 				B1000000000000000000001F /* SearchSheetView.swift in Sources */,
 				B10000000000000000000022 /* ContentView.swift in Sources */,
 				N10000000000000000000001 /* FavoritesStore.swift in Sources */,
-				N10000000000000000000002 /* PillSelector.swift in Sources */,
 				N10000000000000000000003 /* SettingsTabGearAnimationBridge.swift in Sources */,
 				N10000000000000000000004 /* HomeScreen.swift in Sources */,
 				N10000000000000000000005 /* WordGalaxyView.swift in Sources */,
@@ -346,6 +343,8 @@
 				N10000000000000000000009 /* ProgressScreen.swift in Sources */,
 				N1000000000000000000000A /* SettingsScreen.swift in Sources */,
 				N1000000000000000000000B /* FAQViews.swift in Sources */,
+				N1000000000000000000000C /* AppIconPhysicsPicker.swift in Sources */,
+				N1000000000000000000000D /* SettingsComponents.swift in Sources */,
 				B10000000000000000000034 /* AudioCacheManager.swift in Sources */,
 				B10000000000000000000035 /* ElevenLabsTTSService.swift in Sources */,
 				B10000000000000000000036 /* NetworkMonitor.swift in Sources */,
@@ -359,6 +358,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
@@ -399,6 +399,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;

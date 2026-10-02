@@ -8,7 +8,6 @@ final class ICloudSyncService {
         static let learningPayload = "icloud_learning_sync_payload_v1"
     }
 
-    private let ubiquitousStore = NSUbiquitousKeyValueStore.default
     private let maxPayloadBytes = 900_000
     private let pushDebounceNanoseconds: UInt64 = 900_000_000
     private var externalChangeObserver: NSObjectProtocol?
@@ -18,6 +17,15 @@ final class ICloudSyncService {
     private var lastPushedPayloadFingerprint: Int?
     private(set) var isEnabled = false
 
+    static var isAccountAvailable: Bool {
+        FileManager.default.ubiquityIdentityToken != nil
+    }
+
+    private var ubiquitousStore: NSUbiquitousKeyValueStore? {
+        guard Self.isAccountAvailable else { return nil }
+        return NSUbiquitousKeyValueStore.default
+    }
+
     private init() {}
 
     func configure(isEnabled: Bool, onRemotePayload: @escaping (Data) -> Void) {
@@ -25,13 +33,15 @@ final class ICloudSyncService {
         setEnabled(isEnabled)
     }
 
-    func setEnabled(_ enabled: Bool) {
-        guard isEnabled != enabled else { return }
-        isEnabled = enabled
+    @discardableResult
+    func setEnabled(_ enabled: Bool) -> Bool {
+        let effective = enabled && Self.isAccountAvailable
+        guard isEnabled != effective else { return effective }
+        isEnabled = effective
 
-        if enabled {
+        if effective {
             startObserving()
-            ubiquitousStore.synchronize()
+            ubiquitousStore?.synchronize()
             if let payload = payloadData() {
                 remotePayloadHandler?(payload)
             }
@@ -41,14 +51,16 @@ final class ICloudSyncService {
             pendingPushTask = nil
             lastQueuedPayloadFingerprint = nil
         }
+        return effective
     }
 
     func payloadData() -> Data? {
-        ubiquitousStore.data(forKey: Keys.learningPayload)
+        guard let ubiquitousStore else { return nil }
+        return ubiquitousStore.data(forKey: Keys.learningPayload)
     }
 
     func push(payload: Data) {
-        guard isEnabled else { return }
+        guard isEnabled, Self.isAccountAvailable else { return }
         guard payload.count <= maxPayloadBytes else { return }
 
         let fingerprint = payload.hashValue
@@ -68,7 +80,7 @@ final class ICloudSyncService {
     }
 
     private func startObserving() {
-        guard externalChangeObserver == nil else { return }
+        guard externalChangeObserver == nil, let ubiquitousStore else { return }
         externalChangeObserver = NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
             object: ubiquitousStore,
@@ -101,7 +113,7 @@ final class ICloudSyncService {
 
     private func commitPush(payload: Data, fingerprint: Int) {
         pendingPushTask = nil
-        guard isEnabled else { return }
+        guard isEnabled, let ubiquitousStore else { return }
         guard payload.count <= maxPayloadBytes else { return }
         ubiquitousStore.set(payload, forKey: Keys.learningPayload)
         ubiquitousStore.synchronize()

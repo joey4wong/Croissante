@@ -158,7 +158,7 @@ struct WordGalaxyView: View {
             })
             .opacity(addButtonOpacity)
             .allowsHitTesting(isInteractive && selectedCardIndex == nil)
-            .offset(y: -116)
+            .offset(y: -29)
             .zIndex(0)
 
             if galaxyOpacity > 0.001 {
@@ -339,32 +339,18 @@ struct WordGalaxyView: View {
 
 struct GalaxyAddButton: View {
     let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathe = false
-
-    private var isDarkMode: Bool { colorScheme == .dark }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "plus")
-                .font(.system(size: 88, weight: .heavy, design: .rounded))
-                .foregroundStyle(Color.white)
-                .shadow(color: Color.green.opacity(breathe ? 0.85 : 0.5), radius: breathe ? 14 : 8)
-                .shadow(color: Color.green.opacity(breathe ? 0.45 : 0.25), radius: breathe ? 32 : 20)
-                .shadow(color: Color.black.opacity(isDarkMode ? 0.3 : 0.12), radius: 6, x: 0, y: 4)
-                .frame(width: 152, height: 152)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 56, height: 56)
                 .contentShape(Circle())
-                .scaleEffect(breathe ? 1.04 : 1.0)
         }
         .buttonStyle(GalaxyAddButtonStyle())
+        .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel("Add word")
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
-                breathe = true
-            }
-        }
     }
 }
 

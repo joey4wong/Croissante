@@ -99,62 +99,8 @@ enum FavoriteCarouselMotion {
     }
 }
 
-enum FavoritesSearchPhase: Equatable {
-    case browsing
-    case enteringSearch
-    case active
-}
-
-struct FavoritesCollectionView: View {
-    @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var favoritesStore: FavoritesStore
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
-
-    @State private var catalogWordsSnapshot: [SimpleWord] = []
-
-    private var isDarkMode: Bool { colorScheme == .dark }
-
-    var body: some View {
-        NavigationStack {
-            GeometryReader { geo in
-                ZStack {
-                    ThemedBackgroundView(themeMode: appState.themeMode, isDarkMode: isDarkMode)
-                    FavoritesDottedBackdrop(isDarkMode: isDarkMode)
-                        .opacity(isDarkMode ? 0.72 : 0.42)
-                        .allowsHitTesting(false)
-
-                    if catalogWordsSnapshot.isEmpty {
-                        DiscoverEmptyStateView(
-                            title: appState.localized("No favorites yet", "暂无收藏"),
-                            subtitle: appState.localized("Tap the graduation cap on a card to save words here.", "在卡片上点击学位帽即可收藏单词。")
-                        )
-                        .padding(.horizontal, 24)
-                    } else {
-                        FavoritesInteractiveRoot(
-                            catalogWords: catalogWordsSnapshot,
-                            onDismiss: { dismiss() }
-                        )
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                    }
-                }
-                .frame(width: geo.size.width, height: geo.size.height)
-                .ignoresSafeArea(.container, edges: .bottom)
-            }
-        }
-        .onAppear(perform: refreshCatalogSnapshot)
-        .onChange(of: favoritesStore.favoriteWordIds) { _, _ in refreshCatalogSnapshot() }
-        .onReceive(appState.$words) { _ in refreshCatalogSnapshot() }
-    }
-
-    private func refreshCatalogSnapshot() {
-        catalogWordsSnapshot = favoritesStore.resolvedWords(from: appState.words)
-    }
-}
-
 struct FavoritesInteractiveRoot: View {
     let catalogWords: [SimpleWord]
-    let onDismiss: () -> Void
 
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var favoritesStore: FavoritesStore
@@ -162,41 +108,18 @@ struct FavoritesInteractiveRoot: View {
 
     @State private var carouselIndex: CGFloat = 0
     @State private var carouselDragStartIndex: CGFloat?
-    @State private var searchPhase: FavoritesSearchPhase = .browsing
-    @State private var searchText = ""
     @State private var hasAppliedInitialSelection = false
     @State private var lastDockGearHapticIndex: Int?
     @State private var isCarouselSettling = false
     @State private var carouselSettleToken = 0
-    @State private var searchTransitionToken = 0
-    @FocusState private var isSearchFieldFocused: Bool
 
     private var isDarkMode: Bool { colorScheme == .dark }
-    private var isSearchPresented: Bool { searchPhase != .browsing }
-    private var isBrowsingFavorites: Bool { searchPhase == .browsing }
-    private var isEnteringSearch: Bool { searchPhase == .enteringSearch }
-    private var isSearchActive: Bool { searchPhase == .active }
-    private var searchScatterDuration: TimeInterval { 0.24 }
-    private var searchFocusDelay: TimeInterval { 0.05 }
 
     private var selectedIndex: Int {
         FavoriteCarouselMotion.nearestIndex(for: carouselIndex, count: displayedWords.count)
     }
 
-    private var displayedWords: [SimpleWord] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return catalogWords }
-        return catalogWords.filter { word in
-            [
-                word.displayWord,
-                word.word,
-                word.translationEn,
-                word.translationZh,
-                word.tag
-            ]
-                .contains { $0.localizedCaseInsensitiveContains(query) }
-        }
-    }
+    private var displayedWords: [SimpleWord] { catalogWords }
 
     private var displayedWordIds: [String] {
         displayedWords.map(\.id)
@@ -209,74 +132,34 @@ struct FavoritesInteractiveRoot: View {
     }
 
     private func favoritesShowcase(size: CGSize) -> some View {
-        ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: 18)
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: 18)
 
-                if displayedWords.isEmpty && isBrowsingFavorites {
-                    Spacer(minLength: 20)
-                    DiscoverEmptyStateView(
-                        title: appState.localized("No matches", "没有匹配结果"),
-                        subtitle: appState.localized("Try another favorite word.", "试试搜索另一个收藏单词。")
-                    )
-                    .padding(.horizontal, 28)
-                    Spacer(minLength: 22)
-                } else if !isSearchActive {
-                    Spacer(minLength: 16)
-                    FavoritesCarouselView(
-                        words: displayedWords,
-                        carouselIndex: carouselIndex,
-                        isDarkMode: isDarkMode,
-                        isSettling: isCarouselSettling,
-                        isExitingForSearch: isEnteringSearch,
-                        onDragChanged: updateCarouselDrag,
-                        onDragEnded: finishCarouselDrag
-                    )
-                    .frame(maxWidth: .infinity)
-                    .frame(height: max(300, min(size.height * 0.48, 430)))
-                    Spacer(minLength: 8)
-                } else {
-                    Spacer(minLength: 0)
-                }
+            Spacer(minLength: 16)
+            FavoritesCarouselView(
+                words: displayedWords,
+                carouselIndex: carouselIndex,
+                isDarkMode: isDarkMode,
+                isSettling: isCarouselSettling,
+                onDragChanged: updateCarouselDrag,
+                onDragEnded: finishCarouselDrag
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: max(300, min(size.height * 0.48, 430)))
+            Spacer(minLength: 8)
 
-                if !isSearchActive {
-                    FavoritesControlDock(
-                        count: displayedWords.count,
-                        carouselIndex: carouselIndex,
-                        isDarkMode: isDarkMode,
-                        onScrubIndexChanged: updateDockScrub,
-                        onScrubIndexEnded: finishDockScrub,
-                        onDismiss: onDismiss,
-                        onToggleSearch: toggleSearch,
-                        onToggleFavorite: removeSelectedFavorite
-                    )
-                    .frame(height: 176)
-                    .padding(.horizontal, -8)
-                    .opacity(isBrowsingFavorites ? 1 : 0)
-                    .scaleEffect(isBrowsingFavorites ? 1 : 0.94, anchor: .bottom)
-                    .offset(y: isBrowsingFavorites ? 0 : 54)
-                    .allowsHitTesting(isBrowsingFavorites)
-                }
-            }
-            .allowsHitTesting(isBrowsingFavorites)
-            .zIndex(0)
-
-            if isSearchActive {
-                searchResultsLayer(size: size)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .zIndex(1)
-            }
-
-            if isSearchPresented {
-                searchBar
-                    .padding(.horizontal, 24)
-                    .padding(.top, 18)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(2)
-            }
+            FavoritesControlDock(
+                count: displayedWords.count,
+                carouselIndex: carouselIndex,
+                isDarkMode: isDarkMode,
+                onScrubIndexChanged: updateDockScrub,
+                onScrubIndexEnded: finishDockScrub,
+                onToggleFavorite: removeSelectedFavorite
+            )
+            .frame(height: 176)
+            .padding(.horizontal, -8)
         }
-        .animation(.easeOut(duration: searchScatterDuration), value: searchPhase)
         .frame(width: size.width, height: size.height, alignment: .top)
         .onAppear(perform: resetInitialSelectionToMiddle)
         .onChange(of: displayedWordIds) { _, _ in
@@ -286,128 +169,12 @@ struct FavoritesInteractiveRoot: View {
                 applyInitialSelectionIfNeeded()
             }
         }
-        .onChange(of: searchText) { _, _ in
-            clampCarouselIndex()
-        }
         .onChange(of: selectedIndex) { _, _ in
             ElevenLabsTTSService.stopPlayback()
         }
         .onDisappear {
-            searchTransitionToken += 1
-            isSearchFieldFocused = false
             ElevenLabsTTSService.stopPlayback()
         }
-    }
-
-    private func searchResultsLayer(size: CGSize) -> some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 82)
-
-            if displayedWords.isEmpty {
-                Spacer(minLength: 24)
-                DiscoverEmptyStateView(
-                    title: appState.localized("No matches", "没有匹配结果"),
-                    subtitle: appState.localized("Try another favorite word.", "试试搜索另一个收藏单词。")
-                )
-                .padding(.horizontal, 28)
-                Spacer(minLength: 24)
-            } else {
-                List {
-                    ForEach(displayedWords) { word in
-                        FavoriteSearchResultRow(
-                            word: word,
-                            isDarkMode: isDarkMode
-                        ) {
-                            selectSearchResult(word)
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
-                        .listRowBackground(Color.clear)
-                    }
-                }
-                .listStyle(.plain)
-                .scrollDismissesKeyboard(.immediately)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
-                .padding(.bottom, 34)
-            }
-        }
-        .frame(width: size.width, height: size.height, alignment: .top)
-    }
-
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .semibold))
-            searchTextField
-
-            if !searchText.isEmpty {
-                clearSearchButton
-            }
-
-            closeSearchButton
-        }
-        .font(.system(size: 15, weight: .medium))
-        .foregroundStyle(searchBarForeground)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(searchBarBackground)
-        .overlay(searchBarBorder)
-    }
-
-    private var searchTextField: some View {
-        let placeholder = appState.localized("Search favorites", "搜索收藏")
-        return TextField(placeholder, text: $searchText)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .submitLabel(.search)
-            .focused($isSearchFieldFocused)
-    }
-
-    private var clearSearchButton: some View {
-        Button {
-            FeedbackService.cardMetaButtonTap()
-            searchText = ""
-        } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 14, weight: .semibold))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(appState.localized("Clear search", "清除搜索"))
-    }
-
-    private var closeSearchButton: some View {
-        Button {
-            FeedbackService.cardMetaButtonTap()
-            exitSearch()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .bold))
-                .frame(width: 22, height: 22)
-                .background(
-                    Circle()
-                        .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(appState.localized("Close search", "关闭搜索"))
-    }
-
-    private var searchBarForeground: Color {
-        isDarkMode ? Color.white.opacity(0.76) : Color.black.opacity(0.64)
-    }
-
-    private var searchBarBackground: some View {
-        Capsule(style: .continuous)
-            .fill(isDarkMode ? Color.white.opacity(0.10) : Color.black.opacity(0.055))
-    }
-
-    private var searchBarBorder: some View {
-        Capsule(style: .continuous)
-            .stroke(isDarkMode ? Color.white.opacity(0.10) : Color.black.opacity(0.06), lineWidth: 1)
     }
 
     private func updateCarouselDrag(_ translationX: CGFloat, width: CGFloat) {
@@ -563,88 +330,6 @@ struct FavoritesInteractiveRoot: View {
         isCarouselSettling = false
     }
 
-    private func toggleSearch() {
-        if isBrowsingFavorites {
-            beginSearch()
-        } else {
-            exitSearch()
-        }
-    }
-
-    private func beginSearch() {
-        guard isBrowsingFavorites else { return }
-        searchTransitionToken += 1
-        let token = searchTransitionToken
-
-        ElevenLabsTTSService.stopPlayback()
-        FeedbackService.prepareInteractive()
-        FeedbackService.gearHapticTick()
-        carouselDragStartIndex = nil
-        resetDockGearHaptic()
-
-        withAnimation(.easeOut(duration: searchScatterDuration)) {
-            searchPhase = .enteringSearch
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + searchScatterDuration) {
-            guard searchTransitionToken == token, searchPhase == .enteringSearch else { return }
-            withAnimation(.easeOut(duration: 0.12)) {
-                searchPhase = .active
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + searchFocusDelay) {
-                guard searchTransitionToken == token, searchPhase == .active else { return }
-                isSearchFieldFocused = true
-            }
-        }
-    }
-
-    private func exitSearch() {
-        guard isSearchPresented else { return }
-        searchTransitionToken += 1
-        let targetIndex = restoredCatalogIndexForCurrentSearchSelection()
-
-        isSearchFieldFocused = false
-        withAnimation(
-            .spring(
-                response: FavoriteCarouselMotion.settleSpringResponse,
-                dampingFraction: FavoriteCarouselMotion.settleSpringDamping
-            )
-        ) {
-            searchText = ""
-            searchPhase = .browsing
-            carouselIndex = CGFloat(targetIndex)
-        }
-        clampCarouselIndex()
-    }
-
-    private func selectSearchResult(_ word: SimpleWord) {
-        guard let targetIndex = catalogWords.firstIndex(where: { $0.id == word.id }) else { return }
-        searchTransitionToken += 1
-
-        isSearchFieldFocused = false
-        withAnimation(
-            .spring(
-                response: FavoriteCarouselMotion.settleSpringResponse,
-                dampingFraction: FavoriteCarouselMotion.settleSpringDamping
-            )
-        ) {
-            searchText = ""
-            searchPhase = .browsing
-            carouselIndex = CGFloat(targetIndex)
-        }
-        clampCarouselIndex()
-    }
-
-    private func restoredCatalogIndexForCurrentSearchSelection() -> Int {
-        guard !catalogWords.isEmpty else { return 0 }
-        guard displayedWords.indices.contains(selectedIndex) else {
-            return FavoriteCarouselMotion.nearestIndex(for: carouselIndex, count: catalogWords.count)
-        }
-        let selectedID = displayedWords[selectedIndex].id
-        return catalogWords.firstIndex { $0.id == selectedID }
-            ?? FavoriteCarouselMotion.nearestIndex(for: carouselIndex, count: catalogWords.count)
-    }
-
     private func removeSelectedFavorite() {
         guard displayedWords.indices.contains(selectedIndex) else { return }
         favoritesStore.toggleFavorite(wordId: displayedWords[selectedIndex].id)
@@ -694,65 +379,6 @@ struct FavoritesInteractiveRoot: View {
         resetDockGearHaptic()
     }
 
-}
-
-struct FavoriteSearchResultRow: View {
-    let word: SimpleWord
-    let isDarkMode: Bool
-    let action: () -> Void
-
-    @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var favoritesStore: FavoritesStore
-
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Text(word.word)
-                    .font(.system(size: 13, weight: .regular, design: .default))
-                    .foregroundStyle(primaryTextColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .layoutPriority(2)
-
-                Text(appState.translationText(for: word))
-                    .font(.system(size: 13, weight: .regular, design: .default))
-                    .foregroundStyle(secondaryTextColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(width: 205, alignment: .trailing)
-                    .layoutPriority(1)
-            }
-            .padding(.horizontal, 2)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(word.word)
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                removeFromFavorites()
-            } label: {
-                Label(appState.localized("Remove", "移除"), systemImage: "trash")
-            }
-            .tint(.red)
-        }
-    }
-
-    private var primaryTextColor: Color {
-        isDarkMode ? AppColors.nocturneTextPrimary : Color.black.opacity(0.82)
-    }
-
-    private var secondaryTextColor: Color {
-        isDarkMode ? AppColors.nocturneTextSecondary : Color.black.opacity(0.44)
-    }
-
-    private func removeFromFavorites() {
-        withAnimation(.easeInOut(duration: 0.20)) {
-            favoritesStore.toggleFavorite(wordId: word.id)
-        }
-    }
 }
 
 struct FavoriteCardStaticPreview: View {
@@ -808,15 +434,10 @@ struct FavoriteCardStaticPreview: View {
         guard !trimmedExample.isEmpty else { return }
 
         ElevenLabsTTSService.stopPlayback()
-        let cachePolicy: ElevenLabsTTSService.CachePolicy = appState.hasUserWordContentOverride(
-            for: word,
-            field: .exampleFr
-        ) ? .userOverride : .official
         ElevenLabsTTSService.speakText(
             trimmedExample,
             language: "fr-FR",
             contentType: .sentence,
-            cachePolicy: cachePolicy,
             playbackID: word.id
         )
     }
@@ -827,7 +448,6 @@ struct FavoritesCarouselView: View {
     let carouselIndex: CGFloat
     let isDarkMode: Bool
     let isSettling: Bool
-    let isExitingForSearch: Bool
     let onDragChanged: (_ translationX: CGFloat, _ width: CGFloat) -> Void
     let onDragEnded: (_ translationX: CGFloat, _ predictedTranslationX: CGFloat, _ width: CGFloat) -> Void
 
@@ -856,8 +476,7 @@ struct FavoritesCarouselView: View {
                         cardContentScale: cardContentScale,
                         isDarkMode: isDarkMode,
                         position: position,
-                        isInMotion: isInMotion,
-                        isExitingForSearch: isExitingForSearch
+                        isInMotion: isInMotion
                     )
                     .zIndex(Double(slot.index))
                 }
@@ -916,7 +535,6 @@ struct FavoriteCarouselCard: View {
     /// river instead of snapping between slots.
     let position: CGFloat
     let isInMotion: Bool
-    let isExitingForSearch: Bool
 
     // MARK: - Fan geometry (all functions of `position`)
 
@@ -979,29 +597,6 @@ struct FavoriteCarouselCard: View {
         !isInMotion && abs(position) < 0.5
     }
 
-    private var searchExitXOffset: CGFloat {
-        let distance = min(abs(position), 2.6)
-        guard distance > 0.15 else { return 0 }
-        let direction: CGFloat = position < 0 ? -1 : 1
-        return direction * displayCardWidth * (0.28 + distance * 0.17)
-    }
-
-    private var searchExitYOffset: CGFloat {
-        let distance = min(abs(position), 2.6)
-        if distance < 0.35 {
-            return -displayCardVisualHeight * 0.20
-        }
-        return -displayCardVisualHeight * 0.08 + distance * 18
-    }
-
-    private var searchExitRotationDegrees: Double {
-        let distance = min(abs(position), 2.4)
-        if distance < 0.35 {
-            return position < 0 ? 5 : -5
-        }
-        return Double(position) * 10 + (position < 0 ? -8 : 8)
-    }
-
     var body: some View {
         let core = ZStack(alignment: .bottom) {
             FavoriteCardStaticPreview(
@@ -1016,19 +611,12 @@ struct FavoriteCarouselCard: View {
             .scaleEffect(cardContentScale, anchor: .bottom)
         }
         .frame(width: displayCardWidth, height: displayCardVisualHeight, alignment: .bottom)
-        .rotationEffect(
-            .degrees(fanRotationDegrees + (isExitingForSearch ? searchExitRotationDegrees : 0)),
-            anchor: .bottom
-        )
-        .offset(
-            x: fanXOffset + (isExitingForSearch ? searchExitXOffset : 0),
-            y: fanYOffset + (isExitingForSearch ? searchExitYOffset : 0)
-        )
-        .scaleEffect(isExitingForSearch ? 0.82 : 1, anchor: .bottom)
+        .rotationEffect(.degrees(fanRotationDegrees), anchor: .bottom)
+        .offset(x: fanXOffset, y: fanYOffset)
 
         core
-        .opacity(isExitingForSearch ? 0 : shellOpacity)
-        .allowsHitTesting(isInteractiveCard && !isExitingForSearch)
+        .opacity(shellOpacity)
+        .allowsHitTesting(isInteractiveCard)
     }
 }
 
@@ -1038,8 +626,6 @@ struct FavoritesControlDock: View {
     let isDarkMode: Bool
     let onScrubIndexChanged: (_ index: CGFloat) -> Void
     let onScrubIndexEnded: (_ index: CGFloat, _ predictedIndex: CGFloat) -> Void
-    let onDismiss: () -> Void
-    let onToggleSearch: () -> Void
     let onToggleFavorite: () -> Void
 
     @EnvironmentObject private var appState: AppState
@@ -1061,17 +647,6 @@ struct FavoritesControlDock: View {
                 .allowsHitTesting(canNavigate)
 
                 HStack {
-                    FavoritesDockIconButton(
-                        systemName: "magnifyingglass",
-                        size: 48,
-                        isDarkMode: isDarkMode,
-                        accessibilityLabel: appState.localized("Search favorites", "搜索收藏"),
-                        action: {
-                            FeedbackService.cardMetaButtonTap()
-                            onToggleSearch()
-                        }
-                    )
-
                     Spacer()
 
                     FavoritesDockIconButton(
@@ -1082,6 +657,8 @@ struct FavoritesControlDock: View {
                         accessibilityLabel: appState.localized("Remove from favorites", "移出收藏"),
                         action: onToggleFavorite
                     )
+
+                    Spacer()
                 }
                 .padding(.horizontal, 48)
                 .padding(.bottom, 26)

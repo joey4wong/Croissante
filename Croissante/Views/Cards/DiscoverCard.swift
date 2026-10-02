@@ -124,8 +124,6 @@ struct DiscoverCard: View {
     private let arcMaxHeight: CGFloat = 32
     @State private var pendingSpeechTask: Task<Void, Never>?
     @State private var displayedWord: SimpleWord
-    @State private var allSenses: [SimpleWord] = []
-    @State private var currentSensePosition: Int = 0
     @State private var isEditingLocalizedContent = false
     @State private var localizedTranslationDraft = ""
     @State private var localizedFrenchExampleDraft = ""
@@ -208,15 +206,10 @@ struct DiscoverCard: View {
         guard !trimmedExample.isEmpty else { return }
 
         ElevenLabsTTSService.stopPlayback()
-        let cachePolicy: ElevenLabsTTSService.CachePolicy = appState.hasUserWordContentOverride(
-            for: displayedWord,
-            field: .exampleFr
-        ) ? .userOverride : .official
         ElevenLabsTTSService.speakText(
             trimmedExample,
             language: "fr-FR",
             contentType: .sentence,
-            cachePolicy: cachePolicy,
             playbackID: audioReactiveDividerEnabled ? displayedWord.id : nil
         )
     }
@@ -244,44 +237,6 @@ struct DiscoverCard: View {
         }
     }
 
-    private var hasMultipleSenses: Bool {
-        allSenses.count > 1
-    }
-
-    private func refreshSenses(using source: SimpleWord) {
-        let senses = appState.getAllSenses(source)
-        if senses.isEmpty {
-            allSenses = [source]
-            displayedWord = source
-            currentSensePosition = 0
-            return
-        }
-
-        allSenses = senses
-        if let selected = senses.firstIndex(where: { $0.id == displayedWord.id }) {
-            currentSensePosition = selected
-            displayedWord = senses[selected]
-            return
-        }
-        if let initial = senses.firstIndex(where: { $0.id == source.id }) {
-            currentSensePosition = initial
-            displayedWord = senses[initial]
-            return
-        }
-        currentSensePosition = 0
-        displayedWord = senses[0]
-    }
-
-    private func showNextSense() {
-        guard hasMultipleSenses else { return }
-        FeedbackService.cardMetaButtonTap()
-        let next = (currentSensePosition + 1) % allSenses.count
-        withAnimation(.easeInOut(duration: 0.18)) {
-            currentSensePosition = next
-            displayedWord = allSenses[next]
-        }
-    }
-
     private func loadLocalizedEditDrafts(for word: SimpleWord) {
         let content = appState.editableLocalizedContent(for: word)
         localizedTranslationDraft = content.translation
@@ -299,6 +254,9 @@ struct DiscoverCard: View {
             ),
             for: displayedWord
         )
+        if let updated = appState.getWordById(displayedWord.id) {
+            displayedWord = updated
+        }
     }
 
     private func beginInlineEditing() {
@@ -412,14 +370,6 @@ struct DiscoverCard: View {
                                 .opacity(bottomMetaReveal)
                         }
                     }
-                    .overlay(alignment: .bottomTrailing) {
-                        if showsBottomMetaBar {
-                            senseSwitchButton
-                                .padding(.trailing, 12)
-                                .padding(.bottom, 12)
-                                .opacity(bottomMetaReveal)
-                        }
-                    }
             }
             .rotationEffect(dragRotation)
             .offset(dragOffset)
@@ -497,7 +447,7 @@ struct DiscoverCard: View {
             }
             .onChange(of: word.id) { _, _ in
                 finishInlineEditing()
-                refreshSenses(using: word)
+                displayedWord = word
                 if interactionsEnabled && isActiveTab && appState.autoPlay {
                     scheduleAutoPlay()
                 }
@@ -507,7 +457,7 @@ struct DiscoverCard: View {
                 stopSpeechPlayback()
             }
             .onAppear {
-                refreshSenses(using: word)
+                displayedWord = word
                 if interactionsEnabled && isActiveTab && appState.autoPlay {
                     scheduleAutoPlay()
                 }
@@ -529,25 +479,6 @@ struct DiscoverCard: View {
                 FeedbackService.cardMetaButtonTap()
                 favoritesStore.toggleFavorite(wordId: displayedWord.id)
             }
-    }
-
-    @ViewBuilder
-    private var senseSwitchButton: some View {
-        if hasMultipleSenses {
-            Button(action: showNextSense) {
-                HStack(spacing: 4) {
-                    Image(systemName: "square.stack.3d.up.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text("\(displayedWord.senseIndex)/\(allSenses.count)")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                .foregroundStyle(secondaryTextColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(capsuleGlassBackground(interactive: true, isDarkMode: isDarkMode))
-            }
-            .buttonStyle(.plain)
-        }
     }
 
 }

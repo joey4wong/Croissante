@@ -6,322 +6,63 @@ import PhotosUI
 import AVFoundation
 #endif
 
-/// 图片选择器服务，支持从相册选择头像图片
 @MainActor
-final class ImagePickerService: ObservableObject {
+final class ImagePickerService {
     static let shared = ImagePickerService()
-    
-    #if os(iOS)
-    @Published private(set) var selectedImage: UIImage?
-    #endif
-    @Published private(set) var isPickingImage: Bool = false
-    
-    #if os(iOS)
-    private var imagePicker: UIImagePickerController?
-    private var imagePickerCoordinator: Coordinator?
-    #endif
-    
+
     private init() {}
-    
-    /// 显示图片选择器（从相册选择）
-    func presentImagePicker() {
-        #if os(iOS)
-        isPickingImage = true
-        
-        // 检查权限
-        let status = PHPhotoLibrary.authorizationStatus()
-        if status == .notDetermined {
-            PHPhotoLibrary.requestAuthorization { newStatus in
-                DispatchQueue.main.async {
-                    if newStatus == .authorized || newStatus == .limited {
-                        self.showImagePicker()
-                    } else {
-                        self.isPickingImage = false
-                    }
-                }
-            }
-        } else if status == .authorized || status == .limited {
-            showImagePicker()
-        } else {
-            isPickingImage = false
-            // 显示权限提示
-            showPermissionAlert()
-        }
-        #else
-        // 在非iOS平台，只记录日志
-        print("Image picker not available on this platform")
-        isPickingImage = false
-        #endif
-    }
-    
-    /// 从文件系统选择图片
-    func pickImageFromFiles() {
-        #if os(iOS)
-        showImagePicker(sourceType: .photoLibrary)
-        #else
-        print("Image picker not available on this platform")
-        #endif
-    }
-    
-    /// 使用相机拍摄图片
-    func takePhotoWithCamera() {
-        #if os(iOS)
-        // 检查相机权限
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            let cameraAuthStatus = AVCaptureDevice.authorizationStatus(for: .video)
-            if cameraAuthStatus == .notDetermined {
-                AVCaptureDevice.requestAccess(for: .video) { granted in
-                    DispatchQueue.main.async {
-                        if granted {
-                            self.showImagePicker(sourceType: .camera)
-                        } else {
-                            self.isPickingImage = false
-                            self.showCameraPermissionAlert()
-                        }
-                    }
-                }
-            } else if cameraAuthStatus == .authorized {
-                showImagePicker(sourceType: .camera)
-            } else {
-                isPickingImage = false
-                showCameraPermissionAlert()
-            }
-        } else {
-            isPickingImage = false
-            showCameraUnavailableAlert()
-        }
-        #else
-        print("Camera not available on this platform")
-        isPickingImage = false
-        #endif
-    }
-    
-    /// 取消图片选择
-    func cancelImagePicker() {
-        isPickingImage = false
-    }
-    
+
     #if os(iOS)
-    /// 设置选中的图片
-    func setSelectedImage(_ image: UIImage?) {
-        selectedImage = image
-        isPickingImage = false
-    }
-    #endif
-    
-    #if os(iOS)
-    /// 保存图片到应用沙盒
     func saveImageToAppStorage(_ image: UIImage, filename: String) -> String? {
         guard let data = image.jpegData(compressionQuality: 0.8) else { return nil }
-        
         let fileManager = FileManager.default
         guard let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return nil
         }
         let avatarDirectory = documentsDirectory.appendingPathComponent("avatars")
-        
-        // 创建avatars目录
         try? fileManager.createDirectory(at: avatarDirectory, withIntermediateDirectories: true)
-        
-        // 生成唯一文件名
-        let uniqueFilename = "\(UUID().uuidString)_\(filename)"
-        let fileURL = avatarDirectory.appendingPathComponent(uniqueFilename)
-        
+        let fileURL = avatarDirectory.appendingPathComponent("\(UUID().uuidString)_\(filename)")
         do {
             try data.write(to: fileURL)
             return fileURL.path
         } catch {
-            print("Error saving image: \(error)")
             return nil
         }
     }
-    #endif
-    
-    #if os(iOS)
-    /// 从应用沙盒加载图片
+
     func loadImageFromPath(_ path: String) -> UIImage? {
-        let fileURL = URL(fileURLWithPath: path)
-        guard FileManager.default.fileExists(atPath: path) else { return nil }
-        
-        do {
-            let data = try Data(contentsOf: fileURL)
-            return UIImage(data: data)
-        } catch {
-            print("Error loading image: \(error)")
-            return nil
-        }
+        guard FileManager.default.fileExists(atPath: path),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        return UIImage(data: data)
     }
-    #endif
-    
-    /// 删除保存的图片
-    func deleteImageAtPath(_ path: String) {
-        #if os(iOS)
-        let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: path) {
-            try? fileManager.removeItem(atPath: path)
-        }
-        #endif
-    }
-    
-    #if os(iOS)
-    /// 压缩图片
+
     func compressImage(_ image: UIImage, maxSize: CGFloat = 1024) -> UIImage {
         let size = image.size
         let ratio = maxSize / max(size.width, size.height)
-        
-        if ratio < 1.0 {
-            let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
-            UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-            let compressedImage = UIGraphicsGetImageFromCurrentImageContext()
-            UIGraphicsEndImageContext()
-            return compressedImage ?? image
-        }
-        return image
+        guard ratio < 1.0 else { return image }
+        let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
+        UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let compressedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return compressedImage ?? image
     }
-    #endif
-    
-    #if os(iOS)
-    /// 创建圆形头像图片
+
     func createCircularAvatar(_ image: UIImage, size: CGFloat) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
         return renderer.image { context in
             let bounds = CGRect(origin: .zero, size: CGSize(width: size, height: size))
-            
-            // 创建圆形裁剪路径
             let path = UIBezierPath(roundedRect: bounds, cornerRadius: size / 2)
             path.addClip()
-            
-            // 等比居中填充，避免非正方形图片被拉伸变形
             let sourceSize = image.size
             let scale = max(bounds.width / sourceSize.width, bounds.height / sourceSize.height)
             let drawSize = CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
-            let drawOrigin = CGPoint(
-                x: bounds.midX - drawSize.width / 2,
-                y: bounds.midY - drawSize.height / 2
-            )
+            let drawOrigin = CGPoint(x: bounds.midX - drawSize.width / 2, y: bounds.midY - drawSize.height / 2)
             image.draw(in: CGRect(origin: drawOrigin, size: drawSize))
-            
-            // 添加边框
             context.cgContext.setStrokeColor(UIColor.white.cgColor)
             context.cgContext.setLineWidth(2.0)
             context.cgContext.addPath(path.cgPath)
             context.cgContext.strokePath()
-        }
-    }
-    #endif
-    
-    // MARK: - Private Methods
-    
-    #if os(iOS)
-    private func rootViewController() -> UIViewController? {
-        guard
-            let windowScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first,
-            let root = windowScene.windows.first(where: \.isKeyWindow)?.rootViewController
-                ?? windowScene.windows.first?.rootViewController
-        else {
-            return nil
-        }
-        return root
-    }
-
-    private func presentAlert(
-        title: String,
-        message: String,
-        includesSettingsShortcut: Bool = false,
-        confirmTitle: String = "确定"
-    ) {
-        guard let rootViewController = rootViewController() else { return }
-
-        let alert = UIAlertController(
-            title: title,
-            message: message,
-            preferredStyle: .alert
-        )
-        
-        if includesSettingsShortcut {
-            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-            alert.addAction(UIAlertAction(title: "前往设置", style: .default) { _ in
-                if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(settingsURL)
-                }
-            })
-        } else {
-            alert.addAction(UIAlertAction(title: confirmTitle, style: .cancel))
-        }
-
-        rootViewController.present(alert, animated: true)
-    }
-
-    private func showImagePicker(sourceType: UIImagePickerController.SourceType = .photoLibrary) {
-        guard let rootViewController = rootViewController() else {
-            isPickingImage = false
-            return
-        }
-
-        let picker = UIImagePickerController()
-        picker.sourceType = sourceType
-        picker.allowsEditing = false
-        imagePickerCoordinator = Coordinator(parent: self)
-        picker.delegate = imagePickerCoordinator
-        imagePicker = picker
-
-        rootViewController.present(picker, animated: true)
-    }
-    
-    private func showPermissionAlert() {
-        presentAlert(
-            title: "需要照片权限",
-            message: "请允许访问照片库以选择头像",
-            includesSettingsShortcut: true
-        )
-    }
-    
-    private func showCameraPermissionAlert() {
-        presentAlert(
-            title: "需要相机权限",
-            message: "请允许访问相机以拍摄照片",
-            includesSettingsShortcut: true
-        )
-    }
-    
-    private func showCameraUnavailableAlert() {
-        presentAlert(
-            title: "相机不可用",
-            message: "此设备没有可用的相机"
-        )
-    }
-    
-    // MARK: - Coordinator
-    
-    private class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: ImagePickerService
-        
-        init(parent: ImagePickerService) {
-            self.parent = parent
-        }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let editedImage = info[.editedImage] as? UIImage {
-                parent.setSelectedImage(editedImage)
-            } else if let originalImage = info[.originalImage] as? UIImage {
-                parent.setSelectedImage(originalImage)
-            }
-            
-            parent.imagePicker = nil
-            parent.imagePickerCoordinator = nil
-            picker.dismiss(animated: true)
-        }
-        
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.cancelImagePicker()
-            parent.imagePicker = nil
-            parent.imagePickerCoordinator = nil
-            picker.dismiss(animated: true)
         }
     }
     #endif

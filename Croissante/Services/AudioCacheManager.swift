@@ -140,12 +140,8 @@ class AudioCacheManager {
         } catch {}
     }
     
-    func getCacheSize() -> Int64 {
+    private func getCacheSize() -> Int64 {
         cacheInfo.values.reduce(0) { $0 + $1.fileSize }
-    }
-    
-    func getCacheFileCount() -> Int {
-        cacheInfo.count
     }
     
     private func generateCacheKey(for text: String, namespace: AudioCacheNamespace) -> String {
@@ -200,7 +196,4 @@ class AudioCacheManager {
         saveCacheInfo()
     }
     
-    func performMaintenance() {
-        enforceCacheSizeLimit()
-    }
 }

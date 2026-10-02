@@ -7,11 +7,11 @@ public struct SimpleWord: Identifiable, Codable, Sendable, Equatable {
     public let tag: String
     public let senseIndex: Int
     public let auxiliary: String
-    public let translationZh: String
-    public let translationEn: String
-    public let exampleFr: String
-    public let exampleEn: String
-    public let exampleZh: String
+    public var translationZh: String
+    public var translationEn: String
+    public var exampleFr: String
+    public var exampleEn: String
+    public var exampleZh: String
     public let nounUICorner: String
     public let nounUIFlags: [String]
     public let nounUIEntityType: String

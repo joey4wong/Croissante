@@ -29,10 +29,7 @@ struct ProgressScreen: View {
                     )
                     .padding(.horizontal, 24)
                 } else {
-                    FavoritesInteractiveRoot(
-                        catalogWords: favoriteWordsSnapshot,
-                        onDismiss: {}
-                    )
+                    FavoritesInteractiveRoot(catalogWords: favoriteWordsSnapshot)
                     .frame(width: geo.size.width, alignment: .top)
                     .frame(maxHeight: .infinity)
                 }
