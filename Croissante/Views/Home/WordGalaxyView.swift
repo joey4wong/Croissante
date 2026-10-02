@@ -347,12 +347,12 @@ struct GalaxyAddButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "plus")
-                .font(.system(size: 44, weight: .heavy, design: .rounded))
+                .font(.system(size: 88, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.white)
-                .shadow(color: Color.green.opacity(breathe ? 0.85 : 0.5), radius: breathe ? 7 : 4)
-                .shadow(color: Color.green.opacity(breathe ? 0.45 : 0.25), radius: breathe ? 16 : 10)
-                .shadow(color: Color.black.opacity(isDarkMode ? 0.3 : 0.12), radius: 3, x: 0, y: 2)
-                .frame(width: 76, height: 76)
+                .shadow(color: Color.green.opacity(breathe ? 0.85 : 0.5), radius: breathe ? 14 : 8)
+                .shadow(color: Color.green.opacity(breathe ? 0.45 : 0.25), radius: breathe ? 32 : 20)
+                .shadow(color: Color.black.opacity(isDarkMode ? 0.3 : 0.12), radius: 6, x: 0, y: 4)
+                .frame(width: 152, height: 152)
                 .contentShape(Circle())
                 .scaleEffect(breathe ? 1.04 : 1.0)
         }
@@ -415,7 +415,7 @@ func galaxyLerp(_ start: Double, _ end: Double, _ progress: Double) -> Double {
 
 enum GalaxyOrbit {
     static let radius: Double = 135
-    static let tiltX: Double = 18
+    static let tiltX: Double = 40
     static let tiltZ: Double = 17
     static let camera: Double = 750
 
