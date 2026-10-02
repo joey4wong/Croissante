@@ -480,8 +480,8 @@ struct AvatarEditorView: View {
                 #if os(iOS)
                 sourceRow(
                     icon: "photo.on.rectangle.angled",
-                    title: appState.localized("Photos", "相册", "फोटो"),
-                    subtitle: appState.localized("Choose from your Library", "从相册中选择", "लाइब्रेरी से चुनें"),
+                    title: appState.localized("Photos", "相册"),
+                    subtitle: appState.localized("Choose from your Library", "从相册中选择"),
                     showsDivider: true
                 ) {
                     presentPhotoLibraryPicker()
@@ -489,8 +489,8 @@ struct AvatarEditorView: View {
 
                 sourceRow(
                     icon: "camera",
-                    title: appState.localized("Camera", "相机", "कैमरा"),
-                    subtitle: appState.localized("Capture a new photo", "拍摄一张新照片", "नई फोटो लें"),
+                    title: appState.localized("Camera", "相机"),
+                    subtitle: appState.localized("Capture a new photo", "拍摄一张新照片"),
                     showsDivider: false
                 ) {
                     presentCameraPicker()
@@ -523,8 +523,8 @@ struct AvatarEditorView: View {
                 .ignoresSafeArea()
             }
             #endif
-            .alert(appState.localized("Error", "错误", "त्रुटि"), isPresented: $showError) {
-                Button(appState.localized("OK", "确定", "ठीक है"), role: .cancel) { }
+            .alert(appState.localized("Error", "错误"), isPresented: $showError) {
+                Button(appState.localized("OK", "确定"), role: .cancel) { }
             } message: {
                 Text(errorMessage)
             }
@@ -532,10 +532,10 @@ struct AvatarEditorView: View {
                 get: { permissionAlert != nil },
                 set: { if !$0 { permissionAlert = nil } }
             )) {
-                Button(appState.localized("Cancel", "取消", "रद्द करें"), role: .cancel) {
+                Button(appState.localized("Cancel", "取消"), role: .cancel) {
                     permissionAlert = nil
                 }
-                Button(appState.localized("Settings", "设置", "सेटिंग्स")) {
+                Button(appState.localized("Settings", "设置")) {
                     openAppSettings()
                     permissionAlert = nil
                 }
@@ -554,9 +554,9 @@ struct AvatarEditorView: View {
     private var permissionAlertTitle: String {
         switch permissionAlert {
         case .photoLibrary:
-            appState.localized("Photo Access Needed", "需要照片权限", "फ़ोटो एक्सेस चाहिए")
+            appState.localized("Photo Access Needed", "需要照片权限")
         case .camera:
-            appState.localized("Camera Access Needed", "需要相机权限", "कैमरा एक्सेस चाहिए")
+            appState.localized("Camera Access Needed", "需要相机权限")
         case .none:
             ""
         }
@@ -565,17 +565,9 @@ struct AvatarEditorView: View {
     private var permissionAlertMessage: String {
         switch permissionAlert {
         case .photoLibrary:
-            appState.localized(
-                "Allow photo access in Settings to choose an avatar.",
-                "请在设置中允许访问照片，才能选择头像。",
-                "अवतार चुनने के लिए सेटिंग्स में फ़ोटो एक्सेस की अनुमति दें।"
-            )
+            appState.localized("Allow photo access in Settings to choose an avatar.", "请在设置中允许访问照片，才能选择头像。")
         case .camera:
-            appState.localized(
-                "Allow camera access in Settings to take an avatar photo.",
-                "请在设置中允许访问相机，才能拍摄头像。",
-                "अवतार फ़ोटो लेने के लिए सेटिंग्स में कैमरा एक्सेस की अनुमति दें।"
-            )
+            appState.localized("Allow camera access in Settings to take an avatar photo.", "请在设置中允许访问相机，才能拍摄头像。")
         case .none:
             ""
         }
@@ -604,11 +596,7 @@ struct AvatarEditorView: View {
 
     private func presentCameraPicker() {
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-            errorMessage = appState.localized(
-                "Camera is not available on this device.",
-                "此设备没有可用的相机。",
-                "इस डिवाइस पर कैमरा उपलब्ध नहीं है।"
-            )
+            errorMessage = appState.localized("Camera is not available on this device.", "此设备没有可用的相机。")
             showError = true
             return
         }
@@ -660,7 +648,7 @@ struct AvatarEditorView: View {
                 dismiss()
             }
         } else {
-            errorMessage = appState.localized("Failed to save avatar", "保存头像时出错", "अवतार सेव नहीं हो पाया")
+            errorMessage = appState.localized("Failed to save avatar", "保存头像时出错")
             showError = true
             isSaving = false
         }

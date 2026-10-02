@@ -33,7 +33,6 @@ final class AppIconManager: ObservableObject {
                 return (iconName, icon)
             }
         )
-        static let freeIconIDs: Set<String> = ["default"]
 
         static func from(iconName: String?) -> AppIcon {
             guard let iconName else { return defaultIcon }

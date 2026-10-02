@@ -4,7 +4,7 @@ struct CheckInHeatmapView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @EnvironmentObject private var srsManager: SRSManager
+    @EnvironmentObject private var appState: AppState
     @State private var autoReturnTask: Task<Void, Never>?
     @State private var initialCenterTask: Task<Void, Never>?
     @State private var heatmapPressTask: Task<Void, Never>?
@@ -70,7 +70,7 @@ struct CheckInHeatmapView: View {
     }
 
     private var shouldBlinkTodayDot: Bool {
-        srsManager.todayStudyState == .inProgress && srsManager.todayDeckCompletionRatio < 0.20
+        appState.lookupCount(for: today) == 0
     }
 
     private var shouldRunHeatmapAnimations: Bool {
@@ -87,18 +87,17 @@ struct CheckInHeatmapView: View {
 
     var body: some View {
         let layout = makeYearLayout()
-        let gridW = gridWidth(for: layout.weeks)
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        Color.clear.frame(width: sideInset(for: geometry.size.width, gridWidth: gridW))
+                        Color.clear.frame(width: leadingInset(for: geometry.size.width, layout: layout))
                         VStack(alignment: .leading, spacing: 8) {
                             monthHeader(layout: layout)
                             contributionGrid(layout: layout)
                         }
                         .padding(.vertical, 2)
-                        Color.clear.frame(width: sideInset(for: geometry.size.width, gridWidth: gridW))
+                        Color.clear.frame(width: horizontalPanelPadding)
                     }
                 }
                 .scrollBounceBehavior(.basedOnSize)
@@ -125,7 +124,7 @@ struct CheckInHeatmapView: View {
                 .onAppear {
                     FeedbackService.prepareInteractive()
                     lastViewportWidth = geometry.size.width
-                    scheduleInitialCenter(using: proxy)
+                    scheduleInitialReturn(using: proxy)
                     updateHeatmapAnimations()
                 }
                 .onChange(of: shouldBlinkTodayDot) { _, _ in
@@ -143,7 +142,7 @@ struct CheckInHeatmapView: View {
                 .onChange(of: geometry.size.width) { _, newWidth in
                     guard abs(newWidth - lastViewportWidth) > 0.5 else { return }
                     lastViewportWidth = newWidth
-                    scheduleInitialCenter(using: proxy)
+                    scheduleInitialReturn(using: proxy)
                 }
                 .onDisappear {
                     cancelAutoReturn()
@@ -215,13 +214,14 @@ struct CheckInHeatmapView: View {
         UInt64((duration * 1_000_000_000).rounded())
     }
 
-    private func sideInset(for containerWidth: CGFloat, gridWidth: CGFloat) -> CGFloat {
+    private func leadingInset(for containerWidth: CGFloat, layout: YearLayout) -> CGFloat {
         let visibleWidth = max(0, containerWidth - (horizontalPanelPadding * 2))
-        let slack = visibleWidth - gridWidth
-        if slack > 0 {
-            return slack / 2
+        guard let todayWeekIndex = todayWeekIndex(in: layout), visibleWidth > 0 else {
+            return horizontalPanelPadding
         }
-        return horizontalPanelPadding
+        let weekSpan = cellSize + cellSpacing
+        let todayTrailingX = CGFloat(todayWeekIndex) * weekSpan + cellSize
+        return max(horizontalPanelPadding, visibleWidth - todayTrailingX)
     }
 
     private func triggerGearTickIfNeeded(for translation: CGSize) {
@@ -267,15 +267,14 @@ struct CheckInHeatmapView: View {
     private func scheduleAutoReturn(using proxy: ScrollViewProxy) {
         cancelAutoReturn()
         let layout = makeYearLayout()
-        guard let todayWeekIndex = todayWeekIndex(in: layout) else { return }
+        guard todayWeekIndex(in: layout) != nil else { return }
         let todayId = dayID(today)
 
         autoReturnTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
-            let anchor = scrollAnchor(for: todayWeekIndex, weeksCount: layout.weeks.count)
             withAnimation(.easeInOut(duration: 0.30)) {
-                proxy.scrollTo(todayId, anchor: anchor)
+                proxy.scrollTo(todayId, anchor: .trailing)
             }
         }
     }
@@ -285,55 +284,36 @@ struct CheckInHeatmapView: View {
         initialCenterTask = nil
     }
 
-    private func scheduleInitialCenter(using proxy: ScrollViewProxy) {
+    private func scheduleInitialReturn(using proxy: ScrollViewProxy) {
         cancelInitialCenter()
         let layout = makeYearLayout()
         guard todayWeekIndex(in: layout) != nil else { return }
 
         initialCenterTask = Task { @MainActor in
-            centerOnToday(using: proxy, animated: false)
+            returnToToday(using: proxy, animated: false)
 
             // First layout pass can still shift content on hot reload/startup.
             try? await Task.sleep(nanoseconds: 60_000_000)
             guard !Task.isCancelled else { return }
-            centerOnToday(using: proxy, animated: false)
+            returnToToday(using: proxy, animated: false)
         }
     }
 
-    private func centerOnToday(using proxy: ScrollViewProxy, animated: Bool) {
+    private func returnToToday(using proxy: ScrollViewProxy, animated: Bool) {
         let layout = makeYearLayout()
-        guard let todayWeekIndex = todayWeekIndex(in: layout) else { return }
+        guard todayWeekIndex(in: layout) != nil else { return }
         let todayId = dayID(today)
-        let anchor = scrollAnchor(for: todayWeekIndex, weeksCount: layout.weeks.count)
         if animated {
             withAnimation(.easeInOut(duration: 0.30)) {
-                proxy.scrollTo(todayId, anchor: anchor)
+                proxy.scrollTo(todayId, anchor: .trailing)
             }
         } else {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                proxy.scrollTo(todayId, anchor: anchor)
+                proxy.scrollTo(todayId, anchor: .trailing)
             }
         }
-    }
-
-    private func scrollAnchor(for weekIndex: Int, weeksCount: Int) -> UnitPoint {
-        let visibleWidth = max(0, lastViewportWidth - (horizontalPanelPadding * 2))
-        let weekSpan = cellSize + cellSpacing
-        guard visibleWidth > 0, weekSpan > 0 else { return .center }
-
-        let visibleWeeks = max(1, Int((visibleWidth + cellSpacing) / weekSpan))
-        guard weeksCount > visibleWeeks else { return .center }
-
-        let edgeThreshold = max(1, visibleWeeks / 2)
-        if weekIndex <= edgeThreshold {
-            return .leading
-        }
-        if weekIndex >= (weeksCount - 1 - edgeThreshold) {
-            return .trailing
-        }
-        return .center
     }
 
     private func monthHeader(layout: YearLayout) -> some View {
@@ -389,10 +369,8 @@ struct CheckInHeatmapView: View {
                 .frame(width: cellSize, height: cellSize)
         } else {
             let isToday = calendar.isDate(date, inSameDayAs: today)
-            let ratio = srsManager.deckCompletionRatio(for: date)
             let appearance = heatmapCellAppearance(
-                for: srsManager.studyState(for: date),
-                ratio: ratio,
+                lookupCount: appState.lookupCount(for: date),
                 isToday: isToday
             )
             let glowLayerColor = appearance.glowColor ?? .clear
@@ -457,8 +435,7 @@ struct CheckInHeatmapView: View {
     }
 
     private func heatmapCellAppearance(
-        for state: SRSManager.DailyStudyState,
-        ratio: Double,
+        lookupCount: Int,
         isToday: Bool
     ) -> HeatmapCellAppearance {
         let fillColor: Color
@@ -466,35 +443,27 @@ struct CheckInHeatmapView: View {
         let showTodayBorder: Bool
         let isColored: Bool
 
-        switch state {
-        case .completed:
+        if lookupCount >= 6 {
             fillColor = deepGreenCellColor
             showTodayDot = false
             showTodayBorder = false
             isColored = true
-        case .inProgress:
-            if ratio >= 0.70 {
-                fillColor = mediumGreenCellColor
-                showTodayDot = false
-                showTodayBorder = false
-                isColored = true
-            } else if ratio >= 0.20 {
-                fillColor = lightGreenCellColor
-                showTodayDot = false
-                showTodayBorder = false
-                isColored = true
-            } else if isToday {
-                fillColor = cellBackgroundColor
-                showTodayDot = true
-                showTodayBorder = true
-                isColored = false
-            } else {
-                fillColor = cellBackgroundColor
-                showTodayDot = false
-                showTodayBorder = false
-                isColored = false
-            }
-        case .noEligibleCards:
+        } else if lookupCount >= 3 {
+            fillColor = mediumGreenCellColor
+            showTodayDot = false
+            showTodayBorder = false
+            isColored = true
+        } else if lookupCount >= 1 {
+            fillColor = lightGreenCellColor
+            showTodayDot = false
+            showTodayBorder = false
+            isColored = true
+        } else if isToday {
+            fillColor = cellBackgroundColor
+            showTodayDot = true
+            showTodayBorder = true
+            isColored = false
+        } else {
             fillColor = cellBackgroundColor
             showTodayDot = false
             showTodayBorder = false
@@ -529,8 +498,8 @@ struct CheckInHeatmapView: View {
         guard !reduceMotion, let progress = heatmapPressProgress else { return 0 }
 
         let normalizedProgress = min(max(progress, 0), 1)
-        let visibleMinX = CGFloat(todayWeekIndex) - visibleWeekCount / 2
-        let visibleMaxX = CGFloat(todayWeekIndex) + visibleWeekCount / 2
+        let visibleMaxX = CGFloat(todayWeekIndex)
+        let visibleMinX = max(0, visibleMaxX - visibleWeekCount + 1)
         let visibleRange = max(visibleMaxX - visibleMinX, 1)
         let bottomY: CGFloat = 6
         let topY: CGFloat = 0

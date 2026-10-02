@@ -167,31 +167,10 @@ enum FeedbackService {
         #endif
     }
 
-    static func swipeForgot() {
-        #if os(iOS)
-        notificationGenerator.notificationOccurred(.warning)
-        notificationGenerator.prepare()
-        #endif
-    }
-
-    static func swipeMastered() {
+    static func wordAdded() {
         #if os(iOS)
         notificationGenerator.notificationOccurred(.success)
         notificationGenerator.prepare()
-        #endif
-    }
-
-    static func swipeBlurry() {
-        #if os(iOS)
-        mediumImpactGenerator.impactOccurred(intensity: 0.75)
-        mediumImpactGenerator.prepare()
-        #endif
-    }
-
-    static func swipeNoAction() {
-        #if os(iOS)
-        selectionGenerator.selectionChanged()
-        selectionGenerator.prepare()
         #endif
     }
 
@@ -199,6 +178,13 @@ enum FeedbackService {
         #if os(iOS)
         mediumImpactGenerator.impactOccurred(intensity: 0.55)
         mediumImpactGenerator.prepare()
+        #endif
+    }
+
+    static func cardMetaButtonLongPress() {
+        #if os(iOS)
+        rigidImpactGenerator.impactOccurred(intensity: 0.72)
+        rigidImpactGenerator.prepare()
         #endif
     }
 }

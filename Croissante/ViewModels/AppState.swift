@@ -117,7 +117,7 @@ struct WordSearchIndex: Sendable {
                     word: word,
                     normalizedWord: normalizedLemma,
                     normalizedExamples: SearchTextNormalizer.normalize(
-                        "\(word.exampleFr) \(word.exampleEn) \(word.exampleZh) \(word.exampleHi)"
+                        "\(word.exampleFr) \(word.exampleEn) \(word.exampleZh)"
                     )
                 )
             )
@@ -226,48 +226,27 @@ struct WordSearchIndex: Sendable {
     }
 }
 
-fileprivate struct CoreLoadedResources: Sendable {
-    let words: [SimpleWord]
-    let wordByIdMap: [String: SimpleWord]
-    let wordSiblingMap: [String: [String]]
-}
+public struct UserWordContentOverride: Codable, Equatable, Sendable, Identifiable {
+    public let wordId: String
+    public var translationEn: String?
+    public var translationZh: String?
+    public var exampleFr: String?
+    public var exampleEn: String?
+    public var exampleZh: String?
 
-fileprivate struct DeferredLoadedResources: Sendable {
-    let conjugationData: ConjugationData
-    let wordSearchIndex: WordSearchIndex
-}
+    public var id: String { wordId }
 
-struct UserWordContentOverride: Codable, Equatable, Sendable, Identifiable {
-    let wordId: String
-    var translationEn: String?
-    var translationZh: String?
-    var translationHi: String?
-    var exampleFr: String?
-    var exampleEn: String?
-    var exampleZh: String?
-    var exampleHi: String?
-
-    var id: String { wordId }
-
-    var isEmpty: Bool {
-        translationEn == nil &&
-            translationZh == nil &&
-            translationHi == nil &&
-            exampleFr == nil &&
-            exampleEn == nil &&
-            exampleZh == nil &&
-            exampleHi == nil
+    public var isEmpty: Bool {
+        translationEn == nil && translationZh == nil && exampleFr == nil && exampleEn == nil && exampleZh == nil
     }
 }
 
 enum UserWordContentField {
     case translationEn
     case translationZh
-    case translationHi
     case exampleFr
     case exampleEn
     case exampleZh
-    case exampleHi
 }
 
 struct UserWordLocalizedContent: Equatable, Sendable {
@@ -276,73 +255,75 @@ struct UserWordLocalizedContent: Equatable, Sendable {
     var example: String
 }
 
+struct LibrarySyncPayload: Codable {
+    var words: [SimpleWord]
+    var favoriteWordIds: [String]
+    var dailyLookupCounts: [String: Int]
+    var userWordContentOverrides: [String: UserWordContentOverride]
+    var updatedAt: Date
+}
+
 @MainActor
 public final class AppState: ObservableObject {
     private static let supportedVoiceIds = Set(TTSVoice.allCases.map(\.rawValue))
-    private static let supportedLevels: Set<String> = [
-        "All", "A1", "A2", "B1", "B2", "C1", "C2"
-    ]
 
     private enum Keys {
         static let themeMode = "themeMode"
         static let cardFontStyle = "cardFontStyle"
-        static let level = "level"
         static let language = "language"
         static let autoPlay = "autoPlay"
-        static let spotlightEnabled = "spotlightEnabled"
         static let iCloudSyncEnabled = "iCloudSyncEnabled"
         static let appIconName = "appIconName"
-        static let memberUnlocked = "memberUnlocked"
         static let avatarPath = "avatarPath"
         static let selectedVoiceId = "selectedVoiceId"
         static let userWordContentOverrides = "user_word_content_overrides_v1"
+        static let dailyLookupCounts = "daily_lookup_counts_v1"
+        static let libraryUpdatedAt = "library_updated_at_v1"
     }
 
-    @Published public var words: [SimpleWord] = []
-    @Published public var spotlightSelectedWordId: String?
-    @Published public var widgetSelectedWordId: String?
-    @Published public var openMemberPaywallFromDeepLink = false
+    @Published public private(set) var words: [SimpleWord] = []
+    @Published public private(set) var dailyLookupCounts: [String: Int] = [:]
     @Published public var conjugationFormsByLemma: [String: [String]] = [:]
     @Published var wordSearchIndex: WordSearchIndex = .empty
     @Published public private(set) var hasCompletedInitialResourceLoad: Bool = false
     @Published private var userWordContentOverrides: [String: UserWordContentOverride] = [:]
-    
+
     @Published public var themeMode: ThemeMode = .system {
-        didSet { saveThemeMode() }
+        didSet { userDefaults.set(themeMode.rawValue, forKey: Keys.themeMode) }
     }
     @Published public var cardFontStyle: CardFontStyle = .sfPro {
-        didSet { saveCardFontStyle() }
-    }
-    @Published public var level: String = "All" {
-        didSet {
-            let canonical = Self.canonicalLevel(level)
-            if canonical != level {
-                level = canonical
-                return
-            }
-            saveLevel()
-        }
+        didSet { userDefaults.set(cardFontStyle.rawValue, forKey: Keys.cardFontStyle) }
     }
     @Published public var language: String = "en" {
-        didSet { saveLanguage() }
+        didSet {
+            if language != "en" && language != "zh" {
+                language = "en"
+                return
+            }
+            userDefaults.set(language, forKey: Keys.language)
+        }
     }
     @Published public var autoPlay: Bool = false {
-        didSet { saveAutoPlay() }
-    }
-    @Published public var spotlightEnabled: Bool = false {
-        didSet { saveSpotlightEnabled() }
+        didSet { userDefaults.set(autoPlay, forKey: Keys.autoPlay) }
     }
     @Published public var iCloudSyncEnabled: Bool = false {
-        didSet { saveICloudSyncEnabled() }
+        didSet {
+            userDefaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSyncEnabled)
+            ICloudSyncService.shared.setEnabled(iCloudSyncEnabled)
+            if iCloudSyncEnabled { requestICloudPush() }
+        }
     }
     @Published public var appIconName: String? = nil {
-        didSet { saveAppIconName() }
-    }
-    @Published public var memberUnlocked: Bool = false {
-        didSet { saveMemberUnlocked() }
+        didSet {
+            if let appIconName {
+                userDefaults.set(appIconName, forKey: Keys.appIconName)
+            } else {
+                userDefaults.removeObject(forKey: Keys.appIconName)
+            }
+        }
     }
     @Published public var avatarPath: String = "" {
-        didSet { saveAvatarPath() }
+        didSet { userDefaults.set(avatarPath, forKey: Keys.avatarPath) }
     }
     @Published public var selectedVoiceId: String = TTSVoice.default.rawValue {
         didSet {
@@ -352,107 +333,54 @@ public final class AppState: ObservableObject {
                 }
                 return
             }
-            saveSelectedVoiceId()
+            userDefaults.set(selectedVoiceId, forKey: Keys.selectedVoiceId)
             AudioCacheManager.shared.clearCache()
         }
     }
-    
+
     private var wordByIdMap: [String: SimpleWord] = [:]
     private var wordSiblingMap: [String: [String]] = [:]
     private var conjugationData: ConjugationData = .empty
-    private var pendingSpotlightIndexTask: Task<Void, Never>? = nil
-    
+    private var libraryUpdatedAt: Date = .distantPast
+    private var favoriteWordIdsForSync: (() -> [String])?
+    private var applyFavoriteWordIdsFromSync: (([String]) -> Void)?
     private let userDefaults = UserDefaults.standard
-    private let fallbackWords: [SimpleWord] = [
-        SimpleWord(
-            id: "w_bonjour",
-            word: "bonjour",
-            tag: "INTJ",
-            level: "A1",
-            translationZh: "你好",
-            translationEn: "hello",
-            exampleFr: "Bonjour, comment ca va ?",
-            exampleZh: "你好，你最近怎么样？"
-        ),
-        SimpleWord(
-            id: "w_merci",
-            word: "merci",
-            tag: "INTJ",
-            level: "A1",
-            translationZh: "谢谢",
-            translationEn: "thank you",
-            exampleFr: "Merci pour ton aide.",
-            exampleZh: "谢谢你的帮助。"
-        ),
-        SimpleWord(
-            id: "w_maison",
-            word: "maison",
-            tag: "N",
-            level: "A1",
-            translationZh: "房子；家",
-            translationEn: "house; home",
-            exampleFr: "Je rentre a la maison.",
-            exampleZh: "我要回家了。"
-        ),
-        SimpleWord(
-            id: "w_cafe",
-            word: "cafe",
-            tag: "N",
-            level: "A1",
-            translationZh: "咖啡；咖啡馆",
-            translationEn: "coffee; cafe",
-            exampleFr: "Je prends un cafe au cafe du coin.",
-            exampleZh: "我在街角的咖啡馆喝咖啡。"
-        )
-    ]
-    
+
+    private static let libraryFileURL: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Croissante", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base.appendingPathComponent("user_words.json")
+    }()
+
     public init() {
         loadUserPreferences()
-        words = fallbackWords
-        buildWordLinks(words)
-        rebuildSearchIndex()
+        loadLibrary()
+        rebuildDerivedState()
+        hasCompletedInitialResourceLoad = true
 
         let bundlePath = resourceBundlePath
-        Task { [bundlePath, fallbackWords = fallbackWords] in
-            let coreResources = await Self.loadCoreResources(bundlePath: bundlePath, fallbackWords: fallbackWords)
-            applyLoadedCoreResources(coreResources)
-            conjugationData = .empty
-            conjugationFormsByLemma = [:]
+        Task {
+            let data = await Self.loadConjugation(bundlePath: bundlePath)
+            conjugationData = data
+            conjugationFormsByLemma = data.formsByLemma
             rebuildSearchIndex()
-            hasCompletedInitialResourceLoad = true
-
-            let deferredResources = await Self.loadDeferredResources(
-                bundlePath: bundlePath,
-                words: coreResources.words
-            )
-            applyDeferredResources(deferredResources)
-            if spotlightEnabled {
-                scheduleSpotlightIndexing(
-                    words: coreResources.words,
-                    conjugationFormsByLemma: deferredResources.conjugationData.formsByLemma
-                )
-            }
         }
     }
 
-    // MARK: - Language Helpers
+    // MARK: - Language
 
     public enum AppLanguage: String {
         case en
         case zh
-        case hi
     }
 
     public var currentLanguage: AppLanguage {
         AppLanguage(rawValue: language) ?? .en
     }
 
-    public func localized(_ en: String, _ zh: String, _ hi: String) -> String {
-        switch currentLanguage {
-        case .en: return en
-        case .zh: return zh
-        case .hi: return hi
-        }
+    public func localized(_ en: String, _ zh: String) -> String {
+        currentLanguage == .zh ? zh : en
     }
 
     public func translationText(for word: SimpleWord) -> String {
@@ -462,22 +390,13 @@ public final class AppState: ObservableObject {
             if let value = override?.translationEn { return normalizedOverrideText(value) }
             return firstNonEmpty(
                 resolvedText(override?.translationEn, fallback: word.translationEn),
-                resolvedText(override?.translationZh, fallback: word.translationZh),
-                resolvedText(override?.translationHi, fallback: word.translationHi)
+                resolvedText(override?.translationZh, fallback: word.translationZh)
             )
         case .zh:
             if let value = override?.translationZh { return normalizedOverrideText(value) }
             return firstNonEmpty(
                 resolvedText(override?.translationZh, fallback: word.translationZh),
-                resolvedText(override?.translationEn, fallback: word.translationEn),
-                resolvedText(override?.translationHi, fallback: word.translationHi)
-            )
-        case .hi:
-            if let value = override?.translationHi { return normalizedOverrideText(value) }
-            return firstNonEmpty(
-                resolvedText(override?.translationHi, fallback: word.translationHi),
-                resolvedText(override?.translationEn, fallback: word.translationEn),
-                resolvedText(override?.translationZh, fallback: word.translationZh)
+                resolvedText(override?.translationEn, fallback: word.translationEn)
             )
         }
     }
@@ -487,7 +406,6 @@ public final class AppState: ObservableObject {
         switch currentLanguage {
         case .en: return resolvedText(override?.exampleEn, fallback: word.exampleEn)
         case .zh: return resolvedText(override?.exampleZh, fallback: word.exampleZh)
-        case .hi: return resolvedText(override?.exampleHi, fallback: word.exampleHi)
         }
     }
 
@@ -510,12 +428,6 @@ public final class AppState: ObservableObject {
                 frenchExample: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
                 example: override?.exampleZh ?? normalizedOverrideText(word.exampleZh)
             )
-        case .hi:
-            return UserWordLocalizedContent(
-                translation: override?.translationHi ?? normalizedOverrideText(word.translationHi),
-                frenchExample: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
-                example: override?.exampleHi ?? normalizedOverrideText(word.exampleHi)
-            )
         }
     }
 
@@ -525,11 +437,9 @@ public final class AppState: ObservableObject {
             wordId: word.id,
             translationEn: override?.translationEn ?? normalizedOverrideText(word.translationEn),
             translationZh: override?.translationZh ?? normalizedOverrideText(word.translationZh),
-            translationHi: override?.translationHi ?? normalizedOverrideText(word.translationHi),
             exampleFr: override?.exampleFr ?? normalizedOverrideText(word.exampleFr),
             exampleEn: override?.exampleEn ?? normalizedOverrideText(word.exampleEn),
-            exampleZh: override?.exampleZh ?? normalizedOverrideText(word.exampleZh),
-            exampleHi: override?.exampleHi ?? normalizedOverrideText(word.exampleHi)
+            exampleZh: override?.exampleZh ?? normalizedOverrideText(word.exampleZh)
         )
     }
 
@@ -538,11 +448,9 @@ public final class AppState: ObservableObject {
         switch field {
         case .translationEn: return override.translationEn != nil
         case .translationZh: return override.translationZh != nil
-        case .translationHi: return override.translationHi != nil
         case .exampleFr: return override.exampleFr != nil
         case .exampleEn: return override.exampleEn != nil
         case .exampleZh: return override.exampleZh != nil
-        case .exampleHi: return override.exampleHi != nil
         }
     }
 
@@ -551,11 +459,9 @@ public final class AppState: ObservableObject {
             wordId: word.id,
             translationEn: overrideValue(content.translationEn, official: word.translationEn),
             translationZh: overrideValue(content.translationZh, official: word.translationZh),
-            translationHi: overrideValue(content.translationHi, official: word.translationHi),
             exampleFr: overrideValue(content.exampleFr, official: word.exampleFr),
             exampleEn: overrideValue(content.exampleEn, official: word.exampleEn),
-            exampleZh: overrideValue(content.exampleZh, official: word.exampleZh),
-            exampleHi: overrideValue(content.exampleHi, official: word.exampleHi)
+            exampleZh: overrideValue(content.exampleZh, official: word.exampleZh)
         )
 
         if override.isEmpty {
@@ -563,9 +469,7 @@ public final class AppState: ObservableObject {
             return
         }
 
-        var overrides = userWordContentOverrides
-        overrides[word.id] = override
-        userWordContentOverrides = overrides
+        userWordContentOverrides[word.id] = override
         saveUserWordContentOverrides()
     }
 
@@ -579,18 +483,13 @@ public final class AppState: ObservableObject {
         case .zh:
             override.translationZh = content.translation
             override.exampleZh = content.example
-        case .hi:
-            override.translationHi = content.translation
-            override.exampleHi = content.example
         }
         saveUserWordContentOverride(override, for: word)
     }
 
     func resetUserWordContentOverride(for word: SimpleWord) {
         guard userWordContentOverrides[word.id] != nil else { return }
-        var overrides = userWordContentOverrides
-        overrides.removeValue(forKey: word.id)
-        userWordContentOverrides = overrides
+        userWordContentOverrides.removeValue(forKey: word.id)
         saveUserWordContentOverrides()
     }
 
@@ -599,180 +498,238 @@ public final class AppState: ObservableObject {
         userWordContentOverrides = [:]
         saveUserWordContentOverrides()
     }
-    
-    // MARK: - User Preferences Loading
-    
-    private func loadUserPreferences() {
-        // Theme Mode
-        if let rawValue = userDefaults.value(forKey: Keys.themeMode) as? Int {
-            if let mode = ThemeMode(rawValue: rawValue) {
-                themeMode = mode
-            } else if rawValue == 1 {
-                themeMode = .light
-                userDefaults.set(ThemeMode.light.rawValue, forKey: Keys.themeMode)
-            } else {
-                themeMode = .system
-                userDefaults.set(ThemeMode.system.rawValue, forKey: Keys.themeMode)
+
+    // MARK: - Library
+
+    @discardableResult
+    public func addWord(form rawForm: String) -> SimpleWord? {
+        let form = rawForm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !form.isEmpty else { return nil }
+
+        let normalized = SearchTextNormalizer.normalize(form)
+        if let existing = words.first(where: { SearchTextNormalizer.normalize($0.word) == normalized }) {
+            recordLookup(wordId: existing.id)
+            return existing
+        }
+
+        let word = SimpleWord(id: SimpleWord.makeID(for: form), word: form)
+        words.insert(word, at: 0)
+        incrementTodayLookupCount()
+        commitLibraryChange()
+        return word
+    }
+
+    public func updateWord(_ word: SimpleWord) {
+        guard let index = words.firstIndex(where: { $0.id == word.id }) else { return }
+        words[index] = word
+        commitLibraryChange()
+    }
+
+    public func recordLookup(wordId: String) {
+        guard let index = words.firstIndex(where: { $0.id == wordId }) else { return }
+        let word = words.remove(at: index)
+        words.insert(word, at: 0)
+        incrementTodayLookupCount()
+        commitLibraryChange()
+    }
+
+    public func removeWord(id: String) {
+        guard words.contains(where: { $0.id == id }) else { return }
+        words.removeAll { $0.id == id }
+        userWordContentOverrides.removeValue(forKey: id)
+        saveUserWordContentOverrides(skipICloudPush: true)
+        commitLibraryChange()
+    }
+
+    public func resetLibrary() {
+        words = []
+        dailyLookupCounts = [:]
+        userWordContentOverrides = [:]
+        saveUserWordContentOverrides(skipICloudPush: true)
+        commitLibraryChange()
+    }
+
+    public func lookupCount(for date: Date) -> Int {
+        dailyLookupCounts[Self.dayKey(for: date)] ?? 0
+    }
+
+    public func getWordById(_ id: String) -> SimpleWord? {
+        wordByIdMap[id]
+    }
+
+    public func getAllSenses(_ word: SimpleWord) -> [SimpleWord] {
+        let key = Self.senseGroupingKey(for: word)
+        let ids = wordSiblingMap[key] ?? []
+        return ids
+            .compactMap { wordByIdMap[$0] }
+            .sorted { lhs, rhs in
+                if lhs.senseIndex != rhs.senseIndex { return lhs.senseIndex < rhs.senseIndex }
+                return lhs.id < rhs.id
             }
-        }
-
-        if let savedCardFontStyle = userDefaults.string(forKey: Keys.cardFontStyle),
-           let style = CardFontStyle(rawValue: savedCardFontStyle) {
-            cardFontStyle = style
-        }
-        
-        // Level
-        if let savedLevel = userDefaults.string(forKey: Keys.level) {
-            level = Self.canonicalLevel(savedLevel)
-        }
-        
-        // Language
-        if let savedLanguage = userDefaults.string(forKey: Keys.language) {
-            language = savedLanguage
-        }
-        
-        // Auto Play
-        autoPlay = userDefaults.bool(forKey: Keys.autoPlay)
-        
-        // Spotlight Enabled
-        spotlightEnabled = userDefaults.bool(forKey: Keys.spotlightEnabled)
-
-        // iCloud Sync Enabled
-        iCloudSyncEnabled = userDefaults.bool(forKey: Keys.iCloudSyncEnabled)
-        
-        // App Icon Name
-        appIconName = userDefaults.string(forKey: Keys.appIconName)
-        
-        // Member Unlocked
-        memberUnlocked = userDefaults.bool(forKey: Keys.memberUnlocked)
-        WidgetDataService.writeMemberUnlocked(memberUnlocked)
-        
-        // Avatar Path
-        if let savedAvatarPath = userDefaults.string(forKey: Keys.avatarPath) {
-            avatarPath = savedAvatarPath
-        }
-        if let savedVoiceId = userDefaults.string(forKey: Keys.selectedVoiceId) {
-            selectedVoiceId = savedVoiceId
-        }
-        loadUserWordContentOverrides()
-    }
-    
-    // MARK: - User Preferences Saving
-    
-    private func saveThemeMode() {
-        userDefaults.set(themeMode.rawValue, forKey: Keys.themeMode)
     }
 
-    private func saveCardFontStyle() {
-        userDefaults.set(cardFontStyle.rawValue, forKey: Keys.cardFontStyle)
-    }
-    
-    private func saveLevel() {
-        userDefaults.set(level, forKey: Keys.level)
+    private func incrementTodayLookupCount() {
+        let key = Self.dayKey(for: Date())
+        dailyLookupCounts[key, default: 0] += 1
+        pruneLookupCounts()
     }
 
-    private static func canonicalLevel(_ rawLevel: String) -> String {
-        let trimmed = rawLevel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "All" }
-
-        if trimmed == "全部" || trimmed == "सभी" {
-            return "All"
-        }
-
-        let upper = trimmed.uppercased()
-        if upper == "ALL" {
-            return "All"
-        }
-        if supportedLevels.contains(upper) {
-            return upper
-        }
-        if supportedLevels.contains(trimmed) {
-            return trimmed
-        }
-        return "All"
-    }
-    
-    private func saveLanguage() {
-        userDefaults.set(language, forKey: Keys.language)
-    }
-    
-    private func saveAutoPlay() {
-        userDefaults.set(autoPlay, forKey: Keys.autoPlay)
-    }
-    
-    private func saveSpotlightEnabled() {
-        userDefaults.set(spotlightEnabled, forKey: Keys.spotlightEnabled)
+    private func pruneLookupCounts() {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -400, to: Date()) ?? .distantPast
+        let cutoffKey = Self.dayKey(for: cutoff)
+        dailyLookupCounts = dailyLookupCounts.filter { $0.key >= cutoffKey }
     }
 
-    private func saveICloudSyncEnabled() {
-        userDefaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSyncEnabled)
-    }
-    
-    private func saveAppIconName() {
-        if let iconName = appIconName {
-            userDefaults.set(iconName, forKey: Keys.appIconName)
-        } else {
-            userDefaults.removeObject(forKey: Keys.appIconName)
-        }
-    }
-    
-    private func saveMemberUnlocked() {
-        userDefaults.set(memberUnlocked, forKey: Keys.memberUnlocked)
-        WidgetDataService.writeMemberUnlocked(memberUnlocked)
-    }
-    
-    private func saveAvatarPath() {
-        userDefaults.set(avatarPath, forKey: Keys.avatarPath)
-    }
-    
-    private func saveSelectedVoiceId() {
-        userDefaults.set(selectedVoiceId, forKey: Keys.selectedVoiceId)
+    private func commitLibraryChange() {
+        libraryUpdatedAt = Date()
+        rebuildDerivedState()
+        saveLibrary()
+        requestICloudPush()
     }
 
-    private func loadUserWordContentOverrides() {
-        guard let data = userDefaults.data(forKey: Keys.userWordContentOverrides),
-              let overrides = try? JSONDecoder().decode([String: UserWordContentOverride].self, from: data) else {
-            userWordContentOverrides = [:]
-            return
-        }
-        userWordContentOverrides = overrides.filter { !$0.key.isEmpty && !$0.value.isEmpty }
-    }
-
-    private func saveUserWordContentOverrides() {
-        if userWordContentOverrides.isEmpty {
-            userDefaults.removeObject(forKey: Keys.userWordContentOverrides)
-            return
-        }
-        guard let data = try? JSONEncoder().encode(userWordContentOverrides) else { return }
-        userDefaults.set(data, forKey: Keys.userWordContentOverrides)
-    }
-    
-    // MARK: - Data Loading
-    
-    private func applyLoadedCoreResources(_ resources: CoreLoadedResources) {
-        words = resources.words
-        wordByIdMap = resources.wordByIdMap
-        wordSiblingMap = resources.wordSiblingMap
-        pruneUserWordContentOverrides(validWordIds: Set(resources.wordByIdMap.keys))
-    }
-
-    private func applyDeferredResources(_ resources: DeferredLoadedResources) {
-        conjugationData = resources.conjugationData
-        conjugationFormsByLemma = resources.conjugationData.formsByLemma
-        wordSearchIndex = resources.wordSearchIndex
+    private func rebuildDerivedState() {
+        let links = Self.buildWordLinks(words)
+        wordSiblingMap = links.siblingMap
+        wordByIdMap = links.byIdMap
+        rebuildSearchIndex()
     }
 
     private func rebuildSearchIndex() {
         wordSearchIndex = WordSearchIndex.build(words: words, conjugationData: conjugationData)
     }
 
-    private func pruneUserWordContentOverrides(validWordIds: Set<String>) {
-        guard !validWordIds.isEmpty else { return }
-        let filtered = userWordContentOverrides.filter { validWordIds.contains($0.key) && !$0.value.isEmpty }
-        guard filtered.count != userWordContentOverrides.count else { return }
-        userWordContentOverrides = filtered
-        saveUserWordContentOverrides()
+    private static let dayKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static func dayKey(for date: Date) -> String {
+        dayKeyFormatter.string(from: date)
     }
+
+    // MARK: - Persistence
+
+    private func loadUserPreferences() {
+        if let rawValue = userDefaults.value(forKey: Keys.themeMode) as? Int,
+           let mode = ThemeMode(rawValue: rawValue) {
+            themeMode = mode
+        }
+        if let saved = userDefaults.string(forKey: Keys.cardFontStyle), let style = CardFontStyle(rawValue: saved) {
+            cardFontStyle = style
+        }
+        if let saved = userDefaults.string(forKey: Keys.language) {
+            language = saved
+        }
+        autoPlay = userDefaults.bool(forKey: Keys.autoPlay)
+        iCloudSyncEnabled = userDefaults.bool(forKey: Keys.iCloudSyncEnabled)
+        appIconName = userDefaults.string(forKey: Keys.appIconName)
+        if let saved = userDefaults.string(forKey: Keys.avatarPath) {
+            avatarPath = saved
+        }
+        if let saved = userDefaults.string(forKey: Keys.selectedVoiceId) {
+            selectedVoiceId = saved
+        }
+        if let data = userDefaults.data(forKey: Keys.userWordContentOverrides),
+           let overrides = try? JSONDecoder().decode([String: UserWordContentOverride].self, from: data) {
+            userWordContentOverrides = overrides.filter { !$0.key.isEmpty && !$0.value.isEmpty }
+        }
+        if let counts = userDefaults.dictionary(forKey: Keys.dailyLookupCounts) as? [String: Int] {
+            dailyLookupCounts = counts
+        }
+        libraryUpdatedAt = userDefaults.object(forKey: Keys.libraryUpdatedAt) as? Date ?? .distantPast
+    }
+
+    private func loadLibrary() {
+        guard let data = try? Data(contentsOf: Self.libraryFileURL),
+              let decoded = try? Self.makeDecoder().decode([SimpleWord].self, from: data) else {
+            words = []
+            return
+        }
+        words = decoded
+    }
+
+    private func saveLibrary() {
+        userDefaults.set(dailyLookupCounts, forKey: Keys.dailyLookupCounts)
+        userDefaults.set(libraryUpdatedAt, forKey: Keys.libraryUpdatedAt)
+        let snapshot = words
+        let url = Self.libraryFileURL
+        Task.detached(priority: .utility) {
+            guard let data = try? Self.makeEncoder().encode(snapshot) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    private func saveUserWordContentOverrides(skipICloudPush: Bool = false) {
+        if userWordContentOverrides.isEmpty {
+            userDefaults.removeObject(forKey: Keys.userWordContentOverrides)
+        } else if let data = try? JSONEncoder().encode(userWordContentOverrides) {
+            userDefaults.set(data, forKey: Keys.userWordContentOverrides)
+        }
+        if !skipICloudPush {
+            libraryUpdatedAt = Date()
+            userDefaults.set(libraryUpdatedAt, forKey: Keys.libraryUpdatedAt)
+            requestICloudPush()
+        }
+    }
+
+    nonisolated private static func makeEncoder() -> JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }
+
+    nonisolated private static func makeDecoder() -> JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }
+
+    // MARK: - iCloud
+
+    func configureICloudSync(
+        favoriteWordIdsForSync: @escaping () -> [String],
+        applyFavoriteWordIdsFromSync: @escaping ([String]) -> Void
+    ) {
+        self.favoriteWordIdsForSync = favoriteWordIdsForSync
+        self.applyFavoriteWordIdsFromSync = applyFavoriteWordIdsFromSync
+        ICloudSyncService.shared.configure(isEnabled: iCloudSyncEnabled) { [weak self] data in
+            self?.applyRemotePayload(data)
+        }
+    }
+
+    func requestICloudPush() {
+        guard iCloudSyncEnabled, hasCompletedInitialResourceLoad else { return }
+        let payload = LibrarySyncPayload(
+            words: words,
+            favoriteWordIds: favoriteWordIdsForSync?() ?? [],
+            dailyLookupCounts: dailyLookupCounts,
+            userWordContentOverrides: userWordContentOverrides,
+            updatedAt: libraryUpdatedAt
+        )
+        guard let data = try? Self.makeEncoder().encode(payload) else { return }
+        ICloudSyncService.shared.push(payload: data)
+    }
+
+    private func applyRemotePayload(_ data: Data) {
+        guard let payload = try? Self.makeDecoder().decode(LibrarySyncPayload.self, from: data) else { return }
+        guard payload.updatedAt > libraryUpdatedAt else { return }
+
+        var merged = payload.words
+        let remoteIds = Set(merged.map(\.id))
+        merged.append(contentsOf: words.filter { !remoteIds.contains($0.id) })
+        words = merged
+        dailyLookupCounts = dailyLookupCounts.merging(payload.dailyLookupCounts) { max($0, $1) }
+        userWordContentOverrides = payload.userWordContentOverrides.filter { !$0.key.isEmpty && !$0.value.isEmpty }
+        libraryUpdatedAt = payload.updatedAt
+        saveUserWordContentOverrides(skipICloudPush: true)
+        rebuildDerivedState()
+        saveLibrary()
+        applyFavoriteWordIdsFromSync?(payload.favoriteWordIds)
+    }
+
+    // MARK: - Helpers
 
     private func resolvedText(_ override: String?, fallback: String) -> String {
         normalizedOverrideText(override ?? fallback)
@@ -794,44 +751,16 @@ public final class AppState: ObservableObject {
         return normalized == normalizedOverrideText(official) ? nil : normalized
     }
 
-    nonisolated private static func loadCoreResources(bundlePath: String, fallbackWords: [SimpleWord]) async -> CoreLoadedResources {
-        await Task.detached(priority: .userInitiated) {
-            let preferredSources = ["Croisssante-Words", "words"]
-            let words = preferredSources
-                .compactMap { loadJSONResource($0, as: [SimpleWord].self, bundlePath: bundlePath) }
-                .first ?? fallbackWords
-            let wordLinks = buildWordLinks(words)
-            return CoreLoadedResources(
-                words: words,
-                wordByIdMap: wordLinks.byIdMap,
-                wordSiblingMap: wordLinks.siblingMap
-            )
-        }.value
-    }
-
-    nonisolated private static func loadDeferredResources(
-        bundlePath: String,
-        words: [SimpleWord]
-    ) async -> DeferredLoadedResources {
+    nonisolated private static func loadConjugation(bundlePath: String) async -> ConjugationData {
         await Task.detached(priority: .utility) {
-            let conjugationMap = loadJSONResource("conjugation", as: [String: String].self, bundlePath: bundlePath) ?? [:]
-            let conjugationData = ConjugationData.build(from: conjugationMap)
-            return DeferredLoadedResources(
-                conjugationData: conjugationData,
-                wordSearchIndex: WordSearchIndex.build(words: words, conjugationData: conjugationData)
-            )
+            let bundle = Bundle(path: bundlePath) ?? .main
+            guard let url = bundle.url(forResource: "conjugation", withExtension: "json"),
+                  let data = try? Data(contentsOf: url),
+                  let map = try? JSONDecoder().decode([String: String].self, from: data) else {
+                return ConjugationData.empty
+            }
+            return ConjugationData.build(from: map)
         }.value
-    }
-
-    nonisolated private static func loadJSONResource<T: Decodable & Sendable>(_ name: String, as type: T.Type, bundlePath: String) -> T? {
-        let bundle = Bundle(path: bundlePath) ?? .main
-        guard let url = bundle.url(forResource: name, withExtension: "json") else {
-            return nil
-        }
-        guard let data = try? Data(contentsOf: url) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(type, from: data)
     }
 
     private var resourceBundlePath: String {
@@ -841,49 +770,10 @@ public final class AppState: ObservableObject {
         return Bundle.main.bundlePath
         #endif
     }
-    
-    // MARK: - Word Management
-    
-    private func buildWordLinks(_ words: [SimpleWord]) {
-        let links = Self.buildWordLinks(words)
-        wordSiblingMap = links.siblingMap
-        wordByIdMap = links.byIdMap
-    }
-    
-    public func getWordById(_ id: String) -> SimpleWord? {
-        return wordByIdMap[id]
-    }
-
-    public func getAllSenses(_ word: SimpleWord) -> [SimpleWord] {
-        let key = Self.senseGroupingKey(for: word)
-        let ids = wordSiblingMap[key] ?? []
-        return ids
-            .compactMap { wordByIdMap[$0] }
-            .sorted { lhs, rhs in
-                if lhs.senseIndex != rhs.senseIndex {
-                    return lhs.senseIndex < rhs.senseIndex
-                }
-                return lhs.id < rhs.id
-            }
-    }
-    
-    public func getSiblings(_ word: SimpleWord) -> [SimpleWord] {
-        getAllSenses(word).filter { $0.id != word.id }
-    }
-    
-    public func hasMultipleEntries(_ word: SimpleWord) -> Bool {
-        getAllSenses(word).count > 1
-    }
-    
-    public func isPolysemous(_ word: SimpleWord?) -> Bool {
-        guard let word = word else { return false }
-        return hasMultipleEntries(word)
-    }
 
     nonisolated private static func buildWordLinks(_ words: [SimpleWord]) -> (siblingMap: [String: [String]], byIdMap: [String: SimpleWord]) {
         var siblingMap: [String: [String]] = [:]
         var byIdMap: [String: SimpleWord] = [:]
-
         for word in words {
             let key = senseGroupingKey(for: word)
             if !key.isEmpty {
@@ -891,22 +781,10 @@ public final class AppState: ObservableObject {
             }
             byIdMap[word.id] = word
         }
-
         return (siblingMap, byIdMap)
     }
 
     nonisolated private static func senseGroupingKey(for word: SimpleWord) -> String {
-        // Multi-sense grouping should preserve lexical casing and accents; search can stay more permissive.
-        (word.word.isEmpty ? word.displayWord : word.word)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func scheduleSpotlightIndexing(words: [SimpleWord], conjugationFormsByLemma: [String: [String]]) {
-        pendingSpotlightIndexTask?.cancel()
-        pendingSpotlightIndexTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 900_000_000)
-            guard !Task.isCancelled, spotlightEnabled else { return }
-            SpotlightService.shared.indexAllWords(words, conjugationFormsByLemma: conjugationFormsByLemma)
-        }
+        (word.word.isEmpty ? word.displayWord : word.word).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

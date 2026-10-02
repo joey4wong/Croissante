@@ -60,10 +60,6 @@ public class ElevenLabsTTSService: NSObject, ObservableObject {
     @Published private(set) var playbackWaveform: [Double] = []
     private var currentTask: Task<Void, Never>?
     private let waveformSampleCount = 128
-    private var memberUnlocked: Bool {
-        UserDefaults.standard.bool(forKey: "memberUnlocked")
-    }
-
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30.0
@@ -132,11 +128,6 @@ public class ElevenLabsTTSService: NSObject, ObservableObject {
 
         if systemSynthesizer.isSpeaking {
             systemSynthesizer.stopSpeaking(at: .immediate)
-        }
-
-        guard memberUnlocked else {
-            speakWithSystemTTS(trimmedText, language: language, playbackID: playbackID)
-            return
         }
 
         guard ttsEndpointURL != nil else {
@@ -275,7 +266,6 @@ public class ElevenLabsTTSService: NSObject, ObservableObject {
         language: String = "fr-FR",
         contentType: ContentType = .sentence
     ) async {
-        guard memberUnlocked else { return }
         guard ttsEndpointURL != nil else { return }
         for text in texts {
             let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)

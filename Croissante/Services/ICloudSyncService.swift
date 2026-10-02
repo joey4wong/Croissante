@@ -44,13 +44,7 @@ final class ICloudSyncService {
     }
 
     func payloadData() -> Data? {
-        if let data = ubiquitousStore.data(forKey: Keys.learningPayload) {
-            return data
-        }
-        if let payloadString = ubiquitousStore.string(forKey: Keys.learningPayload) {
-            return payloadString.data(using: .utf8)
-        }
-        return nil
+        ubiquitousStore.data(forKey: Keys.learningPayload)
     }
 
     func push(payload: Data) {

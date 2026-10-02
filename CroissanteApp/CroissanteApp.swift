@@ -1,19 +1,12 @@
 import SwiftUI
 import UIKit
-import CoreSpotlight
 
 @main
 struct CroissanteApp: App {
-    @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var appState: AppState
-    @StateObject private var storeKitManager: StoreKitManager
-    @StateObject private var srsManager = SRSManager.shared
+    @StateObject private var appState = AppState()
     @StateObject private var favoritesStore = FavoritesStore()
 
     init() {
-        let appState = AppState()
-        _appState = StateObject(wrappedValue: appState)
-        _storeKitManager = StateObject(wrappedValue: StoreKitManager(appState: appState))
         configureTabBarAppearance()
     }
 
@@ -21,41 +14,19 @@ struct CroissanteApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
-                .environmentObject(storeKitManager)
-                .environmentObject(srsManager)
                 .environmentObject(favoritesStore)
                 .preferredColorScheme(preferredColorScheme)
                 .onAppear {
-                    srsManager.configure(with: appState)
+                    favoritesStore.onChange = { appState.requestICloudPush() }
+                    appState.configureICloudSync(
+                        favoriteWordIdsForSync: { favoritesStore.favoriteWordIds },
+                        applyFavoriteWordIdsFromSync: { favoritesStore.replaceFromICloudSync($0) }
+                    )
                     configureTabBarAppearance()
                 }
                 .onChange(of: appState.themeMode) { _, _ in
                     animateThemeSwitch()
                     configureTabBarAppearance()
-                }
-                .onChange(of: scenePhase) { _, newPhase in
-                    if newPhase == .active {
-                        srsManager.refreshForCurrentDayIfNeeded()
-                        Task {
-                            await storeKitManager.syncMembershipStatus()
-                        }
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
-                    srsManager.refreshForCurrentDayIfNeeded()
-                }
-                #if os(iOS)
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
-                    srsManager.refreshForCurrentDayIfNeeded()
-                }
-                #endif
-                .onContinueUserActivity(CSSearchableItemActionType) { activity in
-                    if let wordId = SpotlightService.shared.handleUserActivity(activity) {
-                        appState.spotlightSelectedWordId = wordId
-                    }
-                }
-                .onOpenURL { url in
-                    handleIncomingURL(url)
                 }
         }
     }
@@ -90,23 +61,6 @@ struct CroissanteApp: App {
         UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 
-    private func handleIncomingURL(_ url: URL) {
-        guard url.scheme == "croissante" else { return }
-        if url.host == "paywall" {
-            appState.openMemberPaywallFromDeepLink = true
-            return
-        }
-        guard url.host == "word",
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let rawWordId = components.queryItems?.first(where: { $0.name == "id" })?.value else {
-            return
-        }
-
-        let wordId = rawWordId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !wordId.isEmpty else { return }
-        appState.widgetSelectedWordId = wordId
-    }
-
     private func makeSelectionIndicatorImage() -> UIImage {
         let canvas = CGSize(width: 96, height: 44)
         let pill = CGRect(x: 14, y: 5, width: 68, height: 34)
@@ -137,7 +91,6 @@ struct CroissanteApp: App {
 
     @MainActor
     private func animateThemeSwitch() {
-        #if os(iOS)
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive }),
@@ -150,6 +103,5 @@ struct CroissanteApp: App {
             duration: 0.28,
             options: [.transitionCrossDissolve, .allowAnimatedContent]
         ) {}
-        #endif
     }
 }

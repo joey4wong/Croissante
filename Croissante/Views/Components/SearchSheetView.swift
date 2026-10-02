@@ -23,7 +23,6 @@ struct SearchSheetView: View {
     var onWordSelected: ((SimpleWord) -> Void)?
     
     @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var srsManager: SRSManager
     @Environment(\.colorScheme) private var colorScheme
     private var isDark: Bool { colorScheme == .dark }
     private var isLightAppearance: Bool {
@@ -134,12 +133,8 @@ struct SearchSheetView: View {
             SearchSelectedWordCardView(
                 word: word,
                 themeMode: appState.themeMode,
-                allowsBlurrySwipe: true,
                 dismissOnTap: true,
-                onDismiss: { selectedWordForCard = nil },
-                onSwipeForgot: { srsManager.markWordForgot($0, source: .lookup) },
-                onSwipeMastered: { srsManager.markWordMastered($0, source: .lookup) },
-                onSwipeBlurry: { srsManager.markWordBlurry($0, source: .lookup) }
+                onDismiss: { selectedWordForCard = nil }
             )
         }
         #else
@@ -147,12 +142,8 @@ struct SearchSheetView: View {
             SearchSelectedWordCardView(
                 word: word,
                 themeMode: appState.themeMode,
-                allowsBlurrySwipe: true,
                 dismissOnTap: true,
-                onDismiss: { selectedWordForCard = nil },
-                onSwipeForgot: { srsManager.markWordForgot($0, source: .lookup) },
-                onSwipeMastered: { srsManager.markWordMastered($0, source: .lookup) },
-                onSwipeBlurry: { srsManager.markWordBlurry($0, source: .lookup) }
+                onDismiss: { selectedWordForCard = nil }
             )
         }
         #endif
@@ -214,7 +205,7 @@ struct SearchSheetView: View {
                     .foregroundColor(isDark ? .white.opacity(0.68) : .black.opacity(0.52))
                     .font(.system(size: 18, weight: .regular))
 
-                TextField(appState.localized("Search words", "搜索单词", "शब्द खोजें"), text: $searchQuery)
+                TextField(appState.localized("Search words", "搜索单词"), text: $searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 18, weight: .regular, design: .default))
                     .foregroundColor(isDark ? .white : .black)
@@ -276,7 +267,7 @@ struct SearchSheetView: View {
                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.5))
                 .font(.system(size: 16))
             
-            TextField(appState.localized("Search words", "搜索单词", "शब्द खोजें"), text: $searchQuery)
+            TextField(appState.localized("Search words", "搜索单词"), text: $searchQuery)
                 .textFieldStyle(PlainTextFieldStyle())
                 .font(.system(size: 16))
                 .foregroundColor(isDark ? .white : .black)
@@ -318,7 +309,7 @@ struct SearchSheetView: View {
                 .font(.system(size: 32))
                 .foregroundColor(isDark ? AppColors.nocturneTextTertiary : .black.opacity(0.3))
             
-            Text(appState.localized("Type keywords to search local words", "输入关键词搜索本地单词列表", "स्थानीय शब्द खोजने के लिए कीवर्ड दर्ज करें"))
+            Text(appState.localized("Search the words you have added", "搜索你添加过的单词"))
                 .font(.system(size: 13))
                 .foregroundColor(isDark ? AppColors.nocturneTextSecondary : .black.opacity(0.4))
         }
@@ -332,7 +323,7 @@ struct SearchSheetView: View {
                 .font(.system(size: 32))
                 .foregroundColor(isDark ? AppColors.nocturneTextTertiary : .black.opacity(0.3))
             
-            Text(appState.localized("No results found", "未找到结果", "कोई परिणाम नहीं मिला"))
+            Text(appState.localized("No results found", "未找到结果"))
                 .font(.system(size: 13))
                 .foregroundColor(isDark ? AppColors.nocturneTextSecondary : .black.opacity(0.4))
         }
@@ -384,6 +375,7 @@ struct SearchSheetView: View {
     private func wordResultRow(_ word: SimpleWord) -> some View {
         Button(action: {
             addToRecentWords(word)
+            appState.recordLookup(wordId: word.id)
             selectedWordForCard = word
             onWordSelected?(word)
         }) {
@@ -413,10 +405,10 @@ struct SearchSheetView: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 withAnimation(.easeInOut(duration: 0.20)) {
-                    srsManager.resetWordToNew(word.id)
+                    appState.removeWord(id: word.id)
                 }
             } label: {
-                Label(appState.localized("Delete", "删除", "हटाएं"), systemImage: "trash")
+                Label(appState.localized("Delete", "删除"), systemImage: "trash")
             }
             .tint(.red)
         }
@@ -445,52 +437,4 @@ struct SearchSheetView: View {
     private func normalizeSearchText(_ text: String) -> String {
         SearchTextNormalizer.normalize(text)
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    struct PreviewWrapper: View {
-        @State private var isPresented = true
-        
-        var body: some View {
-            ZStack {
-                Color.gray.opacity(0.2)
-                    .ignoresSafeArea()
-                
-                Button("显示搜索") {
-                    isPresented = true
-                }
-            }
-            .sheet(isPresented: $isPresented) {
-                SearchSheetView(
-                    isPresented: $isPresented,
-                    allWords: [
-                        SimpleWord(
-                            id: "w_bonjour",
-                            word: "bonjour",
-                            tag: "INTJ",
-                            level: "A1",
-                            translationZh: "你好",
-                            translationEn: "hello",
-                            exampleFr: "Bonjour, comment ca va ?",
-                            exampleZh: "你好，你最近怎么样？"
-                        ),
-                        SimpleWord(
-                            id: "w_merci",
-                            word: "merci",
-                            tag: "INTJ",
-                            level: "A1",
-                            translationZh: "谢谢",
-                            translationEn: "thank you",
-                            exampleFr: "Merci pour ton aide.",
-                            exampleZh: "谢谢你的帮助。"
-                        )
-                    ]
-                )
-            }
-        }
-    }
-    
-    return PreviewWrapper()
 }
