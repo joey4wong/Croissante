@@ -52,14 +52,6 @@ struct WordGalaxyView: View {
                 }
                 .contentShape(Rectangle())
                 .gesture(orbitGesture(in: geo))
-
-                GalaxyAddButton(action: {
-                    guard isInteractive, selectedCardIndex == nil else { return }
-                    onAddTapped()
-                })
-                .opacity(addButtonOpacity)
-                .allowsHitTesting(isInteractive && selectedCardIndex == nil)
-                .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
             .onAppear(perform: startDeal)
             .onChange(of: returnToken) { _, _ in
@@ -160,6 +152,14 @@ struct WordGalaxyView: View {
         }()
 
         ZStack {
+            GalaxyAddButton(action: {
+                guard isInteractive, selectedCardIndex == nil else { return }
+                onAddTapped()
+            })
+            .opacity(addButtonOpacity)
+            .allowsHitTesting(isInteractive && selectedCardIndex == nil)
+            .zIndex(0)
+
             if galaxyOpacity > 0.001 {
                 ForEach(visibleCards) { card in
                     renderedGalaxyCard(card, flyInProgress: flyInProgress)
