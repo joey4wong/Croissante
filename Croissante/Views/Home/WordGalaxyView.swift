@@ -158,6 +158,7 @@ struct WordGalaxyView: View {
             })
             .opacity(addButtonOpacity)
             .allowsHitTesting(isInteractive && selectedCardIndex == nil)
+            .offset(y: -116)
             .zIndex(0)
 
             if galaxyOpacity > 0.001 {
