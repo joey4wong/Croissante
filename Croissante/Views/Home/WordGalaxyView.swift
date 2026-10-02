@@ -415,7 +415,7 @@ func galaxyLerp(_ start: Double, _ end: Double, _ progress: Double) -> Double {
 
 enum GalaxyOrbit {
     static let radius: Double = 135
-    static let tiltX: Double = 40
+    static let tiltX: Double = 18
     static let tiltZ: Double = 17
     static let camera: Double = 750
 
