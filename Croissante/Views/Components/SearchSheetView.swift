@@ -124,6 +124,9 @@ struct SearchSheetView: View {
                 }
             }
         }
+        .onChange(of: appState.words.count) { _, _ in
+            performSearch(for: searchQuery)
+        }
         .onDisappear {
             debounceTask?.cancel()
             debounceTask = nil
@@ -162,7 +165,7 @@ struct SearchSheetView: View {
             if normalizedQuery.isEmpty {
                 emptyStateView
             } else if searchResults.isEmpty {
-                noResultsView
+                addWordView
             } else {
                 resultsListView
             }
@@ -253,7 +256,7 @@ struct SearchSheetView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else if searchResults.isEmpty {
-                noResultsView
+                addWordView
             } else {
                 wordListView(searchResults)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -309,7 +312,7 @@ struct SearchSheetView: View {
                 .font(.system(size: 32))
                 .foregroundColor(isDark ? AppColors.nocturneTextTertiary : .black.opacity(0.3))
             
-            Text(appState.localized("Search the words you have added", "搜索你添加过的单词"))
+            Text(appState.localized("Type a French word to look it up or add it", "输入法语单词，查找或添加"))
                 .font(.system(size: 13))
                 .foregroundColor(isDark ? AppColors.nocturneTextSecondary : .black.opacity(0.4))
         }
@@ -317,20 +320,47 @@ struct SearchSheetView: View {
         .padding(.vertical, 24)
     }
     
-    private var noResultsView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.circle")
-                .font(.system(size: 32))
-                .foregroundColor(isDark ? AppColors.nocturneTextTertiary : .black.opacity(0.3))
-            
-            Text(appState.localized("No results found", "未找到结果"))
-                .font(.system(size: 13))
-                .foregroundColor(isDark ? AppColors.nocturneTextSecondary : .black.opacity(0.4))
+    private var addWordView: some View {
+        let form = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Button(action: addCurrentQueryAsWord) {
+            HStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(isDark ? Color.white.opacity(0.86) : Color.black.opacity(0.78))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(form)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(isDark ? AppColors.nocturneTextPrimary : Color.black.opacity(0.86))
+                        .lineLimit(1)
+                    Text(appState.localized("Add to your words", "添加到我的单词"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(isDark ? AppColors.nocturneTextSecondary : Color.black.opacity(0.46))
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .themedGlassSurface(themeMode: appState.themeMode, isDarkMode: isDark, elevated: true)
+            )
+            .contentShape(Rectangle())
         }
-        .frame(height: emptyStateHeight)
-        .padding(.vertical, 24)
+        .buttonStyle(.plain)
+        .padding(.horizontal, presentationStyle == .fullScreen ? 0 : 12)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
-    
+
+    private func addCurrentQueryAsWord() {
+        guard let word = appState.addWord(form: searchQuery) else { return }
+        FeedbackService.wordAdded()
+        addToRecentWords(word)
+        searchQuery = ""
+        selectedWordForCard = word
+        onWordSelected?(word)
+    }
+
     private var resultsListView: some View {
         wordListView(searchResults)
             .frame(height: resultsListHeight)

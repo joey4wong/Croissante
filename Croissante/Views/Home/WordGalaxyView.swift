@@ -13,7 +13,6 @@ struct WordGalaxyView: View {
     let returnToken: Int
     let isInteractive: Bool
     let onSelectCard: (GalaxySelectedCardTransitionRequest) -> Void
-    let onAddTapped: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -63,10 +62,6 @@ struct WordGalaxyView: View {
                 flyInStartTime = Date()
             }
         }
-    }
-
-    private var addButtonOpacity: Double {
-        selectedCardIndex == nil ? 1 : 0
     }
 
     private func startDeal() {
@@ -152,15 +147,6 @@ struct WordGalaxyView: View {
         }()
 
         ZStack {
-            GalaxyAddButton(action: {
-                guard isInteractive, selectedCardIndex == nil else { return }
-                onAddTapped()
-            })
-            .opacity(addButtonOpacity)
-            .allowsHitTesting(isInteractive && selectedCardIndex == nil)
-            .offset(y: -29)
-            .zIndex(0)
-
             if galaxyOpacity > 0.001 {
                 ForEach(visibleCards) { card in
                     renderedGalaxyCard(card, flyInProgress: flyInProgress)
@@ -334,31 +320,6 @@ struct WordGalaxyView: View {
         }
 
         return results
-    }
-}
-
-struct GalaxyAddButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 56, height: 56)
-                .contentShape(Circle())
-        }
-        .buttonStyle(GalaxyAddButtonStyle())
-        .glassEffect(.regular.interactive(), in: Circle())
-        .accessibilityLabel("Add word")
-    }
-}
-
-private struct GalaxyAddButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.90 : 1.0)
-            .animation(.spring(response: 0.26, dampingFraction: 0.72), value: configuration.isPressed)
     }
 }
 
