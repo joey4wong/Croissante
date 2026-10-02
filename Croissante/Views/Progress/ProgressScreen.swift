@@ -29,14 +29,13 @@ struct ProgressScreen: View {
                     )
                     .padding(.horizontal, 24)
                 } else {
-                    FavoritesInteractiveRoot(catalogWords: favoriteWordsSnapshot)
-                    .frame(width: geo.size.width, alignment: .top)
-                    .frame(maxHeight: .infinity)
+                    FavoritesListView(words: favoriteWordsSnapshot)
+                        .padding(.horizontal, 8)
+                        .frame(maxHeight: .infinity)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .ignoresSafeArea(.container, edges: .bottom)
         .onAppear(perform: refreshSnapshot)
         .onChange(of: favoritesStore.favoriteWordIds) { _, _ in refreshSnapshot() }
         .onReceive(appState.$words) { _ in refreshSnapshot() }
