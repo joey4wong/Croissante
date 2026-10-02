@@ -346,33 +346,15 @@ struct GalaxyAddButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(isDarkMode ? 0.10 : 0.34))
-                    .frame(width: 96, height: 96)
-                    .blur(radius: 10)
-                    .scaleEffect(breathe ? 1.10 : 0.94)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 68, height: 68)
-                    .shadow(color: Color.black.opacity(isDarkMode ? 0.42 : 0.14), radius: 16, x: 0, y: 8)
-                    .shadow(color: Color.white.opacity(isDarkMode ? 0.55 : 0.0), radius: 14, x: 0, y: 0)
-                    .overlay(
-                        Circle()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [Color.white, Color.white.opacity(0.55)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1.2
-                            )
-                    )
-                Image(systemName: "plus")
-                    .font(.system(size: 30, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.black.opacity(0.62))
-            }
-            .scaleEffect(breathe ? 1.03 : 1.0)
+            Image(systemName: "plus")
+                .font(.system(size: 44, weight: .heavy, design: .rounded))
+                .foregroundStyle(Color.white)
+                .shadow(color: Color.green.opacity(breathe ? 0.85 : 0.5), radius: breathe ? 7 : 4)
+                .shadow(color: Color.green.opacity(breathe ? 0.45 : 0.25), radius: breathe ? 16 : 10)
+                .shadow(color: Color.black.opacity(isDarkMode ? 0.3 : 0.12), radius: 3, x: 0, y: 2)
+                .frame(width: 76, height: 76)
+                .contentShape(Circle())
+                .scaleEffect(breathe ? 1.04 : 1.0)
         }
         .buttonStyle(GalaxyAddButtonStyle())
         .accessibilityLabel("Add word")
